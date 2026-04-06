@@ -46,11 +46,14 @@ import type {
   OptimizerTemplate,
   OverviewData,
   PluginConfigValues,
+  PullRequestArtifact,
   RunDiffArtifact,
   RunOutcome,
+  SandboxStrategy,
   ScoreAggregator,
   ScoreDirection,
   ScoreFormat,
+  ScorerIsolationMode,
   StructuredMetricResult
 } from "./types.js";
 
@@ -58,6 +61,26 @@ const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 const runningOptimizers = new Set<string>();
 let currentContext: PluginContext | null = null;
+
+type GitWorkspaceContext = {
+  repoRoot: string;
+  workspaceRelativePath: string;
+};
+
+type SandboxContext = {
+  strategy: SandboxStrategy;
+  sandboxRoot: string;
+  workspacePath: string;
+  cleanup: () => Promise<void>;
+  git?: GitWorkspaceContext;
+};
+
+type ScorerContext = {
+  isolationMode: ScorerIsolationMode;
+  sandboxRoot: string;
+  workspacePath: string;
+  cleanup: () => Promise<void>;
+};
 
 const optimizerTemplates: OptimizerTemplate[] = [
   {
@@ -77,8 +100,11 @@ const optimizerTemplates: OptimizerTemplate[] = [
       scoreRepeats: 3,
       scoreAggregator: "median",
       minimumImprovement: 0.01,
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
       applyMode: "manual_approval",
       requireHumanApproval: true,
+      proposalBranchPrefix: "paprclip/autoresearch/tests",
       autoCreateIssueOnGuardrailFailure: true
     }
   },
@@ -99,6 +125,8 @@ const optimizerTemplates: OptimizerTemplate[] = [
       scoreRepeats: 3,
       scoreAggregator: "median",
       minimumImprovement: 0.5,
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
       applyMode: "manual_approval",
       requireHumanApproval: true
     }
@@ -118,6 +146,8 @@ const optimizerTemplates: OptimizerTemplate[] = [
       scoreRepeats: 1,
       scoreAggregator: "median",
       minimumImprovement: 0,
+      sandboxStrategy: "copy",
+      scorerIsolationMode: "separate_workspace",
       applyMode: "dry_run",
       requireHumanApproval: false
     }
@@ -138,6 +168,14 @@ function isApplyMode(value: unknown): value is ApplyMode {
 
 function isScoreFormat(value: unknown): value is ScoreFormat {
   return value === "number" || value === "json";
+}
+
+function isSandboxStrategy(value: unknown): value is SandboxStrategy {
+  return value === "copy" || value === "git_worktree";
+}
+
+function isScorerIsolationMode(value: unknown): value is ScorerIsolationMode {
+  return value === "same_workspace" || value === "separate_workspace";
 }
 
 function parseDirection(value: unknown): ScoreDirection {
@@ -193,12 +231,16 @@ async function listFilesRecursively(rootDir: string, baseDir = rootDir): Promise
 
   for (const entry of entries) {
     const absolutePath = path.join(rootDir, entry.name);
+    const relativePath = path.relative(baseDir, absolutePath).replace(/\\/g, "/");
+    if (relativePath === ".git" || relativePath.startsWith(".git/")) {
+      continue;
+    }
     if (entry.isDirectory()) {
       files.push(...await listFilesRecursively(absolutePath, baseDir));
       continue;
     }
     if (entry.isFile()) {
-      files.push(path.relative(baseDir, absolutePath).replace(/\\/g, "/"));
+      files.push(relativePath);
     }
   }
 
@@ -321,6 +363,165 @@ async function applySandboxToWorkspace(workspacePath: string, sandboxWorkspace: 
   }
 }
 
+async function runGit(
+  cwd: string,
+  args: string[],
+  maxBuffer = 16 * 1024 * 1024
+): Promise<{ stdout: string; stderr: string }> {
+  return await execFileAsync("git", args, {
+    cwd,
+    windowsHide: true,
+    maxBuffer
+  });
+}
+
+async function resolveGitWorkspace(workspacePath: string): Promise<GitWorkspaceContext | null> {
+  try {
+    const { stdout } = await runGit(workspacePath, ["rev-parse", "--show-toplevel"]);
+    const repoRoot = stdout.trim();
+    if (!repoRoot) return null;
+    const workspaceRelativePath = path.relative(repoRoot, workspacePath).replace(/\\/g, "/");
+    return {
+      repoRoot,
+      workspaceRelativePath: workspaceRelativePath === "" ? "." : workspaceRelativePath
+    };
+  } catch {
+    return null;
+  }
+}
+
+function toRepoRelativePath(git: GitWorkspaceContext, workspaceRelativePath: string): string {
+  const normalized = normalizeRelativePath(workspaceRelativePath);
+  return git.workspaceRelativePath === "."
+    ? normalized
+    : `${git.workspaceRelativePath}/${normalized}`.replace(/\/+/g, "/");
+}
+
+async function createSandboxContext(
+  requestedStrategy: SandboxStrategy,
+  workspacePath: string
+): Promise<SandboxContext> {
+  const git = requestedStrategy === "git_worktree"
+    ? await resolveGitWorkspace(workspacePath)
+    : null;
+
+  if (requestedStrategy === "git_worktree" && git) {
+    const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-autoresearch-worktree-"));
+    await runGit(git.repoRoot, ["worktree", "add", "--detach", sandboxRoot, "HEAD"]);
+    const sandboxWorkspace = git.workspaceRelativePath === "."
+      ? sandboxRoot
+      : path.join(sandboxRoot, git.workspaceRelativePath);
+    return {
+      strategy: "git_worktree",
+      sandboxRoot,
+      workspacePath: sandboxWorkspace,
+      git,
+      cleanup: async () => {
+        await runGit(git.repoRoot, ["worktree", "remove", "--force", sandboxRoot]).catch(() => undefined);
+        await fs.rm(sandboxRoot, { recursive: true, force: true }).catch(() => undefined);
+      }
+    };
+  }
+
+  const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-autoresearch-copy-"));
+  const sandboxWorkspace = path.join(sandboxRoot, "workspace");
+  await fs.cp(workspacePath, sandboxWorkspace, { recursive: true, force: true });
+  return {
+    strategy: "copy",
+    sandboxRoot,
+    workspacePath: sandboxWorkspace,
+    cleanup: async () => {
+      await fs.rm(sandboxRoot, { recursive: true, force: true }).catch(() => undefined);
+    }
+  };
+}
+
+async function createScorerContext(
+  isolationMode: ScorerIsolationMode,
+  candidateWorkspacePath: string
+): Promise<ScorerContext> {
+  if (isolationMode === "same_workspace") {
+    return {
+      isolationMode,
+      sandboxRoot: path.dirname(candidateWorkspacePath),
+      workspacePath: candidateWorkspacePath,
+      cleanup: async () => undefined
+    };
+  }
+
+  const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-autoresearch-score-"));
+  const scorerWorkspace = path.join(sandboxRoot, "workspace");
+  await fs.cp(candidateWorkspacePath, scorerWorkspace, { recursive: true, force: true });
+  return {
+    isolationMode,
+    sandboxRoot,
+    workspacePath: scorerWorkspace,
+    cleanup: async () => {
+      await fs.rm(sandboxRoot, { recursive: true, force: true }).catch(() => undefined);
+    }
+  };
+}
+
+async function createWorkspacePatch(
+  git: GitWorkspaceContext,
+  sandboxRoot: string,
+  mutablePaths: string[]
+): Promise<string> {
+  const repoRelativePaths = mutablePaths.map((entry) => toRepoRelativePath(git, entry));
+  await runGit(sandboxRoot, ["add", "-N", "--", ...repoRelativePaths]).catch(() => undefined);
+  const args = ["diff", "--binary"];
+  if (git.workspaceRelativePath !== ".") {
+    args.push(`--relative=${git.workspaceRelativePath}`);
+  }
+  args.push("HEAD", "--", ...repoRelativePaths);
+  const { stdout } = await runGit(sandboxRoot, args, 32 * 1024 * 1024);
+  return stdout;
+}
+
+async function applyPatchToWorkspace(
+  workspacePath: string,
+  git: GitWorkspaceContext | null,
+  patch: string
+): Promise<void> {
+  if (!patch.trim()) return;
+
+  if (!git) {
+    throw new Error("Git patch apply requested without a git workspace.");
+  }
+
+  const patchFile = path.join(os.tmpdir(), `paperclip-autoresearch-${randomUUID()}.patch`);
+  try {
+    await fs.writeFile(patchFile, patch, "utf8");
+    const args = ["apply", "--whitespace=nowarn", patchFile];
+    if (git.workspaceRelativePath !== ".") {
+      args.splice(1, 0, "--directory", git.workspaceRelativePath);
+    }
+    await runGit(git.repoRoot, args, 32 * 1024 * 1024);
+  } finally {
+    await fs.rm(patchFile, { force: true }).catch(() => undefined);
+  }
+}
+
+function resolveRunSandboxWorkspacePath(run: OptimizerRunRecord): string {
+  if (!run.sandboxPath) {
+    throw new Error("Run did not retain a sandbox.");
+  }
+  if (run.sandboxStrategy === "git_worktree") {
+    return run.gitWorkspaceRelativePath && run.gitWorkspaceRelativePath !== "."
+      ? path.join(run.sandboxPath, run.gitWorkspaceRelativePath)
+      : run.sandboxPath;
+  }
+  return path.join(run.sandboxPath, "workspace");
+}
+
+async function cleanupRetainedSandbox(run: OptimizerRunRecord): Promise<void> {
+  if (!run.sandboxPath) return;
+  if (run.sandboxStrategy === "git_worktree" && run.gitRepoRoot) {
+    await runGit(run.gitRepoRoot, ["worktree", "remove", "--force", run.sandboxPath]).catch(() => undefined);
+  }
+  await fs.rm(run.sandboxPath, { recursive: true, force: true }).catch(() => undefined);
+}
+
 async function runShellCommand(
   command: string,
   cwd: string,
@@ -429,6 +630,18 @@ async function findOptimizer(ctx: PluginContext, projectId: string, optimizerId:
 async function findRun(ctx: PluginContext, projectId: string, runId: string): Promise<PluginEntityRecord | null> {
   const entities = await listRunEntities(ctx, projectId);
   return entities.find((entry) => entry.externalId === runId || entry.id === runId) ?? null;
+}
+
+async function findLatestAcceptedRun(
+  ctx: PluginContext,
+  projectId: string,
+  optimizerId: string
+): Promise<OptimizerRunRecord | null> {
+  const runEntities = await listRunEntities(ctx, projectId);
+  return runEntities
+    .map(asRunRecord)
+    .filter((entry) => entry.optimizerId === optimizerId && entry.accepted)
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null;
 }
 
 async function upsertOptimizer(ctx: PluginContext, optimizer: OptimizerDefinition, status?: string): Promise<PluginEntityRecord> {
@@ -644,6 +857,85 @@ async function createIssueFromRun(
   return { id: issue.id, title: issue.title };
 }
 
+function buildProposalBranchName(optimizer: OptimizerDefinition, run: OptimizerRunRecord): string {
+  const prefix = optimizer.proposalBranchPrefix?.trim() || `paprclip/autoresearch/${optimizer.optimizerId.slice(0, 8)}`;
+  const suffix = run.runId.slice(0, 8);
+  return `${prefix}-${suffix}`.replace(/[^a-zA-Z0-9/_-]+/g, "-");
+}
+
+function buildProposalCommitMessage(optimizer: OptimizerDefinition, run: OptimizerRunRecord): string {
+  if (optimizer.proposalCommitMessage?.trim()) return optimizer.proposalCommitMessage.trim();
+  return `Autoresearch candidate: ${optimizer.name} (${run.runId.slice(0, 8)})`;
+}
+
+function extractPullRequestUrl(output: string): string | undefined {
+  const match = output.match(/https?:\/\/\S+/);
+  return match?.[0];
+}
+
+async function createPullRequestFromRun(
+  ctx: PluginContext,
+  optimizer: OptimizerDefinition,
+  run: OptimizerRunRecord,
+  config: PluginConfigValues
+): Promise<PullRequestArtifact> {
+  if (!run.applied) {
+    throw new Error("Run must be applied before creating a pull request.");
+  }
+
+  const { workspacePath } = await resolveWorkspacePath(
+    ctx,
+    optimizer.companyId,
+    optimizer.projectId,
+    optimizer.workspaceId
+  );
+  const git = await resolveGitWorkspace(workspacePath);
+  if (!git) {
+    throw new Error("Workspace is not inside a git repository.");
+  }
+  if (run.artifacts.changedFiles.length === 0) {
+    throw new Error("Run did not record any changed files.");
+  }
+
+  const branchName = buildProposalBranchName(optimizer, run);
+  await runGit(git.repoRoot, ["checkout", "-B", branchName]);
+
+  const repoRelativeChangedFiles = run.artifacts.changedFiles.map((entry) => toRepoRelativePath(git, entry));
+  await runGit(git.repoRoot, ["add", "-A", "--", ...repoRelativeChangedFiles]);
+  await runGit(git.repoRoot, ["commit", "-m", buildProposalCommitMessage(optimizer, run)]);
+
+  const { stdout: commitSha } = await runGit(git.repoRoot, ["rev-parse", "HEAD"]);
+  let commandResult: CommandExecutionResult | undefined;
+  let pullRequestUrl: string | undefined;
+
+  if (optimizer.proposalPrCommand?.trim()) {
+    commandResult = await runShellCommand(
+      optimizer.proposalPrCommand,
+      workspacePath,
+      optimizer.scoreBudgetSeconds,
+      {
+        ...process.env,
+        PAPERCLIP_OPTIMIZER_ID: optimizer.optimizerId,
+        PAPERCLIP_OPTIMIZER_NAME: optimizer.name,
+        PAPERCLIP_OPTIMIZER_RUN_ID: run.runId,
+        PAPERCLIP_PROPOSAL_BRANCH: branchName,
+        PAPERCLIP_PROPOSAL_COMMIT: commitSha.trim()
+      },
+      config.maxOutputChars
+    );
+    pullRequestUrl = extractPullRequestUrl(`${commandResult.stdout}\n${commandResult.stderr}`);
+  }
+
+  return {
+    branchName,
+    commitSha: commitSha.trim(),
+    pullRequestUrl,
+    command: optimizer.proposalPrCommand,
+    commandResult,
+    createdAt: nowIso()
+  };
+}
+
 async function createOptimizerFromParams(
   ctx: PluginContext,
   params: Record<string, unknown>
@@ -686,6 +978,8 @@ async function createOptimizerFromParams(
       : clampPositiveInteger(params.guardrailBudgetSeconds, config.defaultGuardrailBudgetSeconds),
     hiddenScoring: params.hiddenScoring !== false,
     autoRun: params.autoRun === true,
+    sandboxStrategy: isSandboxStrategy(params.sandboxStrategy) ? params.sandboxStrategy : "git_worktree",
+    scorerIsolationMode: isScorerIsolationMode(params.scorerIsolationMode) ? params.scorerIsolationMode : "separate_workspace",
     applyMode,
     status: params.status === "paused" ? "paused" : "active",
     queueState: params.queueState === "queued"
@@ -699,6 +993,15 @@ async function createOptimizerFromParams(
     autoCreateIssueOnGuardrailFailure: params.autoCreateIssueOnGuardrailFailure === true,
     autoCreateIssueOnStagnation: params.autoCreateIssueOnStagnation === true,
     stagnationIssueThreshold: clampPositiveInteger(params.stagnationIssueThreshold, config.stagnationIssueThreshold),
+    proposalBranchPrefix: typeof params.proposalBranchPrefix === "string" && params.proposalBranchPrefix.trim()
+      ? params.proposalBranchPrefix.trim()
+      : undefined,
+    proposalCommitMessage: typeof params.proposalCommitMessage === "string" && params.proposalCommitMessage.trim()
+      ? params.proposalCommitMessage.trim()
+      : undefined,
+    proposalPrCommand: typeof params.proposalPrCommand === "string" && params.proposalPrCommand.trim()
+      ? params.proposalPrCommand.trim()
+      : undefined,
     notes: typeof params.notes === "string" && params.notes.trim() ? params.notes.trim() : undefined,
     bestScore: typeof params.bestScore === "number" ? params.bestScore : undefined,
     bestRunId: typeof params.bestRunId === "string" ? params.bestRunId : undefined,
@@ -725,6 +1028,8 @@ function buildMutationEnv(optimizer: OptimizerDefinition, baselineScore: number 
     PAPERCLIP_OPTIMIZER_SCORE_DIRECTION: optimizer.scoreDirection,
     PAPERCLIP_OPTIMIZER_BRIEF: briefPath,
     PAPERCLIP_OPTIMIZER_APPLY_MODE: optimizer.applyMode,
+    PAPERCLIP_OPTIMIZER_SANDBOX_STRATEGY: optimizer.sandboxStrategy,
+    PAPERCLIP_OPTIMIZER_SCORER_ISOLATION: optimizer.scorerIsolationMode,
     PAPERCLIP_OPTIMIZER_SCORE_REPEATS: String(optimizer.scoreRepeats),
     PAPERCLIP_OPTIMIZER_SCORE_AGGREGATOR: optimizer.scoreAggregator,
     PAPERCLIP_OPTIMIZER_MINIMUM_IMPROVEMENT: String(optimizer.minimumImprovement)
@@ -805,9 +1110,11 @@ async function runOptimizerCycle(
   runningOptimizers.add(optimizer.optimizerId);
   const config = await getConfig(ctx);
   const startedAt = nowIso();
-  let sandboxDir = "";
-  let sandboxWorkspace = "";
+  let mutationSandbox: SandboxContext | null = null;
+  let scorerSandbox: ScorerContext | null = null;
+  let briefPath = "";
   let retainSandbox = config.keepTmpDirs;
+  let retainScorerSandbox = config.keepTmpDirs;
 
   const runningOptimizer: OptimizerDefinition = {
     ...optimizer,
@@ -823,28 +1130,27 @@ async function runOptimizerCycle(
       optimizer.projectId,
       optimizer.workspaceId
     );
+    const baselineRunId = optimizer.bestRunId ?? null;
     const baselineScore = await measureBaselineScore(optimizer, workspacePath, config);
 
-    sandboxDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-autoresearch-"));
-    sandboxWorkspace = path.join(sandboxDir, "workspace");
-    await fs.cp(workspacePath, sandboxWorkspace, { recursive: true, force: true });
-
-    const briefPath = path.join(sandboxDir, "paperclip-optimizer-brief.json");
+    mutationSandbox = await createSandboxContext(optimizer.sandboxStrategy, workspacePath);
+    briefPath = path.join(os.tmpdir(), `paperclip-optimizer-brief-${randomUUID()}.json`);
     await fs.writeFile(briefPath, JSON.stringify(buildOptimizerBrief(optimizer), null, 2), "utf8");
 
     const mutation = await runShellCommand(
       optimizer.mutationCommand,
-      sandboxWorkspace,
+      mutationSandbox.workspacePath,
       optimizer.mutationBudgetSeconds,
       buildMutationEnv(optimizer, baselineScore, briefPath),
       config.maxOutputChars
     );
 
-    const scoringResult = await measureScoreRepeats(optimizer, sandboxWorkspace, config);
-    const guardrail = await measureGuardrail(optimizer, sandboxWorkspace, config);
+    scorerSandbox = await createScorerContext(optimizer.scorerIsolationMode, mutationSandbox.workspacePath);
+    const scoringResult = await measureScoreRepeats(optimizer, scorerSandbox.workspacePath, config);
+    const guardrail = await measureGuardrail(optimizer, scorerSandbox.workspacePath, config);
     const artifacts = await createDiffArtifact(
       workspacePath,
-      sandboxWorkspace,
+      mutationSandbox.workspacePath,
       optimizer.mutablePaths,
       config.maxOutputChars * 4
     );
@@ -888,7 +1194,16 @@ async function runOptimizerCycle(
       retainSandbox = true;
       reason = "Candidate improved the score and is waiting for human approval.";
     } else {
-      await applySandboxToWorkspace(workspacePath, sandboxWorkspace, optimizer.mutablePaths);
+      if (mutationSandbox.strategy === "git_worktree" && mutationSandbox.git) {
+        const patch = await createWorkspacePatch(
+          mutationSandbox.git,
+          mutationSandbox.sandboxRoot,
+          optimizer.mutablePaths
+        );
+        await applyPatchToWorkspace(workspacePath, mutationSandbox.git, patch);
+      } else {
+        await applySandboxToWorkspace(workspacePath, mutationSandbox.workspacePath, optimizer.mutablePaths);
+      }
       outcome = "accepted";
       accepted = true;
       applied = true;
@@ -901,6 +1216,7 @@ async function runOptimizerCycle(
       companyId: optimizer.companyId,
       projectId: optimizer.projectId,
       workspaceId,
+      baselineRunId,
       startedAt,
       finishedAt: nowIso(),
       outcome,
@@ -917,9 +1233,14 @@ async function runOptimizerCycle(
       guardrail: guardrail.execution,
       guardrailResult: guardrail.result,
       mutablePaths: optimizer.mutablePaths,
-      sandboxStrategy: "copy",
-      sandboxPath: retainSandbox ? sandboxWorkspace : undefined,
-      artifacts
+      sandboxStrategy: mutationSandbox.strategy,
+      sandboxPath: retainSandbox ? mutationSandbox.sandboxRoot : undefined,
+      scorerIsolationMode: optimizer.scorerIsolationMode,
+      scorerSandboxPath: retainScorerSandbox ? scorerSandbox.sandboxRoot : undefined,
+      gitRepoRoot: mutationSandbox.git?.repoRoot,
+      gitWorkspaceRelativePath: mutationSandbox.git?.workspaceRelativePath,
+      artifacts,
+      pullRequest: null
     };
 
     let createdIssueTitle: string | undefined;
@@ -948,8 +1269,14 @@ async function runOptimizerCycle(
     return { optimizer: updatedOptimizer, run };
   } finally {
     runningOptimizers.delete(optimizer.optimizerId);
-    if (sandboxDir && !retainSandbox) {
-      await fs.rm(sandboxDir, { recursive: true, force: true }).catch(() => undefined);
+    if (mutationSandbox && !retainSandbox) {
+      await mutationSandbox.cleanup();
+    }
+    if (scorerSandbox && !retainScorerSandbox) {
+      await scorerSandbox.cleanup();
+    }
+    if (briefPath) {
+      await fs.rm(briefPath, { force: true }).catch(() => undefined);
     }
   }
 }
@@ -972,7 +1299,17 @@ async function promotePendingRun(
     optimizer.projectId,
     optimizer.workspaceId
   );
-  await applySandboxToWorkspace(workspacePath, run.sandboxPath, run.mutablePaths);
+  const sandboxWorkspacePath = resolveRunSandboxWorkspacePath(run);
+  if (run.sandboxStrategy === "git_worktree" && run.gitRepoRoot && run.gitWorkspaceRelativePath) {
+    const gitContext: GitWorkspaceContext = {
+      repoRoot: run.gitRepoRoot,
+      workspaceRelativePath: run.gitWorkspaceRelativePath
+    };
+    const patch = await createWorkspacePatch(gitContext, run.sandboxPath, run.mutablePaths);
+    await applyPatchToWorkspace(workspacePath, gitContext, patch);
+  } else {
+    await applySandboxToWorkspace(workspacePath, sandboxWorkspacePath, run.mutablePaths);
+  }
   const promotedRun: OptimizerRunRecord = {
     ...run,
     workspaceId,
@@ -1013,7 +1350,9 @@ async function promotePendingRun(
 
   const config = await getConfig(ctx);
   if (!config.keepTmpDirs && run.sandboxPath) {
-    await fs.rm(path.dirname(run.sandboxPath), { recursive: true, force: true }).catch(() => undefined);
+    await cleanupRetainedSandbox(run);
+    promotedRun.sandboxPath = undefined;
+    promotedRun.scorerSandboxPath = undefined;
   }
 
   return { optimizer: updatedOptimizer, run: promotedRun };
@@ -1062,7 +1401,9 @@ async function rejectPendingRun(
 
   const config = await getConfig(ctx);
   if (!config.keepTmpDirs && run.sandboxPath) {
-    await fs.rm(path.dirname(run.sandboxPath), { recursive: true, force: true }).catch(() => undefined);
+    await cleanupRetainedSandbox(run);
+    rejectedRun.sandboxPath = undefined;
+    rejectedRun.scorerSandboxPath = undefined;
   }
 
   return { optimizer: updatedOptimizer, run: rejectedRun };
@@ -1243,6 +1584,30 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
       typeof params.titlePrefix === "string" && params.titlePrefix.trim() ? params.titlePrefix.trim() : undefined
     );
   });
+
+  ctx.actions.register(ACTION_KEYS.createPullRequestFromRun, async (params) => {
+    const projectId = ensureNonEmptyString(params.projectId, "projectId");
+    const optimizerId = ensureNonEmptyString(params.optimizerId, "optimizerId");
+    const optimizerEntity = await findOptimizer(ctx, projectId, optimizerId);
+    if (!optimizerEntity) {
+      throw new Error(`Optimizer ${optimizerId} was not found.`);
+    }
+    const optimizer = asOptimizer(optimizerEntity);
+    const targetRunId = typeof params.runId === "string" && params.runId.trim() ? params.runId.trim() : undefined;
+    const run = targetRunId
+      ? (await findRun(ctx, projectId, targetRunId))?.data as OptimizerRunRecord | undefined
+      : await findLatestAcceptedRun(ctx, projectId, optimizerId) ?? undefined;
+    if (!run || run.optimizerId !== optimizerId) {
+      throw new Error("No matching applied run exists for this optimizer.");
+    }
+    const pullRequest = await createPullRequestFromRun(ctx, optimizer, run, await getConfig(ctx));
+    const updatedRun: OptimizerRunRecord = {
+      ...run,
+      pullRequest
+    };
+    await upsertRun(ctx, updatedRun);
+    return pullRequest;
+  });
 }
 
 async function registerToolHandlers(ctx: PluginContext): Promise<void> {
@@ -1269,7 +1634,7 @@ async function registerToolHandlers(ctx: PluginContext): Promise<void> {
         content: optimizers.length === 0
           ? "No optimizers are configured for this project."
           : optimizers.map((entry) =>
-            `${entry.name}: status=${entry.status}, queue=${entry.queueState}, best=${entry.bestScore ?? "n/a"}, repeats=${entry.scoreRepeats}, apply=${entry.applyMode}`
+            `${entry.name}: status=${entry.status}, queue=${entry.queueState}, best=${entry.bestScore ?? "n/a"}, repeats=${entry.scoreRepeats}, apply=${entry.applyMode}, sandbox=${entry.sandboxStrategy}, scorer=${entry.scorerIsolationMode}`
           ).join("\n"),
         data: optimizers
       };
@@ -1319,6 +1684,52 @@ async function registerToolHandlers(ctx: PluginContext): Promise<void> {
       return {
         content: `Created issue ${issue.title}`,
         data: issue
+      };
+    }
+  );
+
+  ctx.tools.register(
+    TOOL_KEYS.createPullRequestFromAcceptedRun,
+    {
+      displayName: "Create pull request from accepted optimizer run",
+      description: "Create a branch, commit, and optional pull request from the latest accepted run for an optimizer.",
+      parametersSchema: {
+        type: "object",
+        properties: {
+          optimizerId: { type: "string" },
+          runId: { type: "string" }
+        },
+        required: ["optimizerId"]
+      }
+    },
+    async (params, runCtx): Promise<ToolResult> => {
+      const optimizerId = ensureNonEmptyString((params as { optimizerId?: string }).optimizerId, "optimizerId");
+      const optimizerEntity = await findOptimizer(ctx, runCtx.projectId, optimizerId);
+      if (!optimizerEntity) {
+        return { error: `Optimizer ${optimizerId} not found in project ${runCtx.projectId}.` };
+      }
+      const optimizer = asOptimizer(optimizerEntity);
+      const targetRunId = typeof (params as { runId?: string }).runId === "string"
+        ? (params as { runId: string }).runId
+        : undefined;
+      const run = targetRunId
+        ? (await findRun(ctx, runCtx.projectId, targetRunId))?.data as OptimizerRunRecord | undefined
+        : await findLatestAcceptedRun(ctx, runCtx.projectId, optimizerId) ?? undefined;
+      if (!run || run.optimizerId !== optimizerId) {
+        return { error: `Optimizer ${optimizer.name} has no matching applied run yet.` };
+      }
+
+      const pullRequest = await createPullRequestFromRun(ctx, optimizer, run, await getConfig(ctx));
+      await upsertRun(ctx, {
+        ...run,
+        pullRequest
+      });
+
+      return {
+        content: pullRequest.pullRequestUrl
+          ? `Created branch ${pullRequest.branchName} and pull request ${pullRequest.pullRequestUrl}`
+          : `Created branch ${pullRequest.branchName} and commit ${pullRequest.commitSha}`,
+        data: pullRequest
       };
     }
   );

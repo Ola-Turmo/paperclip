@@ -7,7 +7,8 @@ const JOB_KEYS = {
 } as const;
 const TOOL_KEYS = {
   listOptimizers: "list-optimizers",
-  createIssueFromAcceptedRun: "create-issue-from-accepted-run"
+  createIssueFromAcceptedRun: "create-issue-from-accepted-run",
+  createPullRequestFromAcceptedRun: "create-pull-request-from-accepted-run"
 } as const;
 
 const manifest: PaperclipPluginManifestV1 = {
@@ -126,6 +127,19 @@ const manifest: PaperclipPluginManifestV1 = {
         properties: {
           optimizerId: { type: "string" },
           titlePrefix: { type: "string" }
+        },
+        required: ["optimizerId"]
+      }
+    },
+    {
+      name: TOOL_KEYS.createPullRequestFromAcceptedRun,
+      displayName: "Create pull request from accepted optimizer run",
+      description: "Creates a branch, commit, and optional PR from the latest applied run for an optimizer.",
+      parametersSchema: {
+        type: "object",
+        properties: {
+          optimizerId: { type: "string" },
+          runId: { type: "string" }
         },
         required: ["optimizerId"]
       }

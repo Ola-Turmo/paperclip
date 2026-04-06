@@ -57,12 +57,17 @@ type FormState = {
   guardrailBudgetSeconds: string;
   hiddenScoring: boolean;
   autoRun: boolean;
+  sandboxStrategy: "copy" | "git_worktree";
+  scorerIsolationMode: "same_workspace" | "separate_workspace";
   status: "active" | "paused";
   applyMode: ApplyMode;
   requireHumanApproval: boolean;
   autoCreateIssueOnGuardrailFailure: boolean;
   autoCreateIssueOnStagnation: boolean;
   stagnationIssueThreshold: string;
+  proposalBranchPrefix: string;
+  proposalCommitMessage: string;
+  proposalPrCommand: string;
   notes: string;
 };
 
@@ -128,12 +133,17 @@ function emptyForm(workspaceId = ""): FormState {
     guardrailBudgetSeconds: "",
     hiddenScoring: true,
     autoRun: false,
+    sandboxStrategy: "git_worktree",
+    scorerIsolationMode: "separate_workspace",
     status: "active",
     applyMode: "manual_approval",
     requireHumanApproval: true,
     autoCreateIssueOnGuardrailFailure: true,
     autoCreateIssueOnStagnation: false,
     stagnationIssueThreshold: "5",
+    proposalBranchPrefix: "",
+    proposalCommitMessage: "",
+    proposalPrCommand: "",
     notes: ""
   };
 }
@@ -162,12 +172,17 @@ function formFromOptimizer(optimizer: OptimizerDefinition): FormState {
     guardrailBudgetSeconds: optimizer.guardrailBudgetSeconds ? String(optimizer.guardrailBudgetSeconds) : "",
     hiddenScoring: optimizer.hiddenScoring,
     autoRun: optimizer.autoRun,
+    sandboxStrategy: optimizer.sandboxStrategy,
+    scorerIsolationMode: optimizer.scorerIsolationMode,
     status: optimizer.status,
     applyMode: optimizer.applyMode,
     requireHumanApproval: optimizer.requireHumanApproval,
     autoCreateIssueOnGuardrailFailure: optimizer.autoCreateIssueOnGuardrailFailure,
     autoCreateIssueOnStagnation: optimizer.autoCreateIssueOnStagnation,
     stagnationIssueThreshold: String(optimizer.stagnationIssueThreshold),
+    proposalBranchPrefix: optimizer.proposalBranchPrefix ?? "",
+    proposalCommitMessage: optimizer.proposalCommitMessage ?? "",
+    proposalPrCommand: optimizer.proposalPrCommand ?? "",
     notes: optimizer.notes ?? ""
   };
 }
@@ -197,12 +212,17 @@ function applyTemplate(template: OptimizerTemplate, current: FormState, workspac
     guardrailBudgetSeconds: values.guardrailBudgetSeconds != null ? String(values.guardrailBudgetSeconds) : current.guardrailBudgetSeconds,
     hiddenScoring: values.hiddenScoring ?? current.hiddenScoring,
     autoRun: values.autoRun ?? current.autoRun,
+    sandboxStrategy: values.sandboxStrategy ?? current.sandboxStrategy,
+    scorerIsolationMode: values.scorerIsolationMode ?? current.scorerIsolationMode,
     status: values.status ?? current.status,
     applyMode: values.applyMode ?? current.applyMode,
     requireHumanApproval: values.requireHumanApproval ?? current.requireHumanApproval,
     autoCreateIssueOnGuardrailFailure: values.autoCreateIssueOnGuardrailFailure ?? current.autoCreateIssueOnGuardrailFailure,
     autoCreateIssueOnStagnation: values.autoCreateIssueOnStagnation ?? current.autoCreateIssueOnStagnation,
     stagnationIssueThreshold: values.stagnationIssueThreshold != null ? String(values.stagnationIssueThreshold) : current.stagnationIssueThreshold,
+    proposalBranchPrefix: values.proposalBranchPrefix ?? current.proposalBranchPrefix,
+    proposalCommitMessage: values.proposalCommitMessage ?? current.proposalCommitMessage,
+    proposalPrCommand: values.proposalPrCommand ?? current.proposalPrCommand,
     notes: values.notes ?? current.notes
   };
 }
@@ -231,12 +251,17 @@ function toActionPayload(form: FormState) {
     guardrailBudgetSeconds: form.guardrailBudgetSeconds ? Number(form.guardrailBudgetSeconds) : undefined,
     hiddenScoring: form.hiddenScoring,
     autoRun: form.autoRun,
+    sandboxStrategy: form.sandboxStrategy,
+    scorerIsolationMode: form.scorerIsolationMode,
     status: form.status,
     applyMode: form.applyMode,
     requireHumanApproval: form.requireHumanApproval,
     autoCreateIssueOnGuardrailFailure: form.autoCreateIssueOnGuardrailFailure,
     autoCreateIssueOnStagnation: form.autoCreateIssueOnStagnation,
     stagnationIssueThreshold: Number(form.stagnationIssueThreshold || 0),
+    proposalBranchPrefix: form.proposalBranchPrefix || undefined,
+    proposalCommitMessage: form.proposalCommitMessage || undefined,
+    proposalPrCommand: form.proposalPrCommand || undefined,
     notes: form.notes || undefined
   };
 }
@@ -257,12 +282,14 @@ function RunCard({
   run,
   onApprove,
   onReject,
-  onCreateIssue
+  onCreateIssue,
+  onCreatePullRequest
 }: {
   run: OptimizerRunRecord;
   onApprove: (runId: string) => Promise<void>;
   onReject: (runId: string) => Promise<void>;
   onCreateIssue: (runId: string) => Promise<void>;
+  onCreatePullRequest: (runId: string) => Promise<void>;
 }) {
   const repeatSummary = run.scoringRepeats
     .map((entry, index) => `#${index + 1}: ${formatScore(entry.score)} (${entry.execution.exitCode ?? "null"})`)
@@ -281,6 +308,11 @@ function RunCard({
       <div style={{ marginTop: 6, fontSize: 13, opacity: 0.85 }}>
         Diff {run.artifacts.stats.files} files, +{run.artifacts.stats.additions}, -{run.artifacts.stats.deletions}
       </div>
+      {run.pullRequest?.branchName ? (
+        <div style={{ marginTop: 6, fontSize: 13, opacity: 0.85 }}>
+          Branch {run.pullRequest.branchName} {run.pullRequest.pullRequestUrl ? `| PR ${run.pullRequest.pullRequestUrl}` : ""}
+        </div>
+      ) : null}
       {run.artifacts.unauthorizedChangedFiles.length > 0 ? (
         <div style={{ marginTop: 6, color: "#b91c1c", fontSize: 13 }}>
           Unauthorized changes: {run.artifacts.unauthorizedChangedFiles.join(", ")}
@@ -300,6 +332,11 @@ function RunCard({
         <button type="button" style={buttonStyle} onClick={() => void onCreateIssue(run.runId)}>
           Create issue
         </button>
+        {run.applied ? (
+          <button type="button" style={buttonStyle} onClick={() => void onCreatePullRequest(run.runId)}>
+            Create PR
+          </button>
+        ) : null}
       </div>
       <details style={{ marginTop: 10 }}>
         <summary>Artifacts and command output</summary>
@@ -327,6 +364,27 @@ ${run.guardrail ? (run.guardrail.stdout || run.guardrail.stderr || "(no output)"
   );
 }
 
+function ComparisonPanel({ label, run }: { label: string; run: OptimizerRunRecord | null }) {
+  return (
+    <div style={{ border: "1px solid rgba(148, 163, 184, 0.28)", borderRadius: 12, padding: 14, background: "white" }}>
+      <strong>{label}</strong>
+      {!run ? (
+        <div style={{ marginTop: 8, opacity: 0.72 }}>No run selected.</div>
+      ) : (
+        <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+          <div>Outcome: {run.outcome}</div>
+          <div>Score: {formatScore(run.candidateScore)}</div>
+          <div>Approval: {run.approvalStatus}</div>
+          <div>Files: {run.artifacts.changedFiles.join(", ") || "none"}</div>
+          <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12 }}>
+{JSON.stringify(run.scoringAggregate ?? {}, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OptimizerEditor({
   companyId,
   initialProjectId
@@ -337,6 +395,7 @@ function OptimizerEditor({
   const [selectedProjectId, setSelectedProjectId] = useState(initialProjectId ?? "");
   const [selectedOptimizerId, setSelectedOptimizerId] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState("");
+  const [selectedCompareRunId, setSelectedCompareRunId] = useState("");
   const [form, setForm] = useState<FormState>(() => emptyForm(""));
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -348,6 +407,7 @@ function OptimizerEditor({
   const approveOptimizerRun = usePluginAction(ACTION_KEYS.approveOptimizerRun);
   const rejectOptimizerRun = usePluginAction(ACTION_KEYS.rejectOptimizerRun);
   const createIssueFromRun = usePluginAction(ACTION_KEYS.createIssueFromRun);
+  const createPullRequestFromRun = usePluginAction(ACTION_KEYS.createPullRequestFromRun);
 
   const projectsQuery = usePluginData<ProjectInfo[]>(DATA_KEYS.projects, companyId ? { companyId } : {});
   const workspacesQuery = usePluginData<WorkspaceInfo[]>(
@@ -381,10 +441,19 @@ function OptimizerEditor({
     () => optimizersQuery.data?.find((entry) => entry.optimizerId === selectedOptimizerId) ?? null,
     [optimizersQuery.data, selectedOptimizerId]
   );
+  const compareRun = useMemo(
+    () => (runsQuery.data ?? []).find((entry) => entry.runId === selectedCompareRunId) ?? null,
+    [runsQuery.data, selectedCompareRunId]
+  );
+  const bestRun = useMemo(
+    () => (runsQuery.data ?? []).find((entry) => entry.runId === selectedOptimizer?.bestRunId) ?? null,
+    [runsQuery.data, selectedOptimizer?.bestRunId]
+  );
 
   useEffect(() => {
     if (selectedOptimizer) {
       setForm(formFromOptimizer(selectedOptimizer));
+      setSelectedCompareRunId(selectedOptimizer.lastRunId ?? "");
     }
   }, [selectedOptimizer]);
 
@@ -401,6 +470,7 @@ function OptimizerEditor({
   function resetForm() {
     setSelectedOptimizerId("");
     setSelectedTemplate("");
+    setSelectedCompareRunId("");
     setForm(emptyForm(workspacesQuery.data?.[0]?.id ?? ""));
   }
 
@@ -500,6 +570,27 @@ function OptimizerEditor({
         runId
       }) as { title: string };
       setMessage(`Created issue "${issue.title}".`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleCreatePullRequest(runId?: string) {
+    if (!selectedProjectId || !selectedOptimizerId) return;
+    setErrorMessage("");
+    setMessage("");
+    try {
+      const result = await createPullRequestFromRun({
+        projectId: selectedProjectId,
+        optimizerId: selectedOptimizerId,
+        runId
+      }) as { branchName?: string; pullRequestUrl?: string; commitSha?: string };
+      setMessage(
+        result.pullRequestUrl
+          ? `Created branch ${result.branchName} and PR ${result.pullRequestUrl}.`
+          : `Created branch ${result.branchName} at ${result.commitSha}.`
+      );
+      await refreshAll();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     }
@@ -713,6 +804,38 @@ function OptimizerEditor({
             </div>
           </div>
 
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+            <div>
+              <strong>Sandbox strategy</strong>
+              <select style={{ ...inputStyle, marginTop: 6 }} value={form.sandboxStrategy} onChange={(event) => setForm((prev) => ({ ...prev, sandboxStrategy: event.target.value as "copy" | "git_worktree" }))}>
+                <option value="git_worktree">Git worktree</option>
+                <option value="copy">Workspace copy</option>
+              </select>
+            </div>
+            <div>
+              <strong>Scorer isolation</strong>
+              <select style={{ ...inputStyle, marginTop: 6 }} value={form.scorerIsolationMode} onChange={(event) => setForm((prev) => ({ ...prev, scorerIsolationMode: event.target.value as "same_workspace" | "separate_workspace" }))}>
+                <option value="separate_workspace">Separate scorer workspace</option>
+                <option value="same_workspace">Same mutation workspace</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+            <div>
+              <strong>Proposal branch prefix</strong>
+              <input style={{ ...inputStyle, marginTop: 6 }} value={form.proposalBranchPrefix} onChange={(event) => setForm((prev) => ({ ...prev, proposalBranchPrefix: event.target.value }))} placeholder="paprclip/autoresearch/my-optimizer" />
+            </div>
+            <div>
+              <strong>Proposal commit message</strong>
+              <input style={{ ...inputStyle, marginTop: 6 }} value={form.proposalCommitMessage} onChange={(event) => setForm((prev) => ({ ...prev, proposalCommitMessage: event.target.value }))} placeholder="Autoresearch candidate: ..." />
+            </div>
+            <div>
+              <strong>PR command</strong>
+              <input style={{ ...inputStyle, marginTop: 6 }} value={form.proposalPrCommand} onChange={(event) => setForm((prev) => ({ ...prev, proposalPrCommand: event.target.value }))} placeholder="gh pr create --fill --head $PAPERCLIP_PROPOSAL_BRANCH" />
+            </div>
+          </div>
+
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
             <label><input type="checkbox" checked={form.hiddenScoring} onChange={(event) => setForm((prev) => ({ ...prev, hiddenScoring: event.target.checked }))} /> Hide score command from mutator</label>
             <label><input type="checkbox" checked={form.autoRun} onChange={(event) => setForm((prev) => ({ ...prev, autoRun: event.target.checked }))} /> Auto-run in sweep</label>
@@ -731,6 +854,7 @@ function OptimizerEditor({
             <button type="button" style={buttonStyle} onClick={() => void handleRun("run")}>Run now</button>
             <button type="button" style={buttonStyle} onClick={() => void handleRun("queue")}>Queue run</button>
             <button type="button" style={buttonStyle} onClick={() => void handleCreateIssue()}>Create issue from latest run</button>
+            <button type="button" style={buttonStyle} onClick={() => void handleCreatePullRequest()}>Create PR from latest accepted run</button>
             <button type="button" style={buttonStyle} onClick={resetForm}>Reset</button>
             <button type="button" style={buttonStyle} onClick={() => void handleDelete()}>Delete</button>
           </div>
@@ -740,6 +864,24 @@ function OptimizerEditor({
           </div>
           {message ? <div style={{ color: "#166534" }}>{message}</div> : null}
           {errorMessage ? <div style={{ color: "#b91c1c" }}>{errorMessage}</div> : null}
+        </div>
+      </section>
+
+      <section style={cardStyle}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <strong>Run comparison</strong>
+          <select style={{ ...inputStyle, maxWidth: 340 }} value={selectedCompareRunId} onChange={(event) => setSelectedCompareRunId(event.target.value)}>
+            <option value="">Select run to compare</option>
+            {(runsQuery.data ?? []).map((run) => (
+              <option key={run.runId} value={run.runId}>
+                {new Date(run.startedAt).toLocaleString()} · {run.outcome} · {formatScore(run.candidateScore)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <ComparisonPanel label="Incumbent / best run" run={bestRun} />
+          <ComparisonPanel label="Selected candidate" run={compareRun} />
         </div>
       </section>
 
@@ -756,6 +898,7 @@ function OptimizerEditor({
                 onApprove={handleApprove}
                 onReject={handleReject}
                 onCreateIssue={handleCreateIssue}
+                onCreatePullRequest={handleCreatePullRequest}
               />
             ))
           )}

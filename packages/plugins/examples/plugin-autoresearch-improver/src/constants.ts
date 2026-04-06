@@ -22,12 +22,14 @@ export const ACTION_KEYS = {
   enqueueOptimizerRun: "enqueue-optimizer-run",
   approveOptimizerRun: "approve-optimizer-run",
   rejectOptimizerRun: "reject-optimizer-run",
-  createIssueFromRun: "create-issue-from-run"
+  createIssueFromRun: "create-issue-from-run",
+  createPullRequestFromRun: "create-pull-request-from-run"
 } as const;
 
 export const TOOL_KEYS = {
   listOptimizers: "list-optimizers",
-  createIssueFromAcceptedRun: "create-issue-from-accepted-run"
+  createIssueFromAcceptedRun: "create-issue-from-accepted-run",
+  createPullRequestFromAcceptedRun: "create-pull-request-from-accepted-run"
 } as const;
 
 export const JOB_KEYS = {

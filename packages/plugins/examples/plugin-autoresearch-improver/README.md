@@ -9,7 +9,7 @@ It implements the core loop:
 3. run each candidate under a fixed budget
 4. keep only strict improvements
 
-This version goes further than the initial example. It adds repeated scoring, structured JSON metrics, diff artifacts, queueing, dry runs, and manual approval before workspace write-back.
+This version goes further than the initial example. It adds repeated scoring, structured JSON metrics, git-worktree sandboxes, separated scorer execution, diff artifacts, queueing, dry runs, manual approval, and PR generation from accepted runs.
 
 ## What the plugin adds
 
@@ -20,7 +20,7 @@ The plugin registers:
 - a project sidebar link
 - a dashboard widget
 - an hourly sweep job
-- agent tools for listing optimizers and creating issues from accepted runs
+- agent tools for listing optimizers, creating issues from accepted runs, and creating PRs from accepted runs
 
 The worker stores optimizer definitions and run history as plugin-owned entities, so everything remains scoped to the relevant Paperclip project.
 
@@ -43,6 +43,8 @@ Each optimizer stores:
 - `scoreAggregator`
 - `minimumImprovement`
 - per-step budgets
+- `sandboxStrategy`
+- `scorerIsolationMode`
 - `applyMode`
 - `requireHumanApproval`
 - `hiddenScoring`
@@ -50,6 +52,7 @@ Each optimizer stores:
 - `autoCreateIssueOnGuardrailFailure`
 - `autoCreateIssueOnStagnation`
 - `stagnationIssueThreshold`
+- optional proposal branch prefix, commit message, and PR command
 
 The built-in UI also ships three templates:
 
@@ -63,27 +66,29 @@ For each run, the plugin:
 
 1. resolves the project workspace
 2. measures the incumbent score if no best score exists yet
-3. copies the workspace into a sandbox
-4. writes `paperclip-optimizer-brief.json` into that sandbox
+3. creates either a copied sandbox or a detached git worktree
+4. writes the optimizer brief to a temp file outside the mutable surface
 5. runs the mutation command inside the sandbox
-6. runs the scorer `scoreRepeats` times
-7. aggregates the result with `median`, `mean`, `max`, or `min`
-8. runs the optional guardrail command
-9. computes a diff artifact and detects unauthorized file changes
-10. compares candidate versus incumbent using `minimumImprovement`
-11. either:
+6. runs the scorer in a separate execution workspace when configured
+7. runs the scorer `scoreRepeats` times
+8. aggregates the result with `median`, `mean`, `max`, or `min`
+9. runs the optional guardrail command
+10. computes a diff artifact and detects unauthorized file changes
+11. compares candidate versus incumbent using `minimumImprovement`
+12. either:
    - applies allowed paths immediately
    - records a pending approval candidate
    - records a dry-run candidate
    - rejects or invalidates the run
-12. stores the run record, outputs, structured metrics, diff, and queue state
+13. stores the run record, outputs, structured metrics, diff, queue state, and optional PR metadata
 
 ## Safety model
 
 The plugin is designed around a constrained-mutation model:
 
-- mutation happens in a copied sandbox
-- only listed `mutablePaths` are eligible for copy-back
+- mutation happens in an isolated copy or git worktree
+- scoring can run in a separate workspace from mutation
+- only listed `mutablePaths` are eligible for apply-back
 - changes outside the mutable surface are detected and recorded as unauthorized
 - the real workspace is not modified for rejected or invalid runs
 - manual approval and dry-run modes keep the candidate sandbox around for operator review
@@ -154,6 +159,18 @@ Strict improvements are stored as pending candidates. Operators can inspect the 
 
 Strict improvements are recorded as candidates, but nothing is copied back automatically. This is useful for proposal generation and review-only workflows.
 
+## Sandbox and scorer modes
+
+### `sandboxStrategy`
+
+- `git_worktree`: create a detached git worktree and apply accepted changes back as a git patch
+- `copy`: copy the workspace directory and apply accepted changes by syncing allowed paths
+
+### `scorerIsolationMode`
+
+- `separate_workspace`: copy the candidate workspace into a scorer-only sandbox before scoring
+- `same_workspace`: score directly in the mutation sandbox
+
 ## Environment passed to the mutator
 
 The mutation command runs in the sandbox with these environment variables:
@@ -166,6 +183,8 @@ The mutation command runs in the sandbox with these environment variables:
 - `PAPERCLIP_OPTIMIZER_SCORE_DIRECTION`
 - `PAPERCLIP_OPTIMIZER_BRIEF`
 - `PAPERCLIP_OPTIMIZER_APPLY_MODE`
+- `PAPERCLIP_OPTIMIZER_SANDBOX_STRATEGY`
+- `PAPERCLIP_OPTIMIZER_SCORER_ISOLATION`
 - `PAPERCLIP_OPTIMIZER_SCORE_REPEATS`
 - `PAPERCLIP_OPTIMIZER_SCORE_AGGREGATOR`
 - `PAPERCLIP_OPTIMIZER_MINIMUM_IMPROVEMENT`
@@ -189,10 +208,13 @@ Each run stores:
 - optional guardrail result
 - mutable paths
 - sandbox path when retained
+- scorer sandbox path when retained
+- git repo root and workspace-relative path for worktree-backed runs
 - diff stats
 - changed files
 - unauthorized changed files
 - patch preview
+- optional PR branch, commit, URL, and PR command result
 
 ## Queueing and automation
 
@@ -218,6 +240,39 @@ The plugin can create Paperclip issues from:
 - stagnation thresholds, if configured
 
 Generated issues include the objective, score delta, command summaries, changed files, unauthorized files, and a diff preview.
+
+## Pull request generation
+
+For applied runs, the plugin can:
+
+1. create a proposal branch
+2. stage only the run's changed files
+3. create a commit
+4. optionally execute a PR command such as `gh pr create`
+
+Useful optimizer fields:
+
+- `proposalBranchPrefix`
+- `proposalCommitMessage`
+- `proposalPrCommand`
+
+The PR command receives:
+
+- `PAPERCLIP_OPTIMIZER_ID`
+- `PAPERCLIP_OPTIMIZER_NAME`
+- `PAPERCLIP_OPTIMIZER_RUN_ID`
+- `PAPERCLIP_PROPOSAL_BRANCH`
+- `PAPERCLIP_PROPOSAL_COMMIT`
+
+## Approval UI
+
+The project tab now supports:
+
+- pending-run approval and rejection
+- run-to-run side-by-side comparison
+- diff and structured metric inspection
+- issue creation from any run
+- PR creation from applied runs
 
 ## Example setup
 
@@ -259,6 +314,8 @@ pnpm test
 
 Inside the Paperclip monorepo the package resolves `@paperclipai/plugin-sdk` through `workspace:*`.
 
+Research prompts for deeper design iteration live in [RESEARCH_PROMPTS.md](./RESEARCH_PROMPTS.md).
+
 ## Verification status
 
 This plugin has been verified against a live Paperclip `0.3.1` deployment with:
@@ -268,23 +325,28 @@ This plugin has been verified against a live Paperclip `0.3.1` deployment with:
 - UI contribution discovery returning the page, dashboard widget, project tab, and project sidebar item
 - in-container Vitest pass
 
-The strengthened runtime in this branch is designed to preserve that deployment path while adding:
+The strengthened runtime in this branch preserves that deployment path while adding:
 
 - repeated scoring
 - structured JSON scoring
+- git worktree sandboxing with patch apply
+- separate scorer execution workspaces
 - diff artifact capture
 - unauthorized change detection
 - queueing
 - manual approval and dry runs
 - auto-created issues on guardrail failure or stagnation
+- PR creation from applied runs
+- SDK harness e2e tests for accepted, pending, and rejected paths
 
 ## Current constraints
 
 - This is a trusted local-workspace plugin. It executes shell commands inside project workspaces.
-- Blind scoring is partial, not absolute. The scorer can be hidden from the mutator, but mutation and scoring still run under the same worker runtime.
-- Sandboxes are copied workspaces, not git worktrees.
+- Blind scoring is stronger than before, but still partial. Mutation and scoring are isolated at the workspace/executor level, not by a separate remote scoring service.
+- Git-backed PR creation assumes the workspace repo is in a committable state for the run's changed files.
 - Diff capture uses `git diff --no-index` for patch previews and falls back gracefully when diff generation is incomplete.
 - If `keepTmpDirs` is enabled, retained sandboxes will accumulate until manually cleaned.
+- Copy-mode sandboxes still exist for non-git workspaces or when operators prefer filesystem sync over git patch apply.
 
 ## Instance config
 

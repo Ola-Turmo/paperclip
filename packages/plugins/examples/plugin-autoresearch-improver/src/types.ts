@@ -5,6 +5,8 @@ export type ApplyMode = "automatic" | "manual_approval" | "dry_run";
 export type ScoreFormat = "number" | "json";
 export type ScoreAggregator = "median" | "mean" | "max" | "min";
 export type RunOutcome = "accepted" | "pending_approval" | "dry_run_candidate" | "rejected" | "invalid";
+export type SandboxStrategy = "copy" | "git_worktree";
+export type ScorerIsolationMode = "same_workspace" | "separate_workspace";
 
 export interface StructuredMetricResult {
   primary: number | null;
@@ -23,6 +25,15 @@ export interface RunDiffArtifact {
     additions: number;
     deletions: number;
   };
+}
+
+export interface PullRequestArtifact {
+  branchName?: string;
+  commitSha?: string;
+  pullRequestUrl?: string;
+  command?: string;
+  commandResult?: CommandExecutionResult;
+  createdAt?: string;
 }
 
 export interface OptimizerDefinition {
@@ -50,6 +61,8 @@ export interface OptimizerDefinition {
   guardrailBudgetSeconds?: number;
   hiddenScoring: boolean;
   autoRun: boolean;
+  sandboxStrategy: SandboxStrategy;
+  scorerIsolationMode: ScorerIsolationMode;
   applyMode: ApplyMode;
   status: OptimizerStatus;
   queueState: RunQueueState;
@@ -57,6 +70,9 @@ export interface OptimizerDefinition {
   autoCreateIssueOnGuardrailFailure: boolean;
   autoCreateIssueOnStagnation: boolean;
   stagnationIssueThreshold: number;
+  proposalBranchPrefix?: string;
+  proposalCommitMessage?: string;
+  proposalPrCommand?: string;
   notes?: string;
   bestScore?: number;
   bestRunId?: string;
@@ -88,6 +104,7 @@ export interface OptimizerRunRecord {
   companyId: string;
   projectId: string;
   workspaceId?: string;
+  baselineRunId?: string | null;
   startedAt: string;
   finishedAt: string;
   outcome: RunOutcome;
@@ -108,9 +125,14 @@ export interface OptimizerRunRecord {
   guardrail?: CommandExecutionResult;
   guardrailResult?: StructuredMetricResult | null;
   mutablePaths: string[];
-  sandboxStrategy: "copy" | "git_worktree";
+  sandboxStrategy: SandboxStrategy;
   sandboxPath?: string;
+  scorerIsolationMode: ScorerIsolationMode;
+  scorerSandboxPath?: string;
+  gitRepoRoot?: string;
+  gitWorkspaceRelativePath?: string;
   artifacts: RunDiffArtifact;
+  pullRequest?: PullRequestArtifact | null;
 }
 
 export interface PluginConfigValues {

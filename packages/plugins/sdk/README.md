@@ -59,7 +59,7 @@ The Paperclip repo includes several first-party example plugins under `packages/
 - `plugin-hello-world-example` for the smallest possible UI contribution
 - `plugin-file-browser-example` for workspace reads and writes
 - `plugin-kitchen-sink-example` for the broad runtime surface area
-- `plugin-autoresearch-improver` for Darwin-Derby style improve-score-ratchet loops over project workspaces, including structured scoring, diff artifacts, queueing, and approval-driven promotion
+- `plugin-autoresearch-improver` for Darwin-Derby style improve-score-ratchet loops over project workspaces, including structured scoring, git-worktree sandboxes, diff artifacts, queueing, approval-driven promotion, and PR generation
 
 ## Worker quick start
 
@@ -869,6 +869,8 @@ const harness = createTestHarness({ manifest });
 await plugin.definition.setup(harness.ctx);
 await harness.emit("issue.created", { issueId: "iss_1" }, { entityId: "iss_1", entityType: "issue" });
 ```
+
+The harness `seed()` helper can also preload project workspaces, which is useful for plugin tests that exercise `ctx.projects.listWorkspaces()` or `ctx.projects.getPrimaryWorkspace()`.
 
 ## Bundler presets
 

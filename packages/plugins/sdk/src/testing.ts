@@ -48,6 +48,7 @@ export interface TestHarness {
   seed(input: {
     companies?: Company[];
     projects?: Project[];
+    workspaces?: PluginWorkspace[];
     issues?: Issue[];
     issueComments?: IssueComment[];
     agents?: Agent[];
@@ -660,6 +661,16 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
     seed(input) {
       for (const row of input.companies ?? []) companies.set(row.id, row);
       for (const row of input.projects ?? []) projects.set(row.id, row);
+      for (const row of input.workspaces ?? []) {
+        const list = projectWorkspaces.get(row.projectId) ?? [];
+        const existingIndex = list.findIndex((entry) => entry.id === row.id);
+        if (existingIndex >= 0) {
+          list.splice(existingIndex, 1, row);
+        } else {
+          list.push(row);
+        }
+        projectWorkspaces.set(row.projectId, list);
+      }
       for (const row of input.issues ?? []) issues.set(row.id, row);
       for (const row of input.issueComments ?? []) {
         const list = issueComments.get(row.issueId) ?? [];

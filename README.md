@@ -257,7 +257,7 @@ See [doc/DEVELOPING.md](doc/DEVELOPING.md) for the full development guide.
 
 Find Plugins and more at [awesome-paperclip](https://github.com/gsxdsm/awesome-paperclip)
 
-First-party repo examples now include `plugin-autoresearch-improver`, which demonstrates a Darwin-Derby style improve-score-ratchet loop over Paperclip project workspaces with structured scorers, diff artifacts, queued runs, and manual approval flows.
+First-party repo examples now include `plugin-autoresearch-improver`, which demonstrates a Darwin-Derby style improve-score-ratchet loop over Paperclip project workspaces with git-worktree sandboxes, separated scorers, diff artifacts, queued runs, manual approval flows, and PR generation from accepted runs.
 
 ## Telemetry
 
