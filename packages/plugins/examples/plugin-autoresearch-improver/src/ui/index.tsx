@@ -8,7 +8,13 @@ import {
   type PluginWidgetProps
 } from "@paperclipai/plugin-sdk/ui";
 import { ACTION_KEYS, DATA_KEYS, PLUGIN_ID } from "../constants.js";
-import type { OptimizerDefinition, OptimizerRunRecord, OverviewData } from "../types.js";
+import type {
+  ApplyMode,
+  OptimizerDefinition,
+  OptimizerRunRecord,
+  OptimizerTemplate,
+  OverviewData
+} from "../types.js";
 
 type WorkspaceInfo = {
   id: string;
@@ -39,23 +45,41 @@ type FormState = {
   guardrailCommand: string;
   scoreDirection: "maximize" | "minimize";
   scorePattern: string;
+  scoreFormat: "number" | "json";
+  scoreKey: string;
+  guardrailFormat: "number" | "json";
+  guardrailKey: string;
+  scoreRepeats: string;
+  scoreAggregator: "median" | "mean" | "max" | "min";
+  minimumImprovement: string;
   mutationBudgetSeconds: string;
   scoreBudgetSeconds: string;
   guardrailBudgetSeconds: string;
   hiddenScoring: boolean;
   autoRun: boolean;
   status: "active" | "paused";
+  applyMode: ApplyMode;
+  requireHumanApproval: boolean;
+  autoCreateIssueOnGuardrailFailure: boolean;
+  autoCreateIssueOnStagnation: boolean;
+  stagnationIssueThreshold: string;
   notes: string;
 };
 
 const shellExample = `codex exec "Read $PAPERCLIP_OPTIMIZER_BRIEF and improve the selected files only."`;
-const scoreExample = `pnpm test -- --runInBand && node -e "console.log('SCORE=1')"`;
+const scoreExample = `node -e "console.log(JSON.stringify({ primary: 1, metrics: { testPassRate: 1 }, guardrails: { noRegression: true } }))"`;
+
+const pageStyle: CSSProperties = {
+  display: "grid",
+  gap: 16
+};
 
 const cardStyle: CSSProperties = {
-  border: "1px solid rgba(100, 116, 139, 0.3)",
-  borderRadius: 12,
-  padding: 16,
-  background: "rgba(15, 23, 42, 0.02)"
+  border: "1px solid rgba(100, 116, 139, 0.22)",
+  borderRadius: 16,
+  padding: 18,
+  background: "linear-gradient(180deg, rgba(248, 250, 252, 0.92), rgba(255, 255, 255, 0.98))",
+  boxShadow: "0 12px 32px rgba(15, 23, 42, 0.06)"
 };
 
 const inputStyle: CSSProperties = {
@@ -92,12 +116,24 @@ function emptyForm(workspaceId = ""): FormState {
     guardrailCommand: "",
     scoreDirection: "maximize",
     scorePattern: "",
+    scoreFormat: "json",
+    scoreKey: "primary",
+    guardrailFormat: "json",
+    guardrailKey: "guardrails",
+    scoreRepeats: "3",
+    scoreAggregator: "median",
+    minimumImprovement: "0",
     mutationBudgetSeconds: "300",
     scoreBudgetSeconds: "180",
     guardrailBudgetSeconds: "",
     hiddenScoring: true,
     autoRun: false,
     status: "active",
+    applyMode: "manual_approval",
+    requireHumanApproval: true,
+    autoCreateIssueOnGuardrailFailure: true,
+    autoCreateIssueOnStagnation: false,
+    stagnationIssueThreshold: "5",
     notes: ""
   };
 }
@@ -114,14 +150,181 @@ function formFromOptimizer(optimizer: OptimizerDefinition): FormState {
     guardrailCommand: optimizer.guardrailCommand ?? "",
     scoreDirection: optimizer.scoreDirection,
     scorePattern: optimizer.scorePattern ?? "",
+    scoreFormat: optimizer.scoreFormat,
+    scoreKey: optimizer.scoreKey ?? "",
+    guardrailFormat: optimizer.guardrailFormat,
+    guardrailKey: optimizer.guardrailKey ?? "",
+    scoreRepeats: String(optimizer.scoreRepeats),
+    scoreAggregator: optimizer.scoreAggregator,
+    minimumImprovement: String(optimizer.minimumImprovement),
     mutationBudgetSeconds: String(optimizer.mutationBudgetSeconds),
     scoreBudgetSeconds: String(optimizer.scoreBudgetSeconds),
     guardrailBudgetSeconds: optimizer.guardrailBudgetSeconds ? String(optimizer.guardrailBudgetSeconds) : "",
     hiddenScoring: optimizer.hiddenScoring,
     autoRun: optimizer.autoRun,
     status: optimizer.status,
+    applyMode: optimizer.applyMode,
+    requireHumanApproval: optimizer.requireHumanApproval,
+    autoCreateIssueOnGuardrailFailure: optimizer.autoCreateIssueOnGuardrailFailure,
+    autoCreateIssueOnStagnation: optimizer.autoCreateIssueOnStagnation,
+    stagnationIssueThreshold: String(optimizer.stagnationIssueThreshold),
     notes: optimizer.notes ?? ""
   };
+}
+
+function applyTemplate(template: OptimizerTemplate, current: FormState, workspaceId: string): FormState {
+  const values = template.values;
+  return {
+    ...current,
+    name: values.name ?? current.name,
+    objective: values.objective ?? current.objective,
+    workspaceId: values.workspaceId ?? workspaceId ?? current.workspaceId,
+    mutablePaths: values.mutablePaths ? values.mutablePaths.join("\n") : current.mutablePaths,
+    mutationCommand: values.mutationCommand ?? current.mutationCommand,
+    scoreCommand: values.scoreCommand ?? current.scoreCommand,
+    guardrailCommand: values.guardrailCommand ?? current.guardrailCommand,
+    scoreDirection: values.scoreDirection ?? current.scoreDirection,
+    scorePattern: values.scorePattern ?? current.scorePattern,
+    scoreFormat: values.scoreFormat ?? current.scoreFormat,
+    scoreKey: values.scoreKey ?? current.scoreKey,
+    guardrailFormat: values.guardrailFormat ?? current.guardrailFormat,
+    guardrailKey: values.guardrailKey ?? current.guardrailKey,
+    scoreRepeats: values.scoreRepeats != null ? String(values.scoreRepeats) : current.scoreRepeats,
+    scoreAggregator: values.scoreAggregator ?? current.scoreAggregator,
+    minimumImprovement: values.minimumImprovement != null ? String(values.minimumImprovement) : current.minimumImprovement,
+    mutationBudgetSeconds: values.mutationBudgetSeconds != null ? String(values.mutationBudgetSeconds) : current.mutationBudgetSeconds,
+    scoreBudgetSeconds: values.scoreBudgetSeconds != null ? String(values.scoreBudgetSeconds) : current.scoreBudgetSeconds,
+    guardrailBudgetSeconds: values.guardrailBudgetSeconds != null ? String(values.guardrailBudgetSeconds) : current.guardrailBudgetSeconds,
+    hiddenScoring: values.hiddenScoring ?? current.hiddenScoring,
+    autoRun: values.autoRun ?? current.autoRun,
+    status: values.status ?? current.status,
+    applyMode: values.applyMode ?? current.applyMode,
+    requireHumanApproval: values.requireHumanApproval ?? current.requireHumanApproval,
+    autoCreateIssueOnGuardrailFailure: values.autoCreateIssueOnGuardrailFailure ?? current.autoCreateIssueOnGuardrailFailure,
+    autoCreateIssueOnStagnation: values.autoCreateIssueOnStagnation ?? current.autoCreateIssueOnStagnation,
+    stagnationIssueThreshold: values.stagnationIssueThreshold != null ? String(values.stagnationIssueThreshold) : current.stagnationIssueThreshold,
+    notes: values.notes ?? current.notes
+  };
+}
+
+function toActionPayload(form: FormState) {
+  return {
+    optimizerId: form.optimizerId,
+    name: form.name,
+    objective: form.objective,
+    workspaceId: form.workspaceId || undefined,
+    mutablePaths: form.mutablePaths,
+    mutationCommand: form.mutationCommand,
+    scoreCommand: form.scoreCommand,
+    guardrailCommand: form.guardrailCommand || undefined,
+    scoreDirection: form.scoreDirection,
+    scorePattern: form.scorePattern || undefined,
+    scoreFormat: form.scoreFormat,
+    scoreKey: form.scoreKey || undefined,
+    guardrailFormat: form.guardrailFormat,
+    guardrailKey: form.guardrailKey || undefined,
+    scoreRepeats: Number(form.scoreRepeats || 0),
+    scoreAggregator: form.scoreAggregator,
+    minimumImprovement: Number(form.minimumImprovement || 0),
+    mutationBudgetSeconds: Number(form.mutationBudgetSeconds || 0),
+    scoreBudgetSeconds: Number(form.scoreBudgetSeconds || 0),
+    guardrailBudgetSeconds: form.guardrailBudgetSeconds ? Number(form.guardrailBudgetSeconds) : undefined,
+    hiddenScoring: form.hiddenScoring,
+    autoRun: form.autoRun,
+    status: form.status,
+    applyMode: form.applyMode,
+    requireHumanApproval: form.requireHumanApproval,
+    autoCreateIssueOnGuardrailFailure: form.autoCreateIssueOnGuardrailFailure,
+    autoCreateIssueOnStagnation: form.autoCreateIssueOnStagnation,
+    stagnationIssueThreshold: Number(form.stagnationIssueThreshold || 0),
+    notes: form.notes || undefined
+  };
+}
+
+function formatScore(value: number | null | undefined): string {
+  return value == null ? "n/a" : String(value);
+}
+
+function statusTone(outcome: string): string {
+  if (outcome === "accepted") return "#166534";
+  if (outcome === "pending_approval") return "#1d4ed8";
+  if (outcome === "dry_run_candidate") return "#7c2d12";
+  if (outcome === "invalid") return "#b91c1c";
+  return "#334155";
+}
+
+function RunCard({
+  run,
+  onApprove,
+  onReject,
+  onCreateIssue
+}: {
+  run: OptimizerRunRecord;
+  onApprove: (runId: string) => Promise<void>;
+  onReject: (runId: string) => Promise<void>;
+  onCreateIssue: (runId: string) => Promise<void>;
+}) {
+  const repeatSummary = run.scoringRepeats
+    .map((entry, index) => `#${index + 1}: ${formatScore(entry.score)} (${entry.execution.exitCode ?? "null"})`)
+    .join(" | ");
+
+  return (
+    <div style={{ border: "1px solid rgba(148, 163, 184, 0.35)", borderRadius: 12, padding: 14, background: "white" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <strong style={{ color: statusTone(run.outcome) }}>{run.outcome}</strong>
+        <span>{new Date(run.startedAt).toLocaleString()}</span>
+      </div>
+      <div style={{ marginTop: 6 }}>{run.reason}</div>
+      <div style={{ marginTop: 8, fontSize: 13, opacity: 0.85 }}>
+        Baseline {formatScore(run.baselineScore)} | Candidate {formatScore(run.candidateScore)} | Approval {run.approvalStatus}
+      </div>
+      <div style={{ marginTop: 6, fontSize: 13, opacity: 0.85 }}>
+        Diff {run.artifacts.stats.files} files, +{run.artifacts.stats.additions}, -{run.artifacts.stats.deletions}
+      </div>
+      {run.artifacts.unauthorizedChangedFiles.length > 0 ? (
+        <div style={{ marginTop: 6, color: "#b91c1c", fontSize: 13 }}>
+          Unauthorized changes: {run.artifacts.unauthorizedChangedFiles.join(", ")}
+        </div>
+      ) : null}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+        {run.approvalStatus === "pending" ? (
+          <>
+            <button type="button" style={primaryButtonStyle} onClick={() => void onApprove(run.runId)}>
+              Approve
+            </button>
+            <button type="button" style={buttonStyle} onClick={() => void onReject(run.runId)}>
+              Reject
+            </button>
+          </>
+        ) : null}
+        <button type="button" style={buttonStyle} onClick={() => void onCreateIssue(run.runId)}>
+          Create issue
+        </button>
+      </div>
+      <details style={{ marginTop: 10 }}>
+        <summary>Artifacts and command output</summary>
+        <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+          <div style={{ fontSize: 13 }}>Scoring repeats: {repeatSummary || "none"}</div>
+          <div style={{ fontSize: 13 }}>
+            Changed files: {run.artifacts.changedFiles.length > 0 ? run.artifacts.changedFiles.join(", ") : "none"}
+          </div>
+          <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, margin: 0 }}>
+{`Patch:
+${run.artifacts.patch || "(no patch)"}
+
+Mutation (${run.mutation.exitCode ?? "null"}):
+${run.mutation.stdout || run.mutation.stderr || "(no output)"}
+
+Score (${run.scoring.exitCode ?? "null"}):
+${run.scoring.stdout || run.scoring.stderr || "(no output)"}
+
+Guardrail (${run.guardrail?.exitCode ?? "n/a"}):
+${run.guardrail ? (run.guardrail.stdout || run.guardrail.stderr || "(no output)") : "(not configured)"}`}
+          </pre>
+        </div>
+      </details>
+    </div>
+  );
 }
 
 function OptimizerEditor({
@@ -133,6 +336,7 @@ function OptimizerEditor({
 }) {
   const [selectedProjectId, setSelectedProjectId] = useState(initialProjectId ?? "");
   const [selectedOptimizerId, setSelectedOptimizerId] = useState("");
+  const [selectedTemplate, setSelectedTemplate] = useState("");
   const [form, setForm] = useState<FormState>(() => emptyForm(""));
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -140,6 +344,9 @@ function OptimizerEditor({
   const saveOptimizer = usePluginAction(ACTION_KEYS.saveOptimizer);
   const deleteOptimizer = usePluginAction(ACTION_KEYS.deleteOptimizer);
   const runOptimizerCycle = usePluginAction(ACTION_KEYS.runOptimizerCycle);
+  const enqueueOptimizerRun = usePluginAction(ACTION_KEYS.enqueueOptimizerRun);
+  const approveOptimizerRun = usePluginAction(ACTION_KEYS.approveOptimizerRun);
+  const rejectOptimizerRun = usePluginAction(ACTION_KEYS.rejectOptimizerRun);
   const createIssueFromRun = usePluginAction(ACTION_KEYS.createIssueFromRun);
 
   const projectsQuery = usePluginData<ProjectInfo[]>(DATA_KEYS.projects, companyId ? { companyId } : {});
@@ -153,8 +360,9 @@ function OptimizerEditor({
   );
   const runsQuery = usePluginData<OptimizerRunRecord[]>(
     DATA_KEYS.optimizerRuns,
-    selectedOptimizerId ? { optimizerId: selectedOptimizerId } : {}
+    selectedOptimizerId ? { optimizerId: selectedOptimizerId, projectId: selectedProjectId } : {}
   );
+  const templatesQuery = usePluginData<OptimizerTemplate[]>(DATA_KEYS.optimizerTemplates, {});
 
   useEffect(() => {
     if (!selectedProjectId && initialProjectId) {
@@ -181,11 +389,18 @@ function OptimizerEditor({
   }, [selectedOptimizer]);
 
   async function refreshAll() {
-    await Promise.all([optimizersQuery.refresh(), runsQuery.refresh(), workspacesQuery.refresh()]);
+    await Promise.all([
+      projectsQuery.refresh(),
+      workspacesQuery.refresh(),
+      optimizersQuery.refresh(),
+      runsQuery.refresh(),
+      templatesQuery.refresh()
+    ]);
   }
 
   function resetForm() {
     setSelectedOptimizerId("");
+    setSelectedTemplate("");
     setForm(emptyForm(workspacesQuery.data?.[0]?.id ?? ""));
   }
 
@@ -198,28 +413,36 @@ function OptimizerEditor({
     setMessage("");
     try {
       const result = await saveOptimizer({
-        optimizerId: form.optimizerId,
         companyId,
         projectId: selectedProjectId,
-        workspaceId: form.workspaceId || undefined,
-        name: form.name,
-        objective: form.objective,
-        mutablePaths: form.mutablePaths,
-        mutationCommand: form.mutationCommand,
-        scoreCommand: form.scoreCommand,
-        guardrailCommand: form.guardrailCommand || undefined,
-        scoreDirection: form.scoreDirection,
-        scorePattern: form.scorePattern || undefined,
-        mutationBudgetSeconds: Number(form.mutationBudgetSeconds || 0),
-        scoreBudgetSeconds: Number(form.scoreBudgetSeconds || 0),
-        guardrailBudgetSeconds: form.guardrailBudgetSeconds ? Number(form.guardrailBudgetSeconds) : undefined,
-        hiddenScoring: form.hiddenScoring,
-        autoRun: form.autoRun,
-        status: form.status,
-        notes: form.notes || undefined
-      });
-      setSelectedOptimizerId((result as OptimizerDefinition).optimizerId);
+        ...toActionPayload(form)
+      }) as OptimizerDefinition;
+      setSelectedOptimizerId(result.optimizerId);
       setMessage("Optimizer saved.");
+      await refreshAll();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleRun(mode: "run" | "queue") {
+    if (!selectedOptimizerId || !selectedProjectId) {
+      setErrorMessage("Save the optimizer before running it.");
+      return;
+    }
+    setErrorMessage("");
+    setMessage("");
+    try {
+      if (mode === "queue") {
+        await enqueueOptimizerRun({ projectId: selectedProjectId, optimizerId: selectedOptimizerId });
+        setMessage("Optimizer queued.");
+      } else {
+        const result = await runOptimizerCycle({
+          projectId: selectedProjectId,
+          optimizerId: selectedOptimizerId
+        }) as RunCycleResult;
+        setMessage(`${result.run.outcome}: ${result.run.reason}`);
+      }
       await refreshAll();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
@@ -240,37 +463,41 @@ function OptimizerEditor({
     }
   }
 
-  async function handleRun() {
-    if (!selectedOptimizerId || !selectedProjectId) {
-      setErrorMessage("Save the optimizer before running it.");
-      return;
-    }
+  async function handleApprove(runId: string) {
+    if (!selectedProjectId || !selectedOptimizerId) return;
     setErrorMessage("");
     setMessage("");
     try {
-      const result = await runOptimizerCycle({
-        projectId: selectedProjectId,
-        optimizerId: selectedOptimizerId
-      }) as RunCycleResult;
-      setMessage(
-        result.run.accepted
-          ? `Accepted improvement with score ${result.run.candidateScore ?? "n/a"}.`
-          : `Rejected candidate. ${result.run.reason}`
-      );
+      await approveOptimizerRun({ projectId: selectedProjectId, optimizerId: selectedOptimizerId, runId });
+      setMessage("Run approved and promoted.");
       await refreshAll();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     }
   }
 
-  async function handleCreateIssue() {
-    if (!selectedOptimizerId || !selectedProjectId) return;
+  async function handleReject(runId: string) {
+    if (!selectedProjectId || !selectedOptimizerId) return;
+    setErrorMessage("");
+    setMessage("");
+    try {
+      await rejectOptimizerRun({ projectId: selectedProjectId, optimizerId: selectedOptimizerId, runId });
+      setMessage("Pending run rejected.");
+      await refreshAll();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleCreateIssue(runId?: string) {
+    if (!selectedProjectId || !selectedOptimizerId) return;
     setErrorMessage("");
     setMessage("");
     try {
       const issue = await createIssueFromRun({
         projectId: selectedProjectId,
-        optimizerId: selectedOptimizerId
+        optimizerId: selectedOptimizerId,
+        runId
       }) as { title: string };
       setMessage(`Created issue "${issue.title}".`);
     } catch (error) {
@@ -278,85 +505,85 @@ function OptimizerEditor({
     }
   }
 
+  const pendingRuns = (runsQuery.data ?? []).filter((run) => run.approvalStatus === "pending").length;
+
   return (
-    <div style={{ display: "grid", gap: 16 }}>
+    <div style={pageStyle}>
       <section style={cardStyle}>
-        <div style={{ display: "grid", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 12 }}>
           <div>
             <strong>Project</strong>
-            <div style={{ marginTop: 6 }}>
-              <select
-                style={inputStyle}
-                value={selectedProjectId}
-                onChange={(event) => {
-                  setSelectedProjectId(event.target.value);
-                  setSelectedOptimizerId("");
-                  setForm(emptyForm(""));
-                }}
-              >
-                <option value="">Select a project</option>
-                {(projectsQuery.data ?? []).map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name ?? project.title ?? project.id}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <select
+              style={{ ...inputStyle, marginTop: 6 }}
+              value={selectedProjectId}
+              onChange={(event) => {
+                setSelectedProjectId(event.target.value);
+                resetForm();
+              }}
+            >
+              <option value="">Select a project</option>
+              {(projectsQuery.data ?? []).map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name ?? project.title ?? project.id}
+                </option>
+              ))}
+            </select>
           </div>
-
           <div>
             <strong>Existing optimizer</strong>
-            <div style={{ marginTop: 6, display: "flex", gap: 8 }}>
-              <select
-                style={{ ...inputStyle, flex: 1 }}
-                value={selectedOptimizerId}
-                onChange={(event) => setSelectedOptimizerId(event.target.value)}
-              >
-                <option value="">New optimizer</option>
-                {(optimizersQuery.data ?? []).map((optimizer) => (
-                  <option key={optimizer.optimizerId} value={optimizer.optimizerId}>
-                    {optimizer.name}
-                  </option>
-                ))}
-              </select>
-              <button type="button" style={buttonStyle} onClick={resetForm}>
-                Reset
-              </button>
-            </div>
+            <select
+              style={{ ...inputStyle, marginTop: 6 }}
+              value={selectedOptimizerId}
+              onChange={(event) => setSelectedOptimizerId(event.target.value)}
+            >
+              <option value="">New optimizer</option>
+              {(optimizersQuery.data ?? []).map((optimizer) => (
+                <option key={optimizer.optimizerId} value={optimizer.optimizerId}>
+                  {optimizer.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <strong>Template</strong>
+            <select
+              style={{ ...inputStyle, marginTop: 6 }}
+              value={selectedTemplate}
+              onChange={(event) => {
+                const key = event.target.value;
+                setSelectedTemplate(key);
+                const template = (templatesQuery.data ?? []).find((entry) => entry.key === key);
+                if (template) {
+                  setForm((current) => applyTemplate(template, current, workspacesQuery.data?.[0]?.id ?? ""));
+                }
+              }}
+            >
+              <option value="">Start from template</option>
+              {(templatesQuery.data ?? []).map((template) => (
+                <option key={template.key} value={template.key}>
+                  {template.name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
+        {selectedOptimizer ? (
+          <div style={{ marginTop: 12, fontSize: 13, opacity: 0.82 }}>
+            Queue {selectedOptimizer.queueState} | Best {formatScore(selectedOptimizer.bestScore)} | Accepted {selectedOptimizer.acceptedRuns} | Pending {selectedOptimizer.pendingApprovalRuns}
+          </div>
+        ) : null}
       </section>
 
       <section style={cardStyle}>
         <div style={{ display: "grid", gap: 12 }}>
-          <div>
-            <strong>Name</strong>
-            <input
-              style={{ ...inputStyle, marginTop: 6 }}
-              value={form.name}
-              onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-              placeholder="Paperclip onboarding conversion"
-            />
-          </div>
-
-          <div>
-            <strong>Objective</strong>
-            <textarea
-              style={{ ...inputStyle, minHeight: 86, marginTop: 6 }}
-              value={form.objective}
-              onChange={(event) => setForm((prev) => ({ ...prev, objective: event.target.value }))}
-              placeholder="Improve the onboarding funnel without breaking auth or page speed."
-            />
-          </div>
-
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
+              <strong>Name</strong>
+              <input style={{ ...inputStyle, marginTop: 6 }} value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} />
+            </div>
+            <div>
               <strong>Workspace</strong>
-              <select
-                style={{ ...inputStyle, marginTop: 6 }}
-                value={form.workspaceId}
-                onChange={(event) => setForm((prev) => ({ ...prev, workspaceId: event.target.value }))}
-              >
+              <select style={{ ...inputStyle, marginTop: 6 }} value={form.workspaceId} onChange={(event) => setForm((prev) => ({ ...prev, workspaceId: event.target.value }))}>
                 <option value="">Primary workspace</option>
                 {(workspacesQuery.data ?? []).map((workspace) => (
                   <option key={workspace.id} value={workspace.id}>
@@ -365,153 +592,152 @@ function OptimizerEditor({
                 ))}
               </select>
             </div>
+          </div>
 
-            <div>
-              <strong>Mutable paths</strong>
-              <textarea
-                style={{ ...inputStyle, minHeight: 86, marginTop: 6 }}
-                value={form.mutablePaths}
-                onChange={(event) => setForm((prev) => ({ ...prev, mutablePaths: event.target.value }))}
-                placeholder=".\nsrc/\nREADME.md"
-              />
-            </div>
+          <div>
+            <strong>Objective</strong>
+            <textarea style={{ ...inputStyle, minHeight: 90, marginTop: 6 }} value={form.objective} onChange={(event) => setForm((prev) => ({ ...prev, objective: event.target.value }))} />
+          </div>
+
+          <div>
+            <strong>Mutable paths</strong>
+            <textarea style={{ ...inputStyle, minHeight: 86, marginTop: 6 }} value={form.mutablePaths} onChange={(event) => setForm((prev) => ({ ...prev, mutablePaths: event.target.value }))} />
           </div>
 
           <div>
             <strong>Mutation command</strong>
-            <textarea
-              style={{ ...inputStyle, minHeight: 88, marginTop: 6 }}
-              value={form.mutationCommand}
-              onChange={(event) => setForm((prev) => ({ ...prev, mutationCommand: event.target.value }))}
-            />
-            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
-              This runs in a copied workspace sandbox. It receives the objective and mutable paths through environment variables and a brief file.
+            <textarea style={{ ...inputStyle, minHeight: 94, marginTop: 6 }} value={form.mutationCommand} onChange={(event) => setForm((prev) => ({ ...prev, mutationCommand: event.target.value }))} />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <strong>Score command</strong>
+              <textarea style={{ ...inputStyle, minHeight: 94, marginTop: 6 }} value={form.scoreCommand} onChange={(event) => setForm((prev) => ({ ...prev, scoreCommand: event.target.value }))} />
             </div>
-          </div>
-
-          <div>
-            <strong>Score command</strong>
-            <textarea
-              style={{ ...inputStyle, minHeight: 74, marginTop: 6 }}
-              value={form.scoreCommand}
-              onChange={(event) => setForm((prev) => ({ ...prev, scoreCommand: event.target.value }))}
-            />
-          </div>
-
-          <div>
-            <strong>Guardrail command</strong>
-            <input
-              style={{ ...inputStyle, marginTop: 6 }}
-              value={form.guardrailCommand}
-              onChange={(event) => setForm((prev) => ({ ...prev, guardrailCommand: event.target.value }))}
-              placeholder="Optional. Exit 0 to allow acceptance."
-            />
+            <div>
+              <strong>Guardrail command</strong>
+              <textarea style={{ ...inputStyle, minHeight: 94, marginTop: 6 }} value={form.guardrailCommand} onChange={(event) => setForm((prev) => ({ ...prev, guardrailCommand: event.target.value }))} placeholder="Optional. Exit 0 or return guardrails=true." />
+            </div>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
             <div>
               <strong>Direction</strong>
-              <select
-                style={{ ...inputStyle, marginTop: 6 }}
-                value={form.scoreDirection}
-                onChange={(event) => setForm((prev) => ({ ...prev, scoreDirection: event.target.value as "maximize" | "minimize" }))}
-              >
+              <select style={{ ...inputStyle, marginTop: 6 }} value={form.scoreDirection} onChange={(event) => setForm((prev) => ({ ...prev, scoreDirection: event.target.value as "maximize" | "minimize" }))}>
                 <option value="maximize">Maximize</option>
                 <option value="minimize">Minimize</option>
               </select>
             </div>
-
             <div>
-              <strong>Mutation budget</strong>
-              <input
-                style={{ ...inputStyle, marginTop: 6 }}
-                value={form.mutationBudgetSeconds}
-                onChange={(event) => setForm((prev) => ({ ...prev, mutationBudgetSeconds: event.target.value }))}
-              />
+              <strong>Score format</strong>
+              <select style={{ ...inputStyle, marginTop: 6 }} value={form.scoreFormat} onChange={(event) => setForm((prev) => ({ ...prev, scoreFormat: event.target.value as "number" | "json" }))}>
+                <option value="json">JSON</option>
+                <option value="number">Number</option>
+              </select>
             </div>
-
             <div>
-              <strong>Score budget</strong>
-              <input
-                style={{ ...inputStyle, marginTop: 6 }}
-                value={form.scoreBudgetSeconds}
-                onChange={(event) => setForm((prev) => ({ ...prev, scoreBudgetSeconds: event.target.value }))}
-              />
+              <strong>Score key</strong>
+              <input style={{ ...inputStyle, marginTop: 6 }} value={form.scoreKey} onChange={(event) => setForm((prev) => ({ ...prev, scoreKey: event.target.value }))} placeholder="primary" />
             </div>
-
             <div>
-              <strong>Guardrail budget</strong>
-              <input
-                style={{ ...inputStyle, marginTop: 6 }}
-                value={form.guardrailBudgetSeconds}
-                onChange={(event) => setForm((prev) => ({ ...prev, guardrailBudgetSeconds: event.target.value }))}
-                placeholder="Optional"
-              />
+              <strong>Score pattern</strong>
+              <input style={{ ...inputStyle, marginTop: 6 }} value={form.scorePattern} onChange={(event) => setForm((prev) => ({ ...prev, scorePattern: event.target.value }))} placeholder="Optional regex for number mode" />
             </div>
           </div>
 
-          <div>
-            <strong>Score pattern</strong>
-            <input
-              style={{ ...inputStyle, marginTop: 6 }}
-              value={form.scorePattern}
-              onChange={(event) => setForm((prev) => ({ ...prev, scorePattern: event.target.value }))}
-              placeholder="Optional regex. First capture group becomes the score."
-            />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+            <div>
+              <strong>Guardrail format</strong>
+              <select style={{ ...inputStyle, marginTop: 6 }} value={form.guardrailFormat} onChange={(event) => setForm((prev) => ({ ...prev, guardrailFormat: event.target.value as "number" | "json" }))}>
+                <option value="json">JSON</option>
+                <option value="number">Number</option>
+              </select>
+            </div>
+            <div>
+              <strong>Guardrail key</strong>
+              <input style={{ ...inputStyle, marginTop: 6 }} value={form.guardrailKey} onChange={(event) => setForm((prev) => ({ ...prev, guardrailKey: event.target.value }))} placeholder="guardrails" />
+            </div>
+            <div>
+              <strong>Repeats</strong>
+              <input style={{ ...inputStyle, marginTop: 6 }} value={form.scoreRepeats} onChange={(event) => setForm((prev) => ({ ...prev, scoreRepeats: event.target.value }))} />
+            </div>
+            <div>
+              <strong>Aggregator</strong>
+              <select style={{ ...inputStyle, marginTop: 6 }} value={form.scoreAggregator} onChange={(event) => setForm((prev) => ({ ...prev, scoreAggregator: event.target.value as FormState["scoreAggregator"] }))}>
+                <option value="median">Median</option>
+                <option value="mean">Mean</option>
+                <option value="max">Max</option>
+                <option value="min">Min</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+            <div>
+              <strong>Minimum improvement</strong>
+              <input style={{ ...inputStyle, marginTop: 6 }} value={form.minimumImprovement} onChange={(event) => setForm((prev) => ({ ...prev, minimumImprovement: event.target.value }))} />
+            </div>
+            <div>
+              <strong>Mutation budget</strong>
+              <input style={{ ...inputStyle, marginTop: 6 }} value={form.mutationBudgetSeconds} onChange={(event) => setForm((prev) => ({ ...prev, mutationBudgetSeconds: event.target.value }))} />
+            </div>
+            <div>
+              <strong>Score budget</strong>
+              <input style={{ ...inputStyle, marginTop: 6 }} value={form.scoreBudgetSeconds} onChange={(event) => setForm((prev) => ({ ...prev, scoreBudgetSeconds: event.target.value }))} />
+            </div>
+            <div>
+              <strong>Guardrail budget</strong>
+              <input style={{ ...inputStyle, marginTop: 6 }} value={form.guardrailBudgetSeconds} onChange={(event) => setForm((prev) => ({ ...prev, guardrailBudgetSeconds: event.target.value }))} />
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+            <div>
+              <strong>Apply mode</strong>
+              <select style={{ ...inputStyle, marginTop: 6 }} value={form.applyMode} onChange={(event) => setForm((prev) => ({ ...prev, applyMode: event.target.value as ApplyMode, requireHumanApproval: event.target.value === "manual_approval" ? true : prev.requireHumanApproval }))}>
+                <option value="manual_approval">Manual approval</option>
+                <option value="automatic">Automatic apply</option>
+                <option value="dry_run">Dry run</option>
+              </select>
+            </div>
+            <div>
+              <strong>Stagnation threshold</strong>
+              <input style={{ ...inputStyle, marginTop: 6 }} value={form.stagnationIssueThreshold} onChange={(event) => setForm((prev) => ({ ...prev, stagnationIssueThreshold: event.target.value }))} />
+            </div>
+            <div>
+              <strong>Status</strong>
+              <select style={{ ...inputStyle, marginTop: 6 }} value={form.status} onChange={(event) => setForm((prev) => ({ ...prev, status: event.target.value as "active" | "paused" }))}>
+                <option value="active">Active</option>
+                <option value="paused">Paused</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+            <label><input type="checkbox" checked={form.hiddenScoring} onChange={(event) => setForm((prev) => ({ ...prev, hiddenScoring: event.target.checked }))} /> Hide score command from mutator</label>
+            <label><input type="checkbox" checked={form.autoRun} onChange={(event) => setForm((prev) => ({ ...prev, autoRun: event.target.checked }))} /> Auto-run in sweep</label>
+            <label><input type="checkbox" checked={form.requireHumanApproval} onChange={(event) => setForm((prev) => ({ ...prev, requireHumanApproval: event.target.checked, applyMode: event.target.checked ? "manual_approval" : prev.applyMode === "manual_approval" ? "automatic" : prev.applyMode }))} /> Require human approval</label>
+            <label><input type="checkbox" checked={form.autoCreateIssueOnGuardrailFailure} onChange={(event) => setForm((prev) => ({ ...prev, autoCreateIssueOnGuardrailFailure: event.target.checked }))} /> Issue on guardrail failure</label>
+            <label><input type="checkbox" checked={form.autoCreateIssueOnStagnation} onChange={(event) => setForm((prev) => ({ ...prev, autoCreateIssueOnStagnation: event.target.checked }))} /> Issue on stagnation</label>
           </div>
 
           <div>
             <strong>Notes</strong>
-            <textarea
-              style={{ ...inputStyle, minHeight: 70, marginTop: 6 }}
-              value={form.notes}
-              onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))}
-              placeholder="Guardrails, operator notes, or how the score should be interpreted."
-            />
-          </div>
-
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={form.hiddenScoring}
-                onChange={(event) => setForm((prev) => ({ ...prev, hiddenScoring: event.target.checked }))}
-              />
-              Hide score command from mutator
-            </label>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={form.autoRun}
-                onChange={(event) => setForm((prev) => ({ ...prev, autoRun: event.target.checked }))}
-              />
-              Auto-run in hourly sweep
-            </label>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={form.status === "paused"}
-                onChange={(event) => setForm((prev) => ({ ...prev, status: event.target.checked ? "paused" : "active" }))}
-              />
-              Paused
-            </label>
+            <textarea style={{ ...inputStyle, minHeight: 80, marginTop: 6 }} value={form.notes} onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))} />
           </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button type="button" style={primaryButtonStyle} onClick={() => void handleSave()}>
-              Save optimizer
-            </button>
-            <button type="button" style={buttonStyle} onClick={() => void handleRun()}>
-              Run cycle
-            </button>
-            <button type="button" style={buttonStyle} onClick={() => void handleCreateIssue()}>
-              Create issue from latest accepted run
-            </button>
-            <button type="button" style={buttonStyle} onClick={() => void handleDelete()}>
-              Delete
-            </button>
+            <button type="button" style={primaryButtonStyle} onClick={() => void handleSave()}>Save optimizer</button>
+            <button type="button" style={buttonStyle} onClick={() => void handleRun("run")}>Run now</button>
+            <button type="button" style={buttonStyle} onClick={() => void handleRun("queue")}>Queue run</button>
+            <button type="button" style={buttonStyle} onClick={() => void handleCreateIssue()}>Create issue from latest run</button>
+            <button type="button" style={buttonStyle} onClick={resetForm}>Reset</button>
+            <button type="button" style={buttonStyle} onClick={() => void handleDelete()}>Delete</button>
           </div>
 
+          <div style={{ fontSize: 13, opacity: 0.85 }}>
+            Pending approvals: {pendingRuns}. JSON scoring should print a stable object such as <code>{`{"primary":0.91,"metrics":{"quality":0.95},"guardrails":{"safe":true}}`}</code>.
+          </div>
           {message ? <div style={{ color: "#166534" }}>{message}</div> : null}
           {errorMessage ? <div style={{ color: "#b91c1c" }}>{errorMessage}</div> : null}
         </div>
@@ -519,31 +745,18 @@ function OptimizerEditor({
 
       <section style={cardStyle}>
         <strong>Recent runs</strong>
-        <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+        <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
           {(runsQuery.data ?? []).length === 0 ? (
             <div style={{ opacity: 0.75 }}>No runs yet.</div>
           ) : (
             (runsQuery.data ?? []).map((run) => (
-              <div key={run.runId} style={{ border: "1px solid rgba(148, 163, 184, 0.35)", borderRadius: 10, padding: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                  <strong>{run.accepted ? "Accepted" : "Rejected"}</strong>
-                  <span>{new Date(run.startedAt).toLocaleString()}</span>
-                </div>
-                <div style={{ marginTop: 6 }}>{run.reason}</div>
-                <div style={{ marginTop: 6, fontSize: 13 }}>
-                  Baseline: {String(run.baselineScore ?? "n/a")} | Candidate: {String(run.candidateScore ?? "n/a")}
-                </div>
-                <details style={{ marginTop: 8 }}>
-                  <summary>Mutation and score output</summary>
-                  <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, marginTop: 8 }}>
-{`Mutation (${run.mutation.exitCode ?? "null"}):
-${run.mutation.stdout || run.mutation.stderr || "(no output)"}
-
-Score (${run.scoring.exitCode ?? "null"}):
-${run.scoring.stdout || run.scoring.stderr || "(no output)"}`}
-                  </pre>
-                </details>
-              </div>
+              <RunCard
+                key={run.runId}
+                run={run}
+                onApprove={handleApprove}
+                onReject={handleReject}
+                onCreateIssue={handleCreateIssue}
+              />
             ))
           )}
         </div>
@@ -566,9 +779,10 @@ export function OptimizerDashboardWidget({ context }: PluginWidgetProps) {
       <div style={{ marginTop: 8 }}>Optimizers: {data?.counts.optimizers ?? 0}</div>
       <div>Active: {data?.counts.activeOptimizers ?? 0}</div>
       <div>Accepted runs: {data?.counts.acceptedRuns ?? 0}</div>
-      <div style={{ marginTop: 8, fontSize: 13, opacity: 0.8 }}>
+      <div>Pending approval: {data?.counts.pendingApprovalRuns ?? 0}</div>
+      <div style={{ marginTop: 8, fontSize: 13, opacity: 0.82 }}>
         {data?.latestAcceptedRun
-          ? `Latest accepted score: ${data.latestAcceptedRun.candidateScore ?? "n/a"}`
+          ? `Latest accepted score: ${formatScore(data.latestAcceptedRun.candidateScore)}`
           : "No accepted runs yet."}
       </div>
     </section>
@@ -577,12 +791,12 @@ export function OptimizerDashboardWidget({ context }: PluginWidgetProps) {
 
 export function OptimizerPage({ context }: PluginPageProps) {
   return (
-    <div style={{ display: "grid", gap: 16 }}>
+    <div style={pageStyle}>
       <section style={cardStyle}>
         <strong>Darwin-Derby loop for Paperclip workspaces</strong>
-        <p style={{ marginTop: 8, lineHeight: 1.5 }}>
-          Define a mutable surface, keep the evaluator fixed, run each candidate under a fixed budget, and ratchet only strict improvements.
-          The mutation command runs in a copied workspace. The real workspace only changes when the score improves and the guardrail command passes.
+        <p style={{ marginTop: 8, lineHeight: 1.55 }}>
+          Define a mutable surface, keep the evaluator fixed, score each candidate under a bounded budget, and ratchet only accepted improvements.
+          This version supports repeated scoring, structured JSON metrics, diff artifacts, queued runs, and manual approval before workspace write-back.
         </p>
       </section>
       <OptimizerEditor companyId={context.companyId ?? null} />

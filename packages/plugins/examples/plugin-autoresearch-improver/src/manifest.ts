@@ -75,6 +75,24 @@ const manifest: PaperclipPluginManifestV1 = {
         minimum: 1,
         maximum: 100,
         default: 10
+      },
+      scoreRepeats: {
+        type: "number",
+        minimum: 1,
+        maximum: 10,
+        default: 3
+      },
+      minimumImprovement: {
+        type: "number",
+        minimum: 0,
+        maximum: 1000000,
+        default: 0
+      },
+      stagnationIssueThreshold: {
+        type: "number",
+        minimum: 1,
+        maximum: 100,
+        default: 5
       }
     }
   },

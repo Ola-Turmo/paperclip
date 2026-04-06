@@ -1,4 +1,11 @@
-import type { CommandExecutionResult, OptimizerDefinition, ScoreDirection } from "../types.js";
+import type {
+  CommandExecutionResult,
+  OptimizerDefinition,
+  RunDiffArtifact,
+  ScoreAggregator,
+  ScoreDirection,
+  StructuredMetricResult
+} from "../types.js";
 
 const NUMBER_PATTERN = /-?\d+(?:\.\d+)?/;
 
@@ -6,6 +13,12 @@ export function clampPositiveInteger(value: unknown, fallback: number): number {
   const parsed = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
   return Math.max(1, Math.round(parsed));
+}
+
+export function clampNonNegativeNumber(value: unknown, fallback: number): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return parsed;
 }
 
 export function normalizeRelativePath(value: string): string {
@@ -34,6 +47,11 @@ export function normalizeMutablePaths(value: unknown): string[] {
   return unique.size > 0 ? [...unique] : ["."];
 }
 
+export function normalizeDotPath(value: unknown): string | undefined {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed ? trimmed : undefined;
+}
+
 export function extractScore(output: string, pattern?: string): number | null {
   const trimmed = output.trim();
   if (!trimmed) return null;
@@ -51,25 +69,149 @@ export function extractScore(output: string, pattern?: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+function getByDotPath(value: unknown, dotPath?: string): unknown {
+  if (!dotPath) return value;
+  return dotPath.split(".").reduce<unknown>((current, key) => {
+    if (current && typeof current === "object" && key in current) {
+      return (current as Record<string, unknown>)[key];
+    }
+    return undefined;
+  }, value);
+}
+
+function asMetricMap(value: unknown): Record<string, number | string | boolean | null> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, number | string | boolean | null> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (
+      typeof entry === "number" ||
+      typeof entry === "string" ||
+      typeof entry === "boolean" ||
+      entry === null
+    ) {
+      out[key] = entry;
+    }
+  }
+  return out;
+}
+
+export function extractStructuredMetricResult(
+  stdout: string,
+  scoreKey?: string
+): StructuredMetricResult | null {
+  const trimmed = stdout.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    const candidate = getByDotPath(parsed, scoreKey);
+    const primary = typeof candidate === "number"
+      ? candidate
+      : typeof candidate === "string" && Number.isFinite(Number(candidate))
+        ? Number(candidate)
+        : null;
+    const root = parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : {};
+    return {
+      primary,
+      metrics: asMetricMap(root.metrics ?? root),
+      guardrails: asMetricMap(root.guardrails),
+      summary: typeof root.summary === "string" ? root.summary : undefined,
+      raw: parsed
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function aggregateScores(scores: Array<number | null>, aggregator: ScoreAggregator): number | null {
+  const filtered = scores.filter((value): value is number => value != null && Number.isFinite(value));
+  if (filtered.length === 0) return null;
+  const sorted = [...filtered].sort((a, b) => a - b);
+  switch (aggregator) {
+    case "min":
+      return sorted[0] ?? null;
+    case "max":
+      return sorted[sorted.length - 1] ?? null;
+    case "mean":
+      return filtered.reduce((sum, value) => sum + value, 0) / filtered.length;
+    case "median":
+    default: {
+      const middle = Math.floor(sorted.length / 2);
+      if (sorted.length % 2 === 1) return sorted[middle] ?? null;
+      return ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
+    }
+  }
+}
+
+export function aggregateStructuredMetrics(
+  results: StructuredMetricResult[],
+  aggregator: ScoreAggregator
+): StructuredMetricResult | null {
+  if (results.length === 0) return null;
+  const primary = aggregateScores(results.map((entry) => entry.primary), aggregator);
+  const metricKeys = new Set<string>();
+  const guardrailKeys = new Set<string>();
+
+  for (const result of results) {
+    Object.keys(result.metrics).forEach((key) => metricKeys.add(key));
+    Object.keys(result.guardrails).forEach((key) => guardrailKeys.add(key));
+  }
+
+  const metrics: Record<string, number | string | boolean | null> = {};
+  for (const key of metricKeys) {
+    const values = results.map((entry) => entry.metrics[key]);
+    if (values.every((value) => typeof value === "number")) {
+      metrics[key] = aggregateScores(values as number[], aggregator);
+    } else {
+      metrics[key] = values[values.length - 1] ?? null;
+    }
+  }
+
+  const guardrails: Record<string, boolean | number | string | null> = {};
+  for (const key of guardrailKeys) {
+    const values = results.map((entry) => entry.guardrails[key]);
+    if (values.every((value) => typeof value === "boolean")) {
+      guardrails[key] = values.every(Boolean);
+    } else if (values.every((value) => typeof value === "number")) {
+      guardrails[key] = aggregateScores(values as number[], aggregator);
+    } else {
+      guardrails[key] = values[values.length - 1] ?? null;
+    }
+  }
+
+  return {
+    primary,
+    metrics,
+    guardrails,
+    summary: results.map((entry) => entry.summary).filter(Boolean).join(" | ") || undefined,
+    raw: results.map((entry) => entry.raw ?? null)
+  };
+}
+
 export function compareScores(
   direction: ScoreDirection,
   currentBest: number | null | undefined,
-  candidate: number | null | undefined
-): { improved: boolean; reason: string } {
+  candidate: number | null | undefined,
+  minimumImprovement = 0
+): { improved: boolean; reason: string; delta: number | null } {
   if (candidate == null || !Number.isFinite(candidate)) {
-    return { improved: false, reason: "Candidate score was missing or invalid." };
+    return { improved: false, reason: "Candidate score was missing or invalid.", delta: null };
   }
   if (currentBest == null || !Number.isFinite(currentBest)) {
-    return { improved: true, reason: "No incumbent score existed, so this run becomes the baseline." };
+    return { improved: true, reason: "No incumbent score existed, so this run becomes the baseline.", delta: null };
   }
-  if (direction === "maximize") {
-    return candidate > currentBest
-      ? { improved: true, reason: `Candidate score ${candidate} beat incumbent ${currentBest}.` }
-      : { improved: false, reason: `Candidate score ${candidate} did not beat incumbent ${currentBest}.` };
+  const delta = direction === "maximize" ? candidate - currentBest : currentBest - candidate;
+  if (delta > minimumImprovement) {
+    return {
+      improved: true,
+      reason: `Candidate score ${candidate} beat incumbent ${currentBest} by ${delta}.`,
+      delta
+    };
   }
-  return candidate < currentBest
-    ? { improved: true, reason: `Candidate score ${candidate} beat incumbent ${currentBest}.` }
-    : { improved: false, reason: `Candidate score ${candidate} did not beat incumbent ${currentBest}.` };
+  return {
+    improved: false,
+    reason: `Candidate score ${candidate} did not clear the minimum improvement threshold against incumbent ${currentBest}.`,
+    delta
+  };
 }
 
 export function summarizeOutput(value: string, maxChars: number): string {
@@ -86,6 +228,12 @@ export function buildOptimizerBrief(optimizer: OptimizerDefinition): Record<stri
     scoreDirection: optimizer.scoreDirection,
     bestScore: optimizer.bestScore ?? null,
     hiddenScoring: optimizer.hiddenScoring,
+    applyMode: optimizer.applyMode,
+    scoreFormat: optimizer.scoreFormat,
+    scoreKey: optimizer.scoreKey ?? null,
+    scoreRepeats: optimizer.scoreRepeats,
+    scoreAggregator: optimizer.scoreAggregator,
+    minimumImprovement: optimizer.minimumImprovement,
     notes: optimizer.notes ?? "",
     budgets: {
       mutationBudgetSeconds: optimizer.mutationBudgetSeconds,
@@ -98,4 +246,13 @@ export function buildOptimizerBrief(optimizer: OptimizerDefinition): Record<stri
 export function formatCommandSummary(result: CommandExecutionResult): string {
   const status = result.ok ? "ok" : "failed";
   return `${status} (${result.exitCode ?? "null"}) in ${result.durationMs}ms`;
+}
+
+export function emptyDiffArtifact(): RunDiffArtifact {
+  return {
+    changedFiles: [],
+    unauthorizedChangedFiles: [],
+    patch: "",
+    stats: { files: 0, additions: 0, deletions: 0 }
+  };
 }

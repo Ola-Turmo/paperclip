@@ -59,7 +59,7 @@ The Paperclip repo includes several first-party example plugins under `packages/
 - `plugin-hello-world-example` for the smallest possible UI contribution
 - `plugin-file-browser-example` for workspace reads and writes
 - `plugin-kitchen-sink-example` for the broad runtime surface area
-- `plugin-autoresearch-improver` for Darwin-Derby style improve-score-ratchet loops over project workspaces
+- `plugin-autoresearch-improver` for Darwin-Derby style improve-score-ratchet loops over project workspaces, including structured scoring, diff artifacts, queueing, and approval-driven promotion
 
 ## Worker quick start
 
