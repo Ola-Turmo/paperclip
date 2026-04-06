@@ -257,6 +257,8 @@ See [doc/DEVELOPING.md](doc/DEVELOPING.md) for the full development guide.
 
 Find Plugins and more at [awesome-paperclip](https://github.com/gsxdsm/awesome-paperclip)
 
+First-party repo examples now include `plugin-autoresearch-improver`, which demonstrates a Darwin-Derby style improve-score-ratchet loop over Paperclip project workspaces.
+
 ## Telemetry
 
 Paperclip collects anonymous usage telemetry to help us understand how the product is used and improve it. No personal information, issue content, prompts, file paths, or secrets are ever collected. Private repository references are hashed with a per-install salt before being sent.

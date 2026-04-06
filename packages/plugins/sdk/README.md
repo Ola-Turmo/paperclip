@@ -52,6 +52,15 @@ The SDK is stable enough for local development and first-party examples, but the
 
 If you are authoring a plugin for others to deploy, treat npm-packaged installation as the supported path and treat repo-local example installs as a development convenience.
 
+## Repo examples
+
+The Paperclip repo includes several first-party example plugins under `packages/plugins/examples/`:
+
+- `plugin-hello-world-example` for the smallest possible UI contribution
+- `plugin-file-browser-example` for workspace reads and writes
+- `plugin-kitchen-sink-example` for the broad runtime surface area
+- `plugin-autoresearch-improver` for Darwin-Derby style improve-score-ratchet loops over project workspaces
+
 ## Worker quick start
 
 ```ts
