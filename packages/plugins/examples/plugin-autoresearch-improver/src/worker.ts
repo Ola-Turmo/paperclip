@@ -227,6 +227,23 @@ function pathIsAllowed(relativePath: string, mutablePaths: string[]): boolean {
   });
 }
 
+/**
+ * Detect whether a file is binary by checking for null bytes in the first 512 bytes.
+ * Files with null bytes are almost certainly binary (images, PDFs, compiled binaries, etc.).
+ */
+async function isBinaryFile(filePath: string): Promise<boolean> {
+  try {
+    const buffer = Buffer.alloc(512);
+    const { bytesRead } = await fs.open(filePath, "r").then((fd) =>
+      fd.read(buffer, 0, 512, 0).then(({ bytesRead: br }) => fd.close().then(() => ({ bytesRead: br })))
+    ).catch(() => ({ bytesRead: 0 }));
+    if (bytesRead === 0) return false;
+    return buffer.subarray(0, bytesRead).some((byte) => byte === 0);
+  } catch {
+    return false;
+  }
+}
+
 async function listFilesRecursively(rootDir: string, baseDir = rootDir): Promise<string[]> {
   const entries = await fs.readdir(rootDir, { withFileTypes: true });
   const files: string[] = [];
@@ -255,8 +272,33 @@ async function filesDiffer(leftPath: string, rightPath: string): Promise<boolean
   if (!leftExists && !rightExists) return false;
 
   const [leftStat, rightStat] = await Promise.all([fs.stat(leftPath), fs.stat(rightPath)]);
+  // Size check as a fast pass; different sizes always means files differ.
   if (leftStat.size !== rightStat.size) return true;
 
+  // For empty files or very small files, do a full byte comparison.
+  if (leftStat.size <= 512) {
+    const [leftContent, rightContent] = await Promise.all([fs.readFile(leftPath), fs.readFile(rightPath)]);
+    return !leftContent.equals(rightContent);
+  }
+
+  // For larger files, do a quick binary detection before full comparison.
+  // Read the first 512 bytes of each file and check for null bytes (a strong
+  // indicator of binary content). If either file looks binary, fall back to
+  // a size-only comparison since full byte comparison of large files is
+  // expensive and not useful for text-oriented diff artifacts.
+  const [leftHead, rightHead] = await Promise.all([
+    fs.readFile(leftPath, { length: 512 }),
+    fs.readFile(rightPath, { length: 512 })
+  ]);
+
+  const leftBinary = leftHead.some((byte) => byte === 0);
+  const rightBinary = rightHead.some((byte) => byte === 0);
+  if (leftBinary || rightBinary) {
+    // For binary files, trust the size check already done above.
+    return leftStat.size !== rightStat.size;
+  }
+
+  // Both files appear to be text; do a full byte comparison.
   const [leftContent, rightContent] = await Promise.all([fs.readFile(leftPath), fs.readFile(rightPath)]);
   return !leftContent.equals(rightContent);
 }
@@ -291,11 +333,25 @@ async function createDiffArtifact(
   const allowedChangedFiles = changedFiles.filter((entry) => pathIsAllowed(entry, mutablePaths));
   const unauthorizedChangedFiles = changedFiles.filter((entry) => !pathIsAllowed(entry, mutablePaths));
 
+  // Detect binary files: skip them from the text patch but record them.
+  const binaryFiles: string[] = [];
+  const textFiles: string[] = [];
+
+  for (const relativePath of allowedChangedFiles) {
+    const candidatePath = path.join(candidateRoot, relativePath);
+    const binary = await isBinaryFile(candidatePath);
+    if (binary) {
+      binaryFiles.push(relativePath);
+    } else {
+      textFiles.push(relativePath);
+    }
+  }
+
   let patch = "";
   let additions = 0;
   let deletions = 0;
 
-  for (const relativePath of allowedChangedFiles) {
+  for (const relativePath of textFiles) {
     try {
       const { stdout } = await execFileAsync("git", [
         "diff",
@@ -319,6 +375,10 @@ async function createDiffArtifact(
     }
   }
 
+  if (binaryFiles.length > 0) {
+    patch += `\n# Binary files changed (excluded from text diff): ${binaryFiles.join(", ")}\n`;
+  }
+
   for (const line of patch.split(/\r?\n/)) {
     if (line.startsWith("+++ ") || line.startsWith("--- ") || line.startsWith("@@")) continue;
     if (line.startsWith("+")) additions += 1;
@@ -328,6 +388,7 @@ async function createDiffArtifact(
   return {
     changedFiles: allowedChangedFiles,
     unauthorizedChangedFiles,
+    binaryFiles,
     patch: summarizeOutput(patch, maxPatchChars),
     stats: {
       files: allowedChangedFiles.length,
@@ -1127,6 +1188,51 @@ async function createPullRequestFromRun(
   };
 }
 
+/**
+ * Delete a proposal branch that was created from an accepted run.
+ * Useful for cleaning up branches from rejected or superseded runs.
+ * Fails if the run has no associated branch name.
+ */
+async function deleteProposalBranch(
+  ctx: PluginContext,
+  optimizer: OptimizerDefinition,
+  run: OptimizerRunRecord,
+  remote?: string
+): Promise<{ deleted: boolean; branchName: string }> {
+  const { workspacePath } = await resolveWorkspacePath(
+    ctx,
+    optimizer.companyId,
+    optimizer.projectId,
+    optimizer.workspaceId
+  );
+  const git = await resolveGitWorkspace(workspacePath);
+  if (!git) {
+    throw new Error("Workspace is not inside a git repository.");
+  }
+
+  const branchName = run.pullRequest?.branchName;
+  if (!branchName) {
+    throw new Error("Run has no associated proposal branch to delete.");
+  }
+
+  const deleteRemote = remote ?? run.pullRequest?.pushRemote ?? "origin";
+  const pushResult = await runShellCommand(
+    `git push ${deleteRemote} --delete "${branchName}"`,
+    git.repoRoot,
+    optimizer.scoreBudgetSeconds,
+    process.env,
+    (await getConfig(ctx)).maxOutputChars
+  );
+
+  if (!pushResult.ok) {
+    throw new Error(
+      `Failed to delete proposal branch "${branchName}" from ${deleteRemote}: ${pushResult.stderr || pushResult.stdout}`
+    );
+  }
+
+  return { deleted: true, branchName };
+}
+
 async function createOptimizerFromParams(
   ctx: PluginContext,
   params: Record<string, unknown>
@@ -1881,6 +1987,23 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
     };
     await upsertRun(ctx, updatedRun);
     return pullRequest;
+  });
+
+  ctx.actions.register(ACTION_KEYS.deleteProposalBranch, async (params) => {
+    const projectId = ensureNonEmptyString(params.projectId, "projectId");
+    const optimizerId = ensureNonEmptyString(params.optimizerId, "optimizerId");
+    const runId = ensureNonEmptyString(params.runId, "runId");
+    const optimizerEntity = await findOptimizer(ctx, projectId, optimizerId);
+    const runEntity = await findRun(ctx, projectId, runId);
+    if (!optimizerEntity || !runEntity) {
+      throw new Error("Optimizer or run not found.");
+    }
+    const optimizer = asOptimizer(optimizerEntity);
+    const run = asRunRecord(runEntity);
+    const remote = typeof params.remote === "string" && params.remote.trim()
+      ? params.remote.trim()
+      : undefined;
+    return await deleteProposalBranch(ctx, optimizer, run, remote);
   });
 }
 

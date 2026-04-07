@@ -317,6 +317,7 @@ export function emptyDiffArtifact(): RunDiffArtifact {
   return {
     changedFiles: [],
     unauthorizedChangedFiles: [],
+    binaryFiles: [],
     patch: "",
     stats: { files: 0, additions: 0, deletions: 0 }
   };

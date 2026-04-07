@@ -23,7 +23,8 @@ export const ACTION_KEYS = {
   approveOptimizerRun: "approve-optimizer-run",
   rejectOptimizerRun: "reject-optimizer-run",
   createIssueFromRun: "create-issue-from-run",
-  createPullRequestFromRun: "create-pull-request-from-run"
+  createPullRequestFromRun: "create-pull-request-from-run",
+  deleteProposalBranch: "delete-proposal-branch"
 } as const;
 
 export const TOOL_KEYS = {

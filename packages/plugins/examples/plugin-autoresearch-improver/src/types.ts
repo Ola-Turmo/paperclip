@@ -25,6 +25,8 @@ export interface StructuredMetricResult {
 export interface RunDiffArtifact {
   changedFiles: string[];
   unauthorizedChangedFiles: string[];
+  /** Files that differ in binary content (null bytes detected). Excluded from patch. */
+  binaryFiles: string[];
   patch: string;
   stats: {
     files: number;
