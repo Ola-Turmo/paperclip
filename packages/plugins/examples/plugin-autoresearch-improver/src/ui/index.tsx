@@ -685,6 +685,9 @@ function ComparisonPanel({
             <span>Outcome</span>
             <strong style={{ color: statusTone(run.outcome) }}>{statusLabel(run.outcome)}</strong>
           </div>
+          {run.outcome === "invalid" && run.invalidReason ? (
+            <div style={{ color: "#b91c1c", fontSize: 12 }}>Invalid: {run.invalidReason}</div>
+          ) : null}
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <span>Score</span>
             <strong>{formatScore(run.candidateScore)}</strong>
