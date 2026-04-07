@@ -239,6 +239,7 @@ export interface OverviewData {
   counts: {
     optimizers: number;
     activeOptimizers: number;
+    pausedOptimizers: number;
     acceptedRuns: number;
     rejectedRuns: number;
     invalidRuns: number;

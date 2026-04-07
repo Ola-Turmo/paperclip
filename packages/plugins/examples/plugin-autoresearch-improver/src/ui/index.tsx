@@ -1466,9 +1466,11 @@ export function OptimizerDashboardWidget({ context }: PluginWidgetProps) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "4px 16px", marginTop: 8 }}>
         <div><strong>Optimizers</strong></div>
         <div><strong>Active</strong></div>
+        <div><strong>Paused</strong></div>
         <div><strong>Total runs</strong></div>
         <div>{data?.counts.optimizers ?? 0}</div>
         <div>{data?.counts.activeOptimizers ?? 0}</div>
+        <div>{data?.counts.pausedOptimizers ?? 0}</div>
         <div>{data?.counts.totalRuns ?? 0}</div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "4px 16px", marginTop: 10, fontSize: 13 }}>

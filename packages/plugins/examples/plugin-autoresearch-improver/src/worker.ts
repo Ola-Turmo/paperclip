@@ -2026,6 +2026,7 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
       counts: {
         optimizers: optimizers.length,
         activeOptimizers: optimizers.filter((entry) => entry.status === "active").length,
+        pausedOptimizers: optimizers.filter((entry) => entry.status === "paused").length,
         acceptedRuns: runs.filter((entry) => entry.accepted).length,
         rejectedRuns: runs.filter((entry) => entry.outcome === "rejected").length,
         invalidRuns: runs.filter((entry) => entry.outcome === "invalid").length,
