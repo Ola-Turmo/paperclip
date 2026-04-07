@@ -777,6 +777,8 @@ function OptimizerEditor({
   const rejectOptimizerRun = usePluginAction(ACTION_KEYS.rejectOptimizerRun);
   const createIssueFromRun = usePluginAction(ACTION_KEYS.createIssueFromRun);
   const createPullRequestFromRun = usePluginAction(ACTION_KEYS.createPullRequestFromRun);
+  const pauseOptimizer = usePluginAction(ACTION_KEYS.pauseOptimizer);
+  const resumeOptimizer = usePluginAction(ACTION_KEYS.resumeOptimizer);
 
   const projectsQuery = usePluginData<ProjectInfo[]>(DATA_KEYS.projects, companyId ? { companyId } : {});
   const workspacesQuery = usePluginData<WorkspaceInfo[]>(
@@ -895,6 +897,33 @@ function OptimizerEditor({
         }) as RunCycleResult;
         setMessage(`${result.run.outcome}: ${result.run.reason}`);
       }
+      await refreshAll();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handlePause() {
+    if (!selectedOptimizerId || !selectedProjectId) return;
+    const reason = prompt("Reason for pausing (optional):");
+    setErrorMessage("");
+    setMessage("");
+    try {
+      await pauseOptimizer({ projectId: selectedProjectId, optimizerId: selectedOptimizerId, reason: reason ?? undefined });
+      setMessage("Optimizer paused.");
+      await refreshAll();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleResume() {
+    if (!selectedOptimizerId || !selectedProjectId) return;
+    setErrorMessage("");
+    setMessage("");
+    try {
+      await resumeOptimizer({ projectId: selectedProjectId, optimizerId: selectedOptimizerId });
+      setMessage("Optimizer resumed.");
       await refreshAll();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
@@ -1026,7 +1055,7 @@ function OptimizerEditor({
               <option value="">New optimizer</option>
               {(optimizersQuery.data ?? []).map((optimizer) => (
                 <option key={optimizer.optimizerId} value={optimizer.optimizerId}>
-                  {optimizer.name}
+                  {optimizer.status === "paused" ? "⏸ " : ""}{optimizer.name}
                 </option>
               ))}
             </select>
@@ -1312,9 +1341,19 @@ function OptimizerEditor({
             <button type="button" style={buttonStyle} onClick={() => void handleCreateIssue()}>Create issue from latest run</button>
             <button type="button" style={buttonStyle} onClick={() => void handleCreatePullRequest()}>Create PR from latest accepted run</button>
             <button type="button" style={buttonStyle} onClick={resetForm}>Reset</button>
+            {selectedOptimizer?.status === "active" ? (
+              <button type="button" style={{ ...buttonStyle, color: "#b45309" }} onClick={() => void handlePause()}>Pause</button>
+            ) : (
+              <button type="button" style={{ ...buttonStyle, color: "#166534" }} onClick={() => void handleResume()}>Resume</button>
+            )}
             <button type="button" style={buttonStyle} onClick={() => void handleClone()}>Clone</button>
             <button type="button" style={buttonStyle} onClick={() => void handleDelete()}>Delete</button>
           </div>
+          {selectedOptimizer?.status === "paused" && selectedOptimizer?.pauseReason ? (
+            <div style={{ marginTop: 6, fontSize: 12, color: "#92400e", background: "rgba(234,179,8,0.08)", padding: "6px 10px", borderRadius: 6 }}>
+              ⏸ Paused: {selectedOptimizer.pauseReason}
+            </div>
+          ) : null}
 
           <div style={{ fontSize: 13, opacity: 0.85 }}>
             Pending approvals: {pendingRuns}. JSON scoring should print a stable object such as <code>{`{"primary":0.91,"metrics":{"quality":0.95},"guardrails":{"safe":true}}`}</code>.

@@ -2009,6 +2009,58 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
     return { optimizerId: clone.optimizerId, name: clone.name };
   });
 
+  ctx.actions.register(ACTION_KEYS.pauseOptimizer, async (params) => {
+    const projectId = ensureNonEmptyString(params.projectId, "projectId");
+    const optimizerId = ensureNonEmptyString(params.optimizerId, "optimizerId");
+    const reason = typeof params.reason === "string" && params.reason.trim()
+      ? params.reason.trim()
+      : "Paused by operator.";
+
+    const entity = await findOptimizer(ctx, projectId, optimizerId);
+    if (!entity) {
+      throw new Error(`Optimizer ${optimizerId} was not found.`);
+    }
+
+    const optimizer = asOptimizer(entity);
+    const now = nowIso();
+    await upsertOptimizer(ctx, {
+      ...optimizer,
+      status: "paused",
+      queueState: "idle",
+      pauseReason: reason,
+      updatedAt: now,
+      history: [
+        ...(optimizer.history ?? []),
+        { timestamp: now, action: "paused", description: reason, triggeredBy: params.triggeredBy ?? "operator" }
+      ]
+    });
+    return { status: "paused", pauseReason: reason };
+  });
+
+  ctx.actions.register(ACTION_KEYS.resumeOptimizer, async (params) => {
+    const projectId = ensureNonEmptyString(params.projectId, "projectId");
+    const optimizerId = ensureNonEmptyString(params.optimizerId, "optimizerId");
+
+    const entity = await findOptimizer(ctx, projectId, optimizerId);
+    if (!entity) {
+      throw new Error(`Optimizer ${optimizerId} was not found.`);
+    }
+
+    const optimizer = asOptimizer(entity);
+    const now = nowIso();
+    await upsertOptimizer(ctx, {
+      ...optimizer,
+      status: "active",
+      pauseReason: undefined,
+      updatedAt: now,
+      history: [
+        ...(optimizer.history ?? []),
+        { timestamp: now, action: "resumed", description: "Optimizer resumed.", triggeredBy: params.triggeredBy ?? "operator" }
+      ]
+    });
+    return { status: "active" };
+  });
+
   ctx.actions.register(ACTION_KEYS.runOptimizerCycle, async (params) => {
     const projectId = ensureNonEmptyString(params.projectId, "projectId");
     const optimizerId = ensureNonEmptyString(params.optimizerId, "optimizerId");

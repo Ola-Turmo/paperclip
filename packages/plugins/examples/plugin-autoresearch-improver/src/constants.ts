@@ -26,7 +26,9 @@ export const ACTION_KEYS = {
   rejectOptimizerRun: "reject-optimizer-run",
   createIssueFromRun: "create-issue-from-run",
   createPullRequestFromRun: "create-pull-request-from-run",
-  deleteProposalBranch: "delete-proposal-branch"
+  deleteProposalBranch: "delete-proposal-branch",
+  pauseOptimizer: "pause-optimizer",
+  resumeOptimizer: "resume-optimizer"
 } as const;
 
 export const TOOL_KEYS = {

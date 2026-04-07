@@ -134,6 +134,8 @@ export interface OptimizerDefinition {
   notes?: string;
   /** Number of times this optimizer's config has been cloned (duplicated). */
   cloneCount?: number;
+  /** Reason for pausing the optimizer. Shown in the UI when status is paused. */
+  pauseReason?: string;
   /** Change history: records significant config changes. */
   history?: ConfigChangeRecord[];
   bestScore?: number;
