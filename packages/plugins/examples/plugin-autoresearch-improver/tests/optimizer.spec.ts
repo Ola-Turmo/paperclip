@@ -16,6 +16,7 @@ import {
   buildOptimizerBrief,
   formatCommandSummary,
   normalizeDotPath,
+  normalizeRelativePath,
   summarizeOutput,
 } from "../src/lib/optimizer.js";
 
@@ -363,6 +364,17 @@ describe("optimizer helpers", () => {
     ];
     const numResult = aggregateGuardrailResults(numericResults, "all");
     expect(numResult.guardrails.score).toBe(0.95);
+  });
+
+  it("normalizeRelativePath strips leading ./ and trailing slashes, blocks escape", () => {
+    expect(normalizeRelativePath("src/")).toBe("src");
+    expect(normalizeRelativePath("./src")).toBe("src");
+    expect(normalizeRelativePath("src/file.ts")).toBe("src/file.ts");
+    expect(normalizeRelativePath("")).toBe("");
+    expect(normalizeRelativePath(".")).toBe(".");
+    expect(normalizeRelativePath("src\\file.ts")).toBe("src/file.ts");  // backslash normalization
+    expect(() => normalizeRelativePath("../outside")).toThrow();
+    expect(() => normalizeRelativePath("src/../outside")).toThrow();
   });
 
   it("extractScore handles patterns and edge cases", () => {
