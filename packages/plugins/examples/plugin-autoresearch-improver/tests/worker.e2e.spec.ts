@@ -995,4 +995,14 @@ console.log(JSON.stringify({ primary: 0.5, guardrails: { safe: true } }));
     expect(await readFile(path.join(workspaceRoot, "README.md"), "utf8")).toBe("baseline\n");
   });
 
+
+  it("optimizer templates are registered and accessible via getData", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    const templates = await harness.getData("optimizer-templates", {}) as Array<{ key: string; name: string }>;
+    expect(templates.length).toBeGreaterThan(0);
+    expect(templates.some((t) => t.key === "noisy-scorer-ratchet")).toBe(true);
+  });
+
 });
