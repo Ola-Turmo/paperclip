@@ -9,6 +9,7 @@ import {
   extractScore,
   extractStructuredMetricResult,
   normalizeMutablePaths,
+  aggregateScores,
   validateConfig
 } from "../src/lib/optimizer.js";
 
@@ -151,5 +152,49 @@ describe("optimizer helpers", () => {
     });
     expect(bad.errors.length).toBeGreaterThan(0);
     expect(bad.warnings.length).toBeGreaterThan(0);
+  });
+
+
+  it("normalizes mutable paths with path traversal protection", () => {
+    expect(normalizeMutablePaths("src/\nREADME.md")).toEqual(["src", "README.md"]);
+    expect(normalizeMutablePaths("")).toEqual(["."]);
+    expect(normalizeMutablePaths("./src")).toEqual(["src"]);
+    expect(normalizeMutablePaths(["src", "src"])).toEqual(["src"]);
+    expect(() => normalizeMutablePaths("../outside")).toThrow();
+    expect(() => normalizeMutablePaths("src/../etc/passwd")).toThrow();
+  });
+
+  it("clamp helpers enforce bounds correctly", () => {
+    expect(clampPositiveInteger(0, 5)).toBe(5);
+    expect(clampPositiveInteger(-1, 5)).toBe(5);
+    expect(clampPositiveInteger(3, 5)).toBe(3);
+    expect(clampPositiveInteger(NaN, 5)).toBe(5);
+    expect(clampPositiveInteger(1.5, 5)).toBe(2);
+    expect(clampNonNegativeNumber(-1, 0.5)).toBe(0.5);
+    expect(clampNonNegativeNumber(0, 0.5)).toBe(0);
+    expect(clampNonNegativeNumber(0.3, 0.5)).toBe(0.3);
+  });
+
+  it("extracts structured metric result from JSON with dot-path scoreKey", () => {
+    // scoreKey can point to a nested primary while metrics stays at root level
+    const r = extractStructuredMetricResult(
+      JSON.stringify({ wrapper: { score: 0.85 }, metrics: { quality: 0.92 }, guardrails: { safe: true } }),
+      "wrapper.score"
+    );
+    expect(r?.primary).toBe(0.85);
+    expect(r?.metrics.quality).toBe(0.92);
+    expect(r?.guardrails.safe).toBe(true);
+  });
+
+  it("aggregates scores with all aggregator modes", () => {
+    const scores = [1, 2, 3, 4, 5];
+    expect(aggregateScores(scores, "min")).toBe(1);
+    expect(aggregateScores(scores, "max")).toBe(5);
+    expect(aggregateScores(scores, "mean")).toBe(3);
+    expect(aggregateScores(scores, "median")).toBe(3);
+    // With nulls
+    expect(aggregateScores([null, 2, null, 4], "mean")).toBe(3);
+    // Empty
+    expect(aggregateScores([], "median")).toBeNull();
   });
 });
