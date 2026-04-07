@@ -906,4 +906,61 @@ console.log(JSON.stringify({ primary: 0.5, guardrails: { safe: true } }));
     expect(resumed.pauseReason).toBeUndefined();
   });
 
+
+  it("deletes a proposal branch and reflects the result", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    // Create a bare repo to act as a remote for the push operation.
+    const remoteRoot = await mkdtemp(path.join(os.tmpdir(), "paprclip-e2e-remote-"));
+    cleanupPaths.push(remoteRoot);
+    await run("git", ["init", "--bare"], remoteRoot);
+    await run("git", ["remote", "add", "origin", remoteRoot], workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Branch deletion test",
+      objective: "Test branch deletion",
+      mutablePaths: "README.md",
+      mutationCommand: 'node -e "const fs=require(\'node:fs\');fs.writeFileSync(\'README.md\',\'delete-test\\n\')"',
+      scoreCommand: readmeScoreCommand,
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "automatic",
+      proposalBranchPrefix: "paprclip/e2e-delete-test",
+      proposalPushCommand: "git push origin $PAPERCLIP_PROPOSAL_BRANCH"
+    }) as { optimizerId: string };
+
+    const firstRun = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { run: { runId: string; outcome: string } };
+    expect(firstRun.run.outcome).toBe("accepted");
+
+    // Create the PR — this creates the proposal branch and pushes it.
+    const pr = await harness.performAction("create-pull-request-from-run", {
+      projectId,
+      optimizerId: optimizer.optimizerId,
+      runId: firstRun.run.runId
+    }) as { branchName: string };
+    expect(pr.branchName).toBeTruthy();
+
+    // Delete the proposal branch via the action.
+    const deleted = await harness.performAction("delete-proposal-branch", {
+      projectId,
+      optimizerId: optimizer.optimizerId,
+      runId: firstRun.run.runId
+    }) as { deleted: boolean; branchName: string };
+    expect(deleted.deleted).toBe(true);
+    expect(deleted.branchName).toBe(pr.branchName);
+
+    // Verify the branch no longer exists on the remote.
+    const branchList = await run("git", ["ls-remote", remoteRoot], workspaceRoot);
+    expect(branchList).not.toContain(pr.branchName);
+  });
+
 });
