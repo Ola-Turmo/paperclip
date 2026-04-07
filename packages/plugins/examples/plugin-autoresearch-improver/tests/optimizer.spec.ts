@@ -441,5 +441,15 @@ describe("optimizer helpers", () => {
   it("normalizeRelativePath handles multiple trailing slashes", () => {
     expect(normalizeRelativePath("src///")).toBe("src");
     expect(normalizeRelativePath("///")).toBe(".");
+  })
+
+  it("compareScores handles scoreDirection maximize vs minimize", () => {
+    // maximize: higher is better
+    expect(compareScores("maximize", 0.5, 0.75, 0.05).improved).toBe(true);   // delta=0.25 > 0.05
+    expect(compareScores("maximize", 0.5, 0.52, 0.05).improved).toBe(false);  // delta=0.02 < 0.05
+    expect(compareScores("maximize", 0.8, 0.75, 0.05).improved).toBe(false);  // delta=-0.05 < 0.05
+    // minimize: lower is better
+    expect(compareScores("minimize", 0.75, 0.5, 0.05).improved).toBe(true);   // delta=-0.25, |delta|=0.25 > 0.05
+    expect(compareScores("minimize", 0.5, 0.52, 0.05).improved).toBe(false);  // delta=+0.02, |delta|=0.02 < 0.05
   });
 });
