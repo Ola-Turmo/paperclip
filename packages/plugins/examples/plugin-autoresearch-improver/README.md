@@ -13,6 +13,39 @@ This version goes further than the initial example. It adds repeated scoring, st
 
 ## What the plugin adds
 
+## Score improvement policies
+
+For noisy scorers, three policies control when a score improvement is accepted:
+
+- **threshold** (default): candidate delta > `minimumImprovement`
+- **confidence**: candidate delta > k × stdDev(scores) — requires `scoreRepeats` ≥ 2; falls back to threshold with insufficient data
+- **epsilon**: candidate delta > max(`epsilonValue`, noiseFloor) — useful when scorer variance is consistent
+
+Configure via `scoreImprovementPolicy`, `confidenceThreshold` (default: 2.0), and `epsilonValue` (default: 0.01) on the optimizer.
+
+## Optimizer history and cloning
+
+Each optimizer maintains a change history (`history: ConfigChangeRecord[]`) recording:
+
+- creation, cloning, config updates
+- run acceptance and rejection
+- pause and resume events
+
+The UI exposes a Show/Hide history panel on the optimizer editor. Use the "Clone" button to duplicate an optimizer with a new ID and name. The original's `cloneCount` is incremented.
+
+## Pause and resume
+
+Optimizers can be paused with an optional reason (`pauseReason` field). Paused optimizers show ⏸ prefix in the dropdown and display the pause reason in a banner below the action buttons. Resume clears the pause reason and reactivates the optimizer.
+
+## Richer metrics
+
+The overview dashboard shows:
+
+- counts: total runs, accepted, rejected, invalid, pending
+- metrics: average candidate score, average score delta, rejection rate
+
+---
+
 The plugin registers:
 
 - a full plugin page
@@ -287,6 +320,40 @@ The project tab supports:
 - PR creation from applied runs
 - automatic apply warning when no proposal settings are configured
 
+## Recommended PR command recipes
+
+### 1. `gh pr create` (GitHub CLI)
+
+```bash
+gh pr create --title "Autoresearch: ${PAPERCLIP_OPTIMIZER_NAME}" --body "Run: ${PAPERCLIP_OPTIMIZER_RUN_ID}" --base main
+```
+
+Environment variables available to the command:
+- `PAPERCLIP_PROPOSAL_BRANCH`
+- `PAPERCLIP_PROPOSAL_BASE`
+- `PAPERCLIP_PROPOSAL_REMOTE`
+- `PAPERCLIP_PROPOSAL_COMMIT`
+- `PAPERCLIP_OPTIMIZER_ID`
+- `PAPERCLIP_OPTIMIZER_NAME`
+- `PAPERCLIP_OPTIMIZER_RUN_ID`
+
+### 2. Branch push + API-based PR creation
+
+```bash
+git push origin ${PAPERCLIP_PROPOSAL_BRANCH}
+```
+
+Then use `gh api` or a custom tool to open the PR.
+
+### 3. Enterprise internal workflows
+
+For internal setups without GitHub CLI, use `git push` followed by a custom API call:
+
+```bash
+git push https://github.com/your-org/repo.git ${PAPERCLIP_PROPOSAL_BRANCH}
+gh api repos/your-org/repo/pulls --method POST -f title="Autoresearch: ${PAPERCLIP_OPTIMIZER_NAME}" -f head="${PAPERCLIP_PROPOSAL_BRANCH}" -f base=main
+```
+
 ## Example setup
 
 Mutation command:
@@ -306,6 +373,55 @@ Guardrail command:
 ```bash
 pnpm test -- --runInBand
 ```
+
+## Scorer examples
+
+### Code quality scorer
+
+```bash
+node -e "const {execSync} = require('child_process'); const result = execSync('node ./scripts/code-quality.mjs', {encoding: 'utf8'}); console.log(result);"
+```
+
+Example JSON output:
+```json
+{"primary": 0.85, "metrics": {"complexity": 12, "duplicates": 3}, "guardrails": {"noSyntaxErrors": true}}
+```
+
+### Docs quality scorer
+
+```bash
+node -e "const {execSync} = require('child_process'); const result = execSync('node ./scripts/docs-score.mjs', {encoding: 'utf8'}); console.log(result);"
+```
+
+Example JSON output:
+```json
+{"primary": 0.92, "metrics": {"readability": 88, "wordCount": 1200}, "guardrails": {"hasExamples": true}}
+```
+
+### Lighthouse performance scorer
+
+```bash
+node ./scripts/lighthouse-score.mjs
+```
+
+Example JSON output:
+```json
+{"primary": 0.87, "metrics": {"fcp": 1200, "lcp": 2400, "cls": 0.05}, "guardrails": {"noCrash": true}}
+```
+
+### CRO / landing-page scorer
+
+```bash
+node -e "console.log(JSON.stringify({ primary: 0.78, metrics: { conversionRate: 0.041, bounceRate: 0.32 }, guardrails: { mobileFriendly: true } }))"
+```
+
+### Plain number scorer with pattern
+
+```bash
+node ./scripts/simple-score.mjs && echo "SCORE=0.91"
+```
+
+Configure `scoreFormat: "number"` and `scorePattern: "SCORE=([0-9.]+)"`.
 
 ## Install into Paperclip
 
@@ -355,11 +471,12 @@ The strengthened runtime in this branch preserves that deployment path while add
 ## Current constraints
 
 - This is a trusted local-workspace plugin. It executes shell commands inside project workspaces.
-- Blind scoring is stronger than before, but still partial. Mutation and scoring are isolated at the workspace/executor level, not by a separate remote scoring service.
+- Scoring is isolated at the workspace/executor level. Separating into a remote scoring service requires further architectural work.
 - Git-backed PR creation assumes the workspace repo is in a committable state for the run's changed files.
 - Diff capture uses `git diff --no-index` for patch previews and falls back gracefully when diff generation is incomplete.
-- If `keepTmpDirs` is enabled, retained sandboxes will accumulate until manually cleaned.
+- Binary files are detected by null-byte scanning and excluded from the text patch.
 - Copy-mode sandboxes still exist for non-git workspaces or when operators prefer filesystem sync over git patch apply.
+- Git worktree strategy requires the workspace to be the git repo root.
 
 ## Instance config
 

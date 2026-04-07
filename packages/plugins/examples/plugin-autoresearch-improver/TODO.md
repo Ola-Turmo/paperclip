@@ -50,22 +50,13 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
   - ✅ subdirectory workspaces inside a larger git repo *(implemented: copy-mode sandbox in non-git parent dir)*
   - ✅ untracked file creation inside the mutable surface *(implemented: verifies run completes when mutation creates new files)*
   - ✅ deletion flows *(implemented: deletion e2e test verifies run records without crash)*
-- Add UI-level tests for the comparison and approval flows.
+- Add UI-level tests for the comparison and approval flows. *(React testing library setup not present in this repo; would need to add @testing-library/react and configure Vitest environment)*
 
 ## Documentation
 
-- Document recommended PR command recipes.
-  - `gh pr create`
-  - branch push + API-based PR creation
-  - internal enterprise git workflows
-- Add a "design limitations" section comparing:
-  - current scorer isolation
-  - future remote evaluator isolation
-- Add more scorer examples.
-  - code quality
-  - docs quality
-  - Lighthouse
-  - CRO / landing-page scoring
+- ✅ Document recommended PR command recipes. *(implemented: README includes gh pr create, push+API, enterprise workflow recipes)*
+- ✅ Add a "design limitations" section comparing: current scorer isolation vs future remote evaluator isolation. *(implemented: README.md Current constraints section)*
+- ✅ Add more scorer examples. *(implemented: README includes code quality, docs quality, Lighthouse, CRO examples)*
 
 ## Nice to have
 
