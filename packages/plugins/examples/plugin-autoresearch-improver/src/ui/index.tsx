@@ -10,6 +10,7 @@ import {
 import { ACTION_KEYS, DATA_KEYS, PLUGIN_ID } from "../constants.js";
 import type {
   ApplyMode,
+  ConfigChangeRecord,
   OptimizerDefinition,
   OptimizerRunRecord,
   OptimizerTemplate,
@@ -769,6 +770,7 @@ function OptimizerEditor({
 
   const saveOptimizer = usePluginAction(ACTION_KEYS.saveOptimizer);
   const deleteOptimizer = usePluginAction(ACTION_KEYS.deleteOptimizer);
+  const cloneOptimizer = usePluginAction(ACTION_KEYS.cloneOptimizer);
   const runOptimizerCycle = usePluginAction(ACTION_KEYS.runOptimizerCycle);
   const enqueueOptimizerRun = usePluginAction(ACTION_KEYS.enqueueOptimizerRun);
   const approveOptimizerRun = usePluginAction(ACTION_KEYS.approveOptimizerRun);
@@ -790,6 +792,11 @@ function OptimizerEditor({
     selectedOptimizerId ? { optimizerId: selectedOptimizerId, projectId: selectedProjectId } : {}
   );
   const templatesQuery = usePluginData<OptimizerTemplate[]>(DATA_KEYS.optimizerTemplates, {});
+  const [showHistory, setShowHistory] = useState(false);
+  const historyQuery = usePluginData<{ optimizerId: string; name: string; records: ConfigChangeRecord[] } | null>(
+    DATA_KEYS.optimizerHistory,
+    { projectId: selectedProjectId, optimizerId: selectedOptimizerId || undefined }
+  );
 
   useEffect(() => {
     if (!selectedProjectId && initialProjectId) {
@@ -889,6 +896,20 @@ function OptimizerEditor({
         setMessage(`${result.run.outcome}: ${result.run.reason}`);
       }
       await refreshAll();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleClone() {
+    if (!selectedOptimizerId || !selectedProjectId) return;
+    setErrorMessage("");
+    setMessage("");
+    try {
+      const result = await cloneOptimizer({ projectId: selectedProjectId, optimizerId: selectedOptimizerId }) as { optimizerId: string; name: string };
+      setMessage(`Cloned as "${result.name}".`);
+      await refreshAll();
+      setSelectedOptimizerId(result.optimizerId);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     }
@@ -1291,6 +1312,7 @@ function OptimizerEditor({
             <button type="button" style={buttonStyle} onClick={() => void handleCreateIssue()}>Create issue from latest run</button>
             <button type="button" style={buttonStyle} onClick={() => void handleCreatePullRequest()}>Create PR from latest accepted run</button>
             <button type="button" style={buttonStyle} onClick={resetForm}>Reset</button>
+            <button type="button" style={buttonStyle} onClick={() => void handleClone()}>Clone</button>
             <button type="button" style={buttonStyle} onClick={() => void handleDelete()}>Delete</button>
           </div>
 
@@ -1301,6 +1323,32 @@ function OptimizerEditor({
           {errorMessage ? <div style={{ color: "#b91c1c" }}>{errorMessage}</div> : null}
         </div>
       </section>
+
+      {selectedOptimizer ? (
+        <section style={cardStyle}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <strong>Optimizer history</strong>
+            <button type="button" style={{ fontSize: 11, padding: "4px 10px", background: showHistory ? "rgba(100,116,139,0.2)" : "rgba(100,116,139,0.1)", border: "1px solid rgba(100,116,139,0.3)", borderRadius: 6, cursor: "pointer" }} onClick={() => setShowHistory((v) => !v)}>
+              {showHistory ? "Hide" : "Show"}
+            </button>
+          </div>
+          {showHistory ? (
+            historyQuery.data?.records && historyQuery.data.records.length > 0 ? (
+              <div style={{ display: "grid", gap: 6, fontSize: 12 }}>
+                {historyQuery.data.records.slice().reverse().map((record, i) => (
+                  <div key={i} style={{ display: "flex", gap: 10, padding: "6px 8px", background: "rgba(100,116,139,0.06)", borderRadius: 6 }}>
+                    <span style={{ fontSize: 11, color: "#64748b", minWidth: 140 }}>{new Date(record.timestamp).toLocaleString()}</span>
+                    <span style={{ fontWeight: 600, minWidth: 120, textTransform: "capitalize" }}>{record.action.replace("_", " ")}</span>
+                    <span style={{ opacity: 0.8 }}>{record.description}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, opacity: 0.7 }}>No history records yet.</div>
+            )
+          ) : null}
+        </section>
+      ) : null}
 
       <section style={cardStyle}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>

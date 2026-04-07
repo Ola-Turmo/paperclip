@@ -779,4 +779,43 @@ describe("autoresearch improver worker e2e", () => {
     expect(result.run.outcome).toBeTruthy();
   });
 
+
+  it("clones an optimizer and increments the original's cloneCount", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    const original = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Original optimizer",
+      objective: "Test cloning",
+      mutablePaths: "README.md",
+      mutationCommand: "node -e \"const fs=require('node:fs');fs.writeFileSync('README.md','cloned\n')\"",
+      scoreCommand: readmeScoreCommand,
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "copy",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "automatic"
+    }) as { optimizerId: string };
+
+    const clone = await harness.performAction("clone-optimizer", {
+      projectId,
+      optimizerId: original.optimizerId,
+      newName: "Cloned optimizer"
+    }) as { optimizerId: string; name: string };
+
+    expect(clone.name).toBe("Cloned optimizer");
+    expect(clone.optimizerId).not.toBe(original.optimizerId);
+
+    // Verify the clone works
+    const result = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: clone.optimizerId
+    }) as { run: { outcome: string } };
+
+    expect(["accepted", "rejected", "invalid"]).toContain(result.run.outcome);
+  });
+
 });

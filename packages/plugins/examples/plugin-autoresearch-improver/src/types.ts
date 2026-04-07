@@ -132,6 +132,10 @@ export interface OptimizerDefinition {
   proposalPushCommand?: string;
   proposalPrCommand?: string;
   notes?: string;
+  /** Number of times this optimizer's config has been cloned (duplicated). */
+  cloneCount?: number;
+  /** Change history: records significant config changes. */
+  history?: ConfigChangeRecord[];
   bestScore?: number;
   bestRunId?: string;
   lastRunId?: string;
@@ -229,6 +233,19 @@ export interface OverviewData {
     pendingApprovalRuns: number;
   };
   latestAcceptedRun: OptimizerRunRecord | null;
+}
+
+export interface ConfigChangeRecord {
+  /** ISO timestamp of the change. */
+  timestamp: string;
+  /** What kind of change occurred. */
+  action: "created" | "cloned" | "config_updated" | "run_accepted" | "run_rejected" | "paused" | "resumed";
+  /** Human-readable description of the change. */
+  description: string;
+  /** Run ID associated with this change (for run-related actions). */
+  runId?: string;
+  /** Who or what triggered the change. Defaults to "system". */
+  triggeredBy?: string;
 }
 
 export interface OptimizerTemplate {

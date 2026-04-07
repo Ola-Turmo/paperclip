@@ -12,12 +12,14 @@ export const DATA_KEYS = {
   projectWorkspaces: "project-workspaces",
   projectOptimizers: "project-optimizers",
   optimizerRuns: "optimizer-runs",
-  optimizerTemplates: "optimizer-templates"
+  optimizerTemplates: "optimizer-templates",
+  optimizerHistory: "optimizer-history"
 } as const;
 
 export const ACTION_KEYS = {
   saveOptimizer: "save-optimizer",
   deleteOptimizer: "delete-optimizer",
+  cloneOptimizer: "clone-optimizer",
   runOptimizerCycle: "run-optimizer-cycle",
   enqueueOptimizerRun: "enqueue-optimizer-run",
   approveOptimizerRun: "approve-optimizer-run",

@@ -1734,7 +1734,11 @@ async function promotePendingRun(
     pendingApprovalRuns: Math.max(0, optimizer.pendingApprovalRuns - 1),
     consecutiveFailures: 0,
     consecutiveNonImprovements: 0,
-    updatedAt: nowIso()
+    updatedAt: nowIso(),
+    history: [
+      ...(optimizer.history ?? []),
+      { timestamp: nowIso(), action: "run_accepted", description: `Run ${run.runId.slice(0, 8)}... accepted. Score: ${promotedRun.candidateScore ?? "n/a"}.`, runId: promotedRun.runId }
+    ]
   };
 
   await upsertRun(ctx, promotedRun);
@@ -1785,7 +1789,11 @@ async function rejectPendingRun(
     queueState: "idle",
     pendingApprovalRuns: Math.max(0, optimizer.pendingApprovalRuns - 1),
     rejectedRuns: optimizer.rejectedRuns + 1,
-    updatedAt: nowIso()
+    updatedAt: nowIso(),
+    history: [
+      ...(optimizer.history ?? []),
+      { timestamp: nowIso(), action: "run_rejected", description: `Run ${run.runId.slice(0, 8)}... rejected. Note: ${typeof note === "string" && note.trim() ? note.trim() : "none"}.`, runId: run.runId }
+    ]
   };
 
   await upsertRun(ctx, rejectedRun);
@@ -1846,6 +1854,26 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
 
   ctx.data.register(DATA_KEYS.optimizerTemplates, async () => optimizerTemplates);
 
+  ctx.data.register(DATA_KEYS.optimizerHistory, async (params) => {
+    const projectId = typeof params.projectId === "string" ? params.projectId : null;
+    const optimizerId = typeof params.optimizerId === "string" ? params.optimizerId : null;
+    const optimizers = (await listOptimizerEntities(ctx, projectId || undefined))
+      .map(asOptimizer)
+      .filter((entry) => !optimizerId || entry.optimizerId === optimizerId);
+
+    const history: Array<{
+      optimizerId: string;
+      name: string;
+      records: ConfigChangeRecord[];
+    }> = optimizers.map((opt) => ({
+      optimizerId: opt.optimizerId,
+      name: opt.name,
+      records: opt.history ?? []
+    }));
+
+    return optimizerId ? history[0] ?? null : history;
+  });
+
   ctx.data.register(DATA_KEYS.overview, async (params) => {
     const companyId = typeof params.companyId === "string" ? params.companyId : null;
     const config = await getConfig(ctx);
@@ -1887,6 +1915,22 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
       ...params,
       createdAt: (existing?.data as OptimizerDefinition | undefined)?.createdAt
     });
+
+    const now = nowIso();
+    if (existing) {
+      // Config update: append history entry
+      optimizer.history = [
+        ...(optimizer.history ?? []),
+        { timestamp: now, action: "config_updated", description: "Configuration updated.", triggeredBy: "user" }
+      ];
+    } else {
+      // New optimizer: record creation
+      optimizer.history = [
+        ...(optimizer.history ?? []),
+        { timestamp: now, action: "created", description: "Optimizer created.", triggeredBy: "user" }
+      ];
+    }
+
     await upsertOptimizer(ctx, optimizer);
     return optimizer;
   });
@@ -1906,6 +1950,63 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
       notes: [optimizer.notes, "[deleted]"].filter(Boolean).join("\n")
     }, "deleted");
     return { ok: true };
+  });
+
+  ctx.actions.register(ACTION_KEYS.cloneOptimizer, async (params) => {
+    const projectId = ensureNonEmptyString(params.projectId, "projectId");
+    const optimizerId = ensureNonEmptyString(params.optimizerId, "optimizerId");
+    const newName = typeof params.newName === "string" && params.newName.trim()
+      ? params.newName.trim()
+      : undefined;
+
+    const entity = await findOptimizer(ctx, projectId, optimizerId);
+    if (!entity) {
+      throw new Error(`Optimizer ${optimizerId} was not found.`);
+    }
+
+    const original = asOptimizer(entity);
+    const now = nowIso();
+
+    // Create clone with new ID and name, preserve most settings
+    const clone: OptimizerDefinition = {
+      ...original,
+      optimizerId: randomUUID(),
+      name: newName ?? `${original.name} (clone)`,
+      companyId: original.companyId,
+      projectId: original.projectId,
+      createdAt: now,
+      updatedAt: now,
+      runs: 0,
+      acceptedRuns: 0,
+      rejectedRuns: 0,
+      pendingApprovalRuns: 0,
+      bestScore: undefined,
+      bestRunId: undefined,
+      lastRunId: undefined,
+      consecutiveFailures: 0,
+      consecutiveNonImprovements: 0,
+      cloneCount: undefined,
+      history: [
+        ...(original.history ?? []),
+        {
+          timestamp: now,
+          action: "cloned",
+          description: `Cloned from optimizer "${original.name}" (${optimizerId.slice(0, 8)}...)`,
+          triggeredBy: params.triggeredBy ?? "system"
+        }
+      ]
+    };
+
+    await upsertOptimizer(ctx, clone);
+
+    // Increment cloneCount on the original
+    await upsertOptimizer(ctx, {
+      ...original,
+      cloneCount: (original.cloneCount ?? 0) + 1,
+      updatedAt: now
+    });
+
+    return { optimizerId: clone.optimizerId, name: clone.name };
   });
 
   ctx.actions.register(ACTION_KEYS.runOptimizerCycle, async (params) => {
