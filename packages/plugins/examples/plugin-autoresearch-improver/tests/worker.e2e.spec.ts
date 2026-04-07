@@ -963,4 +963,36 @@ console.log(JSON.stringify({ primary: 0.5, guardrails: { safe: true } }));
     expect(branchList).not.toContain(pr.branchName);
   });
 
+
+  it("dry_run mode retains the sandbox without applying changes to workspace", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Dry run test",
+      objective: "Test dry_run apply mode",
+      mutablePaths: "README.md",
+      mutationCommand: 'node -e "const fs=require(\'node:fs\');fs.writeFileSync(\'README.md\',\'dry-run-content\\n\')"',
+      scoreCommand: readmeScoreCommand,
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "dry_run"
+    }) as { optimizerId: string };
+
+    const result = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { run: { outcome: string; applied: boolean } };
+
+    expect(result.run.outcome).toBe("dry_run_candidate");
+    expect(result.run.applied).toBe(false);
+    // Workspace README should NOT be modified.
+    expect(await readFile(path.join(workspaceRoot, "README.md"), "utf8")).toBe("baseline\n");
+  });
+
 });
