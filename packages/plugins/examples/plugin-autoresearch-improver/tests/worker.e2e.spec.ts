@@ -1126,4 +1126,45 @@ console.log(JSON.stringify({ primary: 0.75, guardrails: { safe: true } }));
     expect(["accepted", "rejected"]).toContain(result.run.outcome);
   });
 
+  it("noiseFloor is set on optimizer after run with scoreRepeats >= 2", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    await writeFile(path.join(workspaceRoot, "repeat-scorer.mjs"), `
+import { writeFileSync } from "node:fs";
+const score = 0.5 + (Math.random() * 0.1);
+writeFileSync("score.txt", JSON.stringify({ primary: score, guardrails: { safe: true } }));
+console.log(JSON.stringify({ primary: score, guardrails: { safe: true } }));
+`, "utf8");
+    await run("git", ["add", "repeat-scorer.mjs"], workspaceRoot);
+    await run("git", ["commit", "-m", "add repeat scorer"], workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "NoiseFloor test",
+      objective: "Test noiseFloor tracking",
+      mutablePaths: "README.md",
+      mutationCommand: 'node -e "const fs=require(\'node:fs\');fs.writeFileSync(\'README.md\',\'candidate\\n\')"',
+      scoreCommand: "node repeat-scorer.mjs",
+      scoreFormat: "json",
+      scoreKey: "primary",
+      scoreRepeats: 3,
+      scoreAggregator: "mean",
+      sandboxStrategy: "copy",
+      scorerIsolationMode: "same_workspace",
+      applyMode: "automatic"
+    }) as { optimizerId: string };
+
+    const result = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { run: { outcome: string }; optimizer: { noiseFloor: number | null } };
+
+    expect(result.run.outcome).toBeTruthy();
+    // After a run with 3 repeats, noiseFloor should be set
+    expect(result.optimizer.noiseFloor).not.toBeNull();
+    expect(result.optimizer.noiseFloor).toBeGreaterThanOrEqual(0);
+  });
 });
