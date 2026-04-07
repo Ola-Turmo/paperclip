@@ -215,3 +215,30 @@ For each proposed method:
 
 Optimize for practical leverage, not novelty.
 ```
+
+
+## 10. Template and policy design
+
+```text
+Given a Paperclip autoresearch plugin that now supports three score improvement policies:
+
+1. **threshold** (default): delta > minimumImprovement
+2. **confidence**: delta > k × stdDev(scores), with k configurable (default 2.0), needs scoreRepeats ≥ 2
+3. **epsilon**: delta > max(epsilonValue, noiseFloor), for known minimum improvements
+
+And also supports:
+- auto-pause after stagnation threshold (configurable consecutiveNonImprovements limit)
+- 7 built-in templates (Test Suite Ratchet, Lighthouse, Dry Run, Noisy Scorer, Epsilon Stability, Auto-Accept Fast, Stagnation Guard)
+- optimizer history tracking (created, cloned, config_updated, run_accepted, run_rejected, paused, resumed)
+- clone optimizer with incremented cloneCount
+- richer overview metrics (avg score, avg delta, rejection rate)
+
+Research questions:
+1. What are the best practices for setting scoreRepeats, confidenceThreshold, and epsilonValue given different scorer types (deterministic, low-noise, high-noise)?
+2. How should the stagnation threshold be tuned relative to the scoreRepeats and improvement policy?
+3. When should a user choose epsilon vs confidence policy? What are the failure modes of each?
+4. How should clone optimizer be used in practice — for branching experiments, A/B comparison, or config variation?
+5. What patterns emerge from optimizer history that could inform automated policy suggestion or self-tuning?
+
+Return a practical guide for template selection, policy tuning, and stagnation management.
+```
