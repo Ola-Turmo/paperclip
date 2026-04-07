@@ -1075,17 +1075,28 @@ async function createIssueFromRun(
 ): Promise<{ id: string; title: string }> {
   const title = `${titlePrefix ?? "Optimizer run"}: ${optimizer.name}`;
   const patchPreview = run.artifacts.patch || "(no diff patch captured)";
+  const delta = (run.candidateScore != null && run.baselineScore != null)
+    ? (run.candidateScore - run.baselineScore).toFixed(4)
+    : "n/a";
+  const durationMs = new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime();
+  const scoringMetrics = run.scoringAggregate?.metrics;
+  const guardrailVals = run.guardrailAggregate?.guardrails;
   const description = [
     `Objective: ${optimizer.objective}`,
     `Outcome: ${run.outcome}`,
     `Reason: ${run.reason}`,
     "",
-    `Baseline score: ${run.baselineScore ?? "n/a"}`,
-    `Candidate score: ${run.candidateScore ?? "n/a"}`,
+    `Baseline score: ${run.baselineScore ?? "n/a"} | Candidate: ${run.candidateScore ?? "n/a"} | Delta: ${delta}`,
+    scoringMetrics && Object.keys(scoringMetrics).length > 0
+      ? `Scoring metrics: ${Object.entries(scoringMetrics).map(([k, v]) => `${k}=${v}`).join(", ")}`
+      : null,
+    guardrailVals && Object.keys(guardrailVals).length > 0
+      ? `Guardrail results: ${Object.entries(guardrailVals).map(([k, v]) => `${k}=${v}`).join(", ")}`
+      : `Guardrail: ${run.guardrail ? formatCommandSummary(run.guardrail) : "not configured"}`,
+    `Duration: ${(durationMs / 1000).toFixed(1)}s | Scoring repeats: ${run.scoringRepeats.length}x`,
     "",
     `Mutation: ${formatCommandSummary(run.mutation)}`,
     `Scoring: ${formatCommandSummary(run.scoring)}`,
-    run.guardrail ? `Guardrail: ${formatCommandSummary(run.guardrail)}` : "Guardrail: not configured",
     "",
     `Changed files (${run.artifacts.changedFiles.length}): ${run.artifacts.changedFiles.join(", ") || "none"}`,
     `Unauthorized changes: ${run.artifacts.unauthorizedChangedFiles.join(", ") || "none"}`,
@@ -1093,11 +1104,19 @@ async function createIssueFromRun(
       ? `Patch conflict: ${run.patchConflict.conflictingFiles.join(", ") || "detected but files unknown"}`
       : null,
     "",
+    optimizer.consecutiveNonImprovements > 0
+      ? `Consecutive non-improvements: ${optimizer.consecutiveNonImprovements} (threshold: ${optimizer.stagnationIssueThreshold})`
+      : null,
+    optimizer.consecutiveFailures > 0
+      ? `Consecutive failures: ${optimizer.consecutiveFailures}`
+      : null,
+    "",
+    "---",
     "Patch preview",
     "```diff",
     patchPreview,
     "```"
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 
   const issue = await ctx.issues.create({
     companyId,
