@@ -89,6 +89,37 @@ const manifest: PaperclipPluginManifestV1 = {
         maximum: 1000000,
         default: 0
       },
+      guardrailRepeats: {
+        type: "number",
+        minimum: 1,
+        maximum: 10,
+        default: 1
+      },
+      guardrailAggregator: {
+        type: "string",
+        enum: ["all", "any"],
+        default: "all"
+      },
+      scoreImprovementPolicy: {
+        type: "string",
+        enum: ["threshold", "confidence", "epsilon"],
+        default: "threshold",
+        description: "How to decide if a score improvement is real. threshold: delta > minImprovement. confidence: delta > k×stdDev. epsilon: delta > max(epsilon, noiseFloor)."
+      },
+      confidenceThreshold: {
+        type: "number",
+        minimum: 0.5,
+        maximum: 10,
+        default: 2.0,
+        description: "k multiplier for stdDev in confidence policy."
+      },
+      epsilonValue: {
+        type: "number",
+        minimum: 0,
+        maximum: 1000000,
+        default: 0.01,
+        description: "Minimum meaningful improvement for epsilon policy."
+      },
       stagnationIssueThreshold: {
         type: "number",
         minimum: 1,

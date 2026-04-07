@@ -219,8 +219,14 @@ export interface PluginConfigValues {
   maxOutputChars: number;
   sweepLimit: number;
   scoreRepeats: number;
+  guardrailRepeats: number;
+  guardrailAggregator: "all" | "any";
   minimumImprovement: number;
   stagnationIssueThreshold: number;
+  /** Score improvement policy. "threshold" (default), "confidence", or "epsilon". */
+  scoreImprovementPolicy?: "threshold" | "confidence" | "epsilon";
+  confidenceThreshold?: number;
+  epsilonValue?: number;
 }
 
 export interface OverviewData {

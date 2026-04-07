@@ -806,8 +806,13 @@ async function getConfig(ctx: PluginContext): Promise<PluginConfigValues> {
     maxOutputChars: clampPositiveInteger(raw.maxOutputChars, DEFAULTS.maxOutputChars),
     sweepLimit: clampPositiveInteger(raw.sweepLimit, DEFAULTS.sweepLimit),
     scoreRepeats: clampPositiveInteger(raw.scoreRepeats, DEFAULTS.scoreRepeats),
+    guardrailRepeats: clampPositiveInteger(raw.guardrailRepeats, DEFAULTS.guardrailRepeats),
+    guardrailAggregator: raw.guardrailAggregator === "any" ? "any" : "all",
     minimumImprovement: clampNonNegativeNumber(raw.minimumImprovement, DEFAULTS.minimumImprovement),
-    stagnationIssueThreshold: clampPositiveInteger(raw.stagnationIssueThreshold, DEFAULTS.stagnationIssueThreshold)
+    stagnationIssueThreshold: clampPositiveInteger(raw.stagnationIssueThreshold, DEFAULTS.stagnationIssueThreshold),
+    scoreImprovementPolicy: (raw.scoreImprovementPolicy === "confidence" || raw.scoreImprovementPolicy === "epsilon") ? raw.scoreImprovementPolicy : undefined,
+    confidenceThreshold: typeof raw.confidenceThreshold === "number" && Number.isFinite(raw.confidenceThreshold) ? raw.confidenceThreshold : undefined,
+    epsilonValue: typeof raw.epsilonValue === "number" && raw.epsilonValue >= 0 ? raw.epsilonValue : undefined
   };
 }
 
