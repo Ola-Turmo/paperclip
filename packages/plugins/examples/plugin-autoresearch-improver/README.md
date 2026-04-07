@@ -504,9 +504,10 @@ The strengthened runtime in this branch preserves that deployment path while add
 - Scoring is isolated at the workspace/executor level. Separating into a remote scoring service requires further architectural work.
 - Git-backed PR creation assumes the workspace repo is in a committable state for the run's changed files.
 - Diff capture uses `git diff --no-index` for patch previews and falls back gracefully when diff generation is incomplete.
-- Binary files are detected by null-byte scanning and excluded from the text patch.
+- Binary files are detected by null-byte scanning and excluded from the text patch; the `binaryFiles` array on the diff artifact lists them.
 - Copy-mode sandboxes still exist for non-git workspaces or when operators prefer filesystem sync over git patch apply.
-- Git worktree strategy requires the workspace to be the git repo root.
+- Git worktree strategy requires the workspace to be the git repo root (worktrees are full-repo copies).
+- `noiseFloor` is computed internally from scorer variance (stdDev of repeated scores) after each run. The epsilon policy uses it as `max(epsilonValue, noiseFloor)` so noisy scorers require larger deltas to qualify.
 
 ## Instance config
 
@@ -527,3 +528,4 @@ The plugin instance config supports:
 - `scoreImprovementPolicy` ("threshold" | "confidence" | "epsilon")
 - `confidenceThreshold` (k multiplier for stdDev in confidence policy)
 - `epsilonValue` (minimum meaningful improvement for epsilon policy)
+- `autoPauseOnConsecutiveFailures` is an **optimizer-level** flag, not instance-level (set per-optimizer in the optimizer editor form)

@@ -230,8 +230,10 @@ And also supports:
 - auto-pause after stagnation threshold (configurable consecutiveNonImprovements limit)
 - 7 built-in templates (Test Suite Ratchet, Lighthouse, Dry Run, Noisy Scorer, Epsilon Stability, Auto-Accept Fast, Stagnation Guard)
 - optimizer history tracking (created, cloned, config_updated, run_accepted, run_rejected, paused, resumed)
-- clone optimizer with incremented cloneCount
+- optimizer cloning with incremented cloneCount
 - richer overview metrics (avg score, avg delta, rejection rate)
+- separate invalidRuns counter (distinct from rejectedRuns)
+- `noiseFloor` computed from scorer variance and used as epsilon policy's rolling noise floor
 
 Research questions:
 1. What are the best practices for setting scoreRepeats, confidenceThreshold, and epsilonValue given different scorer types (deterministic, low-noise, high-noise)?

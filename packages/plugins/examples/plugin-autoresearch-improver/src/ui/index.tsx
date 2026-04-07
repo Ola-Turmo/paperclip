@@ -1100,7 +1100,7 @@ function OptimizerEditor({
         </div>
         {selectedOptimizer ? (
           <div style={{ marginTop: 12, fontSize: 13, opacity: 0.82 }}>
-            Queue {selectedOptimizer.queueState} | Best {formatScore(selectedOptimizer.bestScore)} | Accepted {selectedOptimizer.acceptedRuns} | Rejected {selectedOptimizer.rejectedRuns} | Invalid {selectedOptimizer.invalidRuns ?? 0} | No-improves {selectedOptimizer.consecutiveNonImprovements}/{selectedOptimizer.stagnationIssueThreshold} | Failures {selectedOptimizer.consecutiveFailures}
+            Queue {selectedOptimizer.queueState} | Best {formatScore(selectedOptimizer.bestScore)} | Accepted {selectedOptimizer.acceptedRuns} | Rejected {selectedOptimizer.rejectedRuns} | Invalid {selectedOptimizer.invalidRuns ?? 0} | No-improves {selectedOptimizer.consecutiveNonImprovements}/{selectedOptimizer.stagnationIssueThreshold} | Failures {selectedOptimizer.consecutiveFailures}{selectedOptimizer.noiseFloor != null ? ` | NoiseFloor ${selectedOptimizer.noiseFloor.toFixed(4)}` : ""}
           </div>
         ) : null}
         {selectedOptimizer?.applyMode === "automatic" && !selectedOptimizer?.proposalBranchPrefix && !selectedOptimizer?.proposalPrCommand ? (
