@@ -1386,6 +1386,19 @@ function OptimizerEditor({
             <button type="button" style={{ fontSize: 11, padding: "4px 10px", background: showHistory ? "rgba(100,116,139,0.2)" : "rgba(100,116,139,0.1)", border: "1px solid rgba(100,116,139,0.3)", borderRadius: 6, cursor: "pointer" }} onClick={() => setShowHistory((v) => !v)}>
               {showHistory ? "Hide" : "Show"}
             </button>
+            {showHistory && (historyQuery.data?.records?.length ?? 0) > 0 ? (
+              <button type="button" style={{ fontSize: 11, padding: "4px 10px", background: "rgba(22,101,52,0.08)", border: "1px solid rgba(22,101,52,0.2)", borderRadius: 6, cursor: "pointer" }} onClick={() => {
+                const blob = new Blob([JSON.stringify(historyQuery.data?.records ?? [], null, 2)], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `optimizer-history-${selectedOptimizer?.optimizerId.slice(0, 8) ?? "unknown"}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}>
+                Download
+              </button>
+            ) : null}
           </div>
           {showHistory ? (
             historyQuery.data?.records && historyQuery.data.records.length > 0 ? (

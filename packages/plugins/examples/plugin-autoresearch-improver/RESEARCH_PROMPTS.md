@@ -244,3 +244,33 @@ Research questions:
 
 Return a practical guide for template selection, policy tuning, and stagnation management.
 ```
+
+
+## 11. Run history analysis and scorer drift detection
+
+```text
+The optimizer tracks a history of config changes (created, config_updated, run_accepted,
+run_rejected, paused, resumed, cloned) and a counter of runs, acceptedRuns, rejectedRuns,
+invalidRuns, consecutiveFailures, consecutiveNonImprovements.
+
+Each run record captures: scoringRepeats with individual scores, scoringAggregate with
+metrics, guardrailAggregate with guardrails, artifacts with patch/stats, baselineScore,
+candidateScore, outcome, reason, duration.
+
+Research questions:
+1. How can scoring history be used to detect scorer drift (the scorer itself changing
+   behavior over time — e.g., external API version changes, time-of-day effects)?
+   What signals would indicate the scorer has changed?
+2. What patterns in the run history could trigger a policy switch? For example,
+   if confidence policy consistently produces rejections, should it fall back to
+   threshold? If epsilon policy causes rejections on every small improvement,
+   should noiseFloor be cleared or recalculated?
+3. When consecutiveNonImprovements grows, at what point should the optimizer
+   auto-pause vs suggest a scorer change vs clone the optimizer to try different config?
+4. How could optimizer history (ConfigChangeRecord entries) be used to give users
+   a "timeline view" of their optimization — what changed, when, and why?
+5. What minimum dataset size is needed to make confidence policy reliable?
+   (needs scoreRepeats >= 2 per run, and many runs to compute stdDev of means)
+
+Return actionable heuristics for history-driven optimization management.
+```
