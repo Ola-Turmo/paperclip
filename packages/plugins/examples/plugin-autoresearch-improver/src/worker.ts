@@ -1087,6 +1087,9 @@ async function createIssueFromRun(
     "",
     `Changed files (${run.artifacts.changedFiles.length}): ${run.artifacts.changedFiles.join(", ") || "none"}`,
     `Unauthorized changes: ${run.artifacts.unauthorizedChangedFiles.join(", ") || "none"}`,
+    run.patchConflict?.hasConflicts
+      ? `Patch conflict: ${run.patchConflict.conflictingFiles.join(", ") || "detected but files unknown"}`
+      : null,
     "",
     "Patch preview",
     "```diff",
