@@ -541,6 +541,11 @@ function RunCard({
         </span>
       </div>
       <div style={{ marginTop: 6, fontSize: 13 }}>{run.reason}</div>
+      {run.invalidReason ? (
+        <div style={{ marginTop: 5, color: "#b91c1c", fontSize: 12, fontWeight: 600 }}>
+          Invalid: {run.invalidReason}
+        </div>
+      ) : null}
       <div style={{ marginTop: 8, display: "flex", gap: 16, flexWrap: "wrap", fontSize: 13 }}>
         <span>Baseline <strong>{formatScore(run.baselineScore)}</strong></span>
         <span>→</span>
@@ -1085,7 +1090,7 @@ function OptimizerEditor({
         </div>
         {selectedOptimizer ? (
           <div style={{ marginTop: 12, fontSize: 13, opacity: 0.82 }}>
-            Queue {selectedOptimizer.queueState} | Best {formatScore(selectedOptimizer.bestScore)} | Accepted {selectedOptimizer.acceptedRuns} | Pending {selectedOptimizer.pendingApprovalRuns}
+            Queue {selectedOptimizer.queueState} | Best {formatScore(selectedOptimizer.bestScore)} | Accepted {selectedOptimizer.acceptedRuns} | Pending {selectedOptimizer.pendingApprovalRuns} | No-improves {selectedOptimizer.consecutiveNonImprovements}
           </div>
         ) : null}
         {selectedOptimizer?.applyMode === "automatic" && !selectedOptimizer?.proposalBranchPrefix && !selectedOptimizer?.proposalPrCommand ? (
