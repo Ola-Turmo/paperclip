@@ -225,7 +225,7 @@ Each run stores:
 - patch preview
 - patch-apply conflict info when git apply fails (conflicting files, stderr excerpt)
 - workspace HEAD commit SHA at run creation (used for stale-candidate detection)
-- optional PR branch, commit, URL, and PR command result
+- optional PR branch, commit, URL, PR number, push result (pushed flag, push remote, push exit code), and full command result
 
 ## Queueing and automation
 
@@ -256,24 +256,23 @@ Generated issues include the objective, score delta, command summaries, changed 
 
 For applied runs, the plugin can:
 
-1. create a proposal branch
-2. stage only the run's changed files
-3. create a commit
-4. optionally execute a PR command such as `gh pr create`
+1. check that no branch with the proposed name already exists (branch existence guard)
+2. create a proposal branch (optionally from an explicit `proposalBaseBranch`)
+3. stage only the run's changed files
+4. create a commit
+5. optionally push the branch via `proposalPushCommand`
+6. optionally execute a PR command such as `gh pr create`
+7. extract the PR number from the PR command output (`!123` or `#123` patterns)
 
 Useful optimizer fields:
 
-- `proposalBranchPrefix`
-- `proposalCommitMessage`
-- `proposalPrCommand`
+- `proposalBranchPrefix` — prefix for the generated branch name
+- `proposalBaseBranch` — explicit base branch (defaults to current checked-out branch)
+- `proposalPushCommand` — optional push step run before the PR command (receives `PAPERCLIP_PROPOSAL_REMOTE`)
+- `proposalCommitMessage` — commit message override
+- `proposalPrCommand` — PR creation command (receives `PAPERCLIP_PROPOSAL_BRANCH`, `PAPERCLIP_PROPOSAL_COMMIT`, `PAPERCLIP_OPTIMIZER_ID`, `PAPERCLIP_OPTIMIZER_NAME`, `PAPERCLIP_OPTIMIZER_RUN_ID`)
 
-The PR command receives:
-
-- `PAPERCLIP_OPTIMIZER_ID`
-- `PAPERCLIP_OPTIMIZER_NAME`
-- `PAPERCLIP_OPTIMIZER_RUN_ID`
-- `PAPERCLIP_PROPOSAL_BRANCH`
-- `PAPERCLIP_PROPOSAL_COMMIT`
+Stored PR artifacts include: branch name, base branch, remote, commit SHA, PR URL, PR number, push result, push remote, push exit code, command output, and creation timestamp.
 
 ## Approval UI
 

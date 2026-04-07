@@ -364,7 +364,7 @@ describe("autoresearch improver worker e2e", () => {
       scorerIsolationMode: "separate_workspace",
       applyMode: "manual_approval",
       proposalBranchPrefix: "paprclip/e2e-dirty",
-      proposalPrCommand: "node -e \"console.log('https://example.test/pr/999')\""
+      proposalPrCommand: "node -e \"console.log('https://example.test/pr/999')\","
     }) as { optimizerId: string };
     const runCycle = await harness.performAction("run-optimizer-cycle", {
       projectId,
@@ -479,5 +479,174 @@ describe("autoresearch improver worker e2e", () => {
     // patched), and the original baseline must be untouched.
     const readmeContent = await readFile(path.join(workspaceRoot, "README.md"), "utf8");
     expect(readmeContent).toBe("user change\n");
+  });
+
+  it("fails gracefully when the PR command exits non-zero", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Failing PR command",
+      objective: "Test PR command failure",
+      mutablePaths: "README.md",
+      mutationCommand: "node -e \"const fs=require('node:fs');fs.writeFileSync('README.md','candidate\\n')\"",
+      scoreCommand: readmeScoreCommand,
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "automatic",
+      proposalBranchPrefix: "paprclip/e2e-pr-fail",
+      // Command that always fails with a non-zero exit code
+      proposalPrCommand: "node -e \"console.error('PR command failed');process.exit(1)\"",
+      proposalPushCommand: undefined
+    }) as { optimizerId: string };
+
+    const runCycle = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { run: { runId: string; outcome: string } };
+    expect(runCycle.run.outcome).toBe("accepted");
+
+    // Creating the PR: the command runs but exits non-zero.
+    // The artifact should still be returned with the failure recorded.
+    const prArtifact = await harness.performAction("create-pull-request-from-run", {
+      projectId,
+      optimizerId: optimizer.optimizerId,
+      runId: runCycle.run.runId
+    }) as { commandResult?: { ok: boolean; exitCode: number }; pullRequestUrl?: string };
+    // The command result should reflect the failure.
+    expect(prArtifact.commandResult?.ok).toBe(false);
+    expect(prArtifact.commandResult?.exitCode).toBe(1);
+    // No PR URL was produced since the command failed.
+    expect(prArtifact.pullRequestUrl).toBeUndefined();
+  });
+
+  it("works in copy-mode sandbox and applies changes back", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Copy-mode optimizer",
+      objective: "Test copy-mode sandbox",
+      mutablePaths: "README.md",
+      mutationCommand: "node -e \"const fs=require('node:fs');fs.writeFileSync('README.md','copy-mode-candidate\\n')\"",
+      scoreCommand: readmeScoreCommand,
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "copy",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "automatic"
+    }) as { optimizerId: string };
+
+    const result = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { run: { outcome: string; sandboxStrategy: string } };
+
+    expect(result.run.outcome).toBe("accepted");
+    expect(result.run.sandboxStrategy).toBe("copy");
+    // In copy mode, the workspace should be mutated directly.
+    expect(await readFile(path.join(workspaceRoot, "README.md"), "utf8")).toBe("copy-mode-candidate\n");
+  });
+
+  it("run records are persisted correctly after approval and rejection", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Persistence check",
+      objective: "Test run persistence",
+      mutablePaths: "README.md",
+      mutationCommand: "node -e \"const fs=require('node:fs');fs.writeFileSync('README.md','persistence-test\\n')\"",
+      scoreCommand: readmeScoreCommand,
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "manual_approval"
+    }) as { optimizerId: string };
+
+    const pending = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { run: { runId: string; outcome: string; approvalStatus: string } };
+
+    expect(pending.run.outcome).toBe("pending_approval");
+    expect(pending.run.approvalStatus).toBe("pending");
+
+    // Reject the pending run
+    await harness.performAction("reject-optimizer-run", {
+      projectId,
+      optimizerId: optimizer.optimizerId,
+      runId: pending.run.runId
+    });
+
+    // Verify the run record reflects rejection
+    const allRuns = await harness.getData("optimizer-runs", {
+      optimizerId: optimizer.optimizerId,
+      projectId
+    }) as Array<{ runId: string; outcome: string; approvalStatus: string }>;
+    const rejectedRun = allRuns.find((r) => r.runId === pending.run.runId);
+    expect(rejectedRun).toBeTruthy();
+    expect(rejectedRun!.outcome).toBe("rejected");
+    expect(rejectedRun!.approvalStatus).toBe("rejected");
+    // Workspace must not have been modified.
+    expect(await readFile(path.join(workspaceRoot, "README.md"), "utf8")).toBe("baseline\n");
+  });
+
+    it("rejects proposal creation if the branch already exists", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Branch reuse check",
+      objective: "Test branch reuse prevention",
+      mutablePaths: "README.md",
+      mutationCommand: "node -e \"const fs=require('node:fs');fs.writeFileSync('README.md','improved\\n')\"",
+      scoreCommand: readmeScoreCommand,
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "automatic",
+      proposalBranchPrefix: "paprclip/e2e-branch-check",
+      proposalPrCommand: "node -e \"console.log('https://example.test/pr/999')\"",
+    }) as { optimizerId: string };
+
+    const firstRun = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { run: { runId: string; outcome: string } };
+    expect(firstRun.run.outcome).toBe("accepted");
+
+    // Create the PR from the first run — this creates the proposal branch.
+    await harness.performAction("create-pull-request-from-run", {
+      projectId,
+      optimizerId: optimizer.optimizerId,
+      runId: firstRun.run.runId
+    });
+
+    // Attempting to create a PR from the same (already-applied) run again
+    // should fail because the branch already exists (reuse policy).
+    await expect(
+      harness.performAction("create-pull-request-from-run", {
+        projectId,
+        optimizerId: optimizer.optimizerId,
+        runId: firstRun.run.runId
+      })
+    ).rejects.toThrow(/already exists/i);
   });
 });

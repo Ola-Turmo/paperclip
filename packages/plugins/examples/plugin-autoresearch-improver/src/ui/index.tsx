@@ -70,6 +70,8 @@ type FormState = {
   stagnationIssueThreshold: string;
   proposalBranchPrefix: string;
   proposalCommitMessage: string;
+  proposalBaseBranch: string;
+  proposalPushCommand: string;
   proposalPrCommand: string;
   notes: string;
 };
@@ -148,6 +150,8 @@ function emptyForm(workspaceId = ""): FormState {
     stagnationIssueThreshold: "5",
     proposalBranchPrefix: "",
     proposalCommitMessage: "",
+    proposalBaseBranch: "",
+    proposalPushCommand: "",
     proposalPrCommand: "",
     notes: ""
   };
@@ -189,6 +193,8 @@ function formFromOptimizer(optimizer: OptimizerDefinition): FormState {
     stagnationIssueThreshold: String(optimizer.stagnationIssueThreshold),
     proposalBranchPrefix: optimizer.proposalBranchPrefix ?? "",
     proposalCommitMessage: optimizer.proposalCommitMessage ?? "",
+    proposalBaseBranch: optimizer.proposalBaseBranch ?? "",
+    proposalPushCommand: optimizer.proposalPushCommand ?? "",
     proposalPrCommand: optimizer.proposalPrCommand ?? "",
     notes: optimizer.notes ?? ""
   };
@@ -231,6 +237,8 @@ function applyTemplate(template: OptimizerTemplate, current: FormState, workspac
     stagnationIssueThreshold: values.stagnationIssueThreshold != null ? String(values.stagnationIssueThreshold) : current.stagnationIssueThreshold,
     proposalBranchPrefix: values.proposalBranchPrefix ?? current.proposalBranchPrefix,
     proposalCommitMessage: values.proposalCommitMessage ?? current.proposalCommitMessage,
+    proposalBaseBranch: values.proposalBaseBranch ?? current.proposalBaseBranch,
+    proposalPushCommand: values.proposalPushCommand ?? current.proposalPushCommand,
     proposalPrCommand: values.proposalPrCommand ?? current.proposalPrCommand,
     notes: values.notes ?? current.notes
   };
@@ -272,6 +280,8 @@ function toActionPayload(form: FormState) {
     stagnationIssueThreshold: Number(form.stagnationIssueThreshold || 0),
     proposalBranchPrefix: form.proposalBranchPrefix || undefined,
     proposalCommitMessage: form.proposalCommitMessage || undefined,
+    proposalBaseBranch: form.proposalBaseBranch || undefined,
+    proposalPushCommand: form.proposalPushCommand || undefined,
     proposalPrCommand: form.proposalPrCommand || undefined,
     notes: form.notes || undefined
   };
@@ -421,6 +431,21 @@ function PullRequestCard({ pullRequest }: { pullRequest: NonNullable<OptimizerRu
             <CopyableText text={pullRequest.commitSha.slice(0, 12)} mono />
           </>
         ) : null}
+        {pullRequest.pullRequestNumber ? (
+          <>
+            <span style={{ opacity: 0.7 }}>PR #</span>
+            <CopyableText text={String(pullRequest.pullRequestNumber)} />
+          </>
+        ) : null}
+        {pullRequest.pushed !== undefined ? (
+          <>
+            <span style={{ opacity: 0.7 }}>Pushed</span>
+            <span style={{ color: pullRequest.pushed ? "#166534" : "#b91c1c" }}>
+              {pullRequest.pushed ? "yes" : "failed"}
+              {pullRequest.pushRemote ? ` (${pullRequest.pushRemote})` : ""}
+            </span>
+          </>
+        ) : null}
         {pullRequest.createdAt ? (
           <>
             <span style={{ opacity: 0.7 }}>Created</span>
@@ -429,7 +454,7 @@ function PullRequestCard({ pullRequest }: { pullRequest: NonNullable<OptimizerRu
         ) : null}
         {pullRequest.command ? (
           <>
-            <span style={{ opacity: 0.7 }}>Command</span>
+            <span style={{ opacity: 0.7 }}>PR command</span>
             <CopyableText text={pullRequest.command} mono />
           </>
         ) : null}
@@ -946,7 +971,7 @@ function OptimizerEditor({
         ) : null}
         {selectedOptimizer?.applyMode === "automatic" && !selectedOptimizer?.proposalBranchPrefix && !selectedOptimizer?.proposalPrCommand ? (
           <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 8, border: "1px solid rgba(234, 179, 8, 0.5)", background: "rgba(234, 179, 8, 0.06)", fontSize: 12, color: "#854d0e" }}>
-            ⚠️ <strong>Automatic apply</strong> is enabled but no proposal branch prefix or PR command is configured. Accepted candidates will be applied directly to the workspace without a review branch or PR. Consider adding a <code>proposalBranchPrefix</code> and <code>proposalPrCommand</code> if you want human review before workspace changes.
+            ⚠️ <strong>Automatic apply</strong> is enabled but no proposal branch prefix or PR command is configured. Accepted candidates will be applied directly to the workspace without a review branch or PR. Configure <code>proposalBranchPrefix</code>, <code>proposalPushCommand</code>, and <code>proposalPrCommand</code> for a full git-backed review flow.
           </div>
         ) : null}
       </section>
@@ -1121,14 +1146,18 @@ function OptimizerEditor({
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12 }}>
             <div>
               <strong>Proposal branch prefix</strong>
               <input style={{ ...inputStyle, marginTop: 6 }} value={form.proposalBranchPrefix} onChange={(event) => setForm((prev) => ({ ...prev, proposalBranchPrefix: event.target.value }))} placeholder="paprclip/autoresearch/my-optimizer" />
             </div>
             <div>
-              <strong>Proposal commit message</strong>
-              <input style={{ ...inputStyle, marginTop: 6 }} value={form.proposalCommitMessage} onChange={(event) => setForm((prev) => ({ ...prev, proposalCommitMessage: event.target.value }))} placeholder="Autoresearch candidate: ..." />
+              <strong>Proposal base branch</strong>
+              <input style={{ ...inputStyle, marginTop: 6 }} value={form.proposalBaseBranch} onChange={(event) => setForm((prev) => ({ ...prev, proposalBaseBranch: event.target.value }))} placeholder="main (auto-detect)" />
+            </div>
+            <div>
+              <strong>Push command</strong>
+              <input style={{ ...inputStyle, marginTop: 6 }} value={form.proposalPushCommand} onChange={(event) => setForm((prev) => ({ ...prev, proposalPushCommand: event.target.value }))} placeholder="git push origin $PAPERCLIP_PROPOSAL_BRANCH" />
             </div>
             <div>
               <strong>PR command</strong>

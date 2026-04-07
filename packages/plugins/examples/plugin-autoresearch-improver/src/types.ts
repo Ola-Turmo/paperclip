@@ -39,6 +39,14 @@ export interface PullRequestArtifact {
   remoteName?: string;
   commitSha?: string;
   pullRequestUrl?: string;
+  /** PR number extracted from the command output, e.g. from `gh pr create` output like "!123" or "#123". */
+  pullRequestNumber?: number | null;
+  /** Whether the branch was pushed to a remote. `undefined` means no push was attempted. */
+  pushed?: boolean;
+  /** Remote that the branch was pushed to. */
+  pushRemote?: string;
+  /** Exit code from the optional push step. */
+  pushExitCode?: number | null;
   command?: string;
   commandResult?: CommandExecutionResult;
   createdAt?: string;
@@ -97,6 +105,10 @@ export interface OptimizerDefinition {
   stagnationIssueThreshold: number;
   proposalBranchPrefix?: string;
   proposalCommitMessage?: string;
+  /** Base branch for the proposal. Defaults to the current checked-out branch. */
+  proposalBaseBranch?: string;
+  /** Optional push command run after the commit but before the PR command. E.g. `git push origin $PAPERCLIP_PROPOSAL_BRANCH`. */
+  proposalPushCommand?: string;
   proposalPrCommand?: string;
   notes?: string;
   bestScore?: number;

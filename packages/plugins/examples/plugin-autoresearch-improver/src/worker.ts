@@ -967,6 +967,22 @@ function extractPullRequestUrl(output: string): string | undefined {
   return match?.[0];
 }
 
+/**
+ * Extract a PR number from common GitHub CLI output patterns:
+ * - "!123" (gh pr create default format)
+ * - "#123"
+ * - "/pull/123" in URLs already captured by extractPullRequestUrl
+ */
+function extractPullRequestNumber(output: string): number | null {
+  // Match !123 or #123 at the end of a line or surrounded by whitespace
+  const match = output.match(/(?:^|[\s])([!#])(\d+)(?:[\s]|$)/m);
+  if (match) {
+    const value = Number(match[2]);
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return null;
+}
+
 async function createPullRequestFromRun(
   ctx: PluginContext,
   optimizer: OptimizerDefinition,
@@ -1017,13 +1033,27 @@ async function createPullRequestFromRun(
     throw new Error("Run must be applied before creating a pull request.");
   }
 
-  const { stdout: currentBranch } = await runGit(git.repoRoot, ["branch", "--show-current"]);
-  const baseBranch = currentBranch.trim() || "HEAD";
+  // Resolve base branch: use optimizer's explicit base if set, otherwise auto-detect from current branch.
+  const baseBranch = optimizer.proposalBaseBranch?.trim()
+    || (await runGit(git.repoRoot, ["branch", "--show-current"])).stdout.trim()
+    || "HEAD";
+
+  // Resolve the default remote (origin) for push tracking.
   const { stdout: remoteInfo } = await runGit(git.repoRoot, ["config", "--get", `branch.${baseBranch}.remote`])
     .catch(() => ({ stdout: "" }));
   const remoteName = remoteInfo.trim() || undefined;
 
   const branchName = buildProposalBranchName(optimizer, run);
+
+  // Branch existence check: refuse to create a PR if the proposal branch already exists
+  // to prevent accidentally pushing duplicate commits or overwriting an existing review branch.
+  const { stdout: existingBranches } = await runGit(git.repoRoot, ["branch", "--list", branchName]);
+  if (existingBranches.trim()) {
+    throw new Error(
+      `Proposal branch "${branchName}" already exists. Delete it first or change the proposalBranchPrefix to create a fresh branch.`
+    );
+  }
+
   await runGit(git.repoRoot, ["checkout", "-B", branchName]);
 
   const repoRelativeChangedFiles = run.artifacts.changedFiles.map((entry) => toRepoRelativePath(git, entry));
@@ -1031,8 +1061,35 @@ async function createPullRequestFromRun(
   await runGit(git.repoRoot, ["commit", "-m", buildProposalCommitMessage(optimizer, run)]);
 
   const { stdout: commitSha } = await runGit(git.repoRoot, ["rev-parse", "HEAD"]);
+
+  // Optional push: run a dedicated push command if configured.
+  let pushed: boolean | undefined;
+  let pushRemote: string | undefined;
+  let pushExitCode: number | null | undefined;
+  if (optimizer.proposalPushCommand?.trim()) {
+    const pushResult = await runShellCommand(
+      optimizer.proposalPushCommand,
+      workspacePath,
+      optimizer.scoreBudgetSeconds,
+      {
+        ...process.env,
+        PAPERCLIP_OPTIMIZER_ID: optimizer.optimizerId,
+        PAPERCLIP_OPTIMIZER_NAME: optimizer.name,
+        PAPERCLIP_OPTIMIZER_RUN_ID: run.runId,
+        PAPERCLIP_PROPOSAL_BRANCH: branchName,
+        PAPERCLIP_PROPOSAL_COMMIT: commitSha.trim(),
+        PAPERCLIP_PROPOSAL_REMOTE: remoteName ?? "origin"
+      },
+      config.maxOutputChars
+    );
+    pushed = pushResult.ok;
+    pushExitCode = pushResult.exitCode;
+    pushRemote = remoteName;
+  }
+
   let commandResult: CommandExecutionResult | undefined;
   let pullRequestUrl: string | undefined;
+  let pullRequestNumber: number | null = null;
 
   if (optimizer.proposalPrCommand?.trim()) {
     commandResult = await runShellCommand(
@@ -1049,7 +1106,9 @@ async function createPullRequestFromRun(
       },
       config.maxOutputChars
     );
-    pullRequestUrl = extractPullRequestUrl(`${commandResult.stdout}\n${commandResult.stderr}`);
+    const output = `${commandResult.stdout}\n${commandResult.stderr}`;
+    pullRequestUrl = extractPullRequestUrl(output);
+    pullRequestNumber = extractPullRequestNumber(output);
   }
 
   return {
@@ -1058,6 +1117,10 @@ async function createPullRequestFromRun(
     remoteName,
     commitSha: commitSha.trim(),
     pullRequestUrl,
+    pullRequestNumber,
+    pushed,
+    pushRemote,
+    pushExitCode,
     command: optimizer.proposalPrCommand,
     commandResult,
     createdAt: nowIso()
@@ -1128,6 +1191,12 @@ async function createOptimizerFromParams(
       : undefined,
     proposalCommitMessage: typeof params.proposalCommitMessage === "string" && params.proposalCommitMessage.trim()
       ? params.proposalCommitMessage.trim()
+      : undefined,
+    proposalBaseBranch: typeof params.proposalBaseBranch === "string" && params.proposalBaseBranch.trim()
+      ? params.proposalBaseBranch.trim()
+      : undefined,
+    proposalPushCommand: typeof params.proposalPushCommand === "string" && params.proposalPushCommand.trim()
+      ? params.proposalPushCommand.trim()
       : undefined,
     proposalPrCommand: typeof params.proposalPrCommand === "string" && params.proposalPrCommand.trim()
       ? params.proposalPrCommand.trim()

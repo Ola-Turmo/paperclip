@@ -7,12 +7,7 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
 - Separate scoring into a real external evaluator service instead of a separate local workspace.
 - ✅ Protect dirty repos before PR creation so unrelated local changes are never swept into proposal branches. *(implemented: dirty-repo guard in `createPullRequestFromRun`)*
 - ✅ Add stale-candidate detection before approval or PR creation. *(implemented: workspace HEAD comparison in `promotePendingRun` and `createPullRequestFromRun`)*
-- Store richer PR metadata on runs.
-  - PR number
-  - base branch
-  - remote name
-  - push result
-  - merge status
+- ✅ Store richer PR metadata on runs. *(implemented: PR number extraction, push result tracking, branch existence check, proposalBaseBranch, proposalPushCommand fields)*
 
 ## Safety and correctness
 
@@ -46,13 +41,13 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
 - ✅ E2e coverage for patch-apply conflicts *(implemented: patch-apply conflict test with conflicting commit)*
 - ✅ E2e coverage for dirty workspace rejection before proposal creation *(implemented: dirty-repo PR rejection test)*
 - ✅ E2e coverage for dirty workspace rejection before approval *(implemented: dirty approval guard test)*
+- ✅ E2e coverage for copy-mode sandboxes *(implemented)*
+- ✅ E2e coverage for PR command failures *(implemented: commandResult.ok=false is returned in artifact)*
+- ✅ Run persistence assertions after approval and rejection *(implemented: verify run record outcome/approvalStatus after reject action)*
 - Add e2e coverage for:
-  - copy-mode sandboxes
   - subdirectory workspaces inside a larger git repo
   - untracked file creation inside the mutable surface
   - deletion flows
-  - PR command failures
-- Add assertions around run persistence after approval and rejection.
 - Add UI-level tests for the comparison and approval flows.
 
 ## Documentation
