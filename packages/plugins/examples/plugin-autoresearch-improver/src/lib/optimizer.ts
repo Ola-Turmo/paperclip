@@ -386,6 +386,7 @@ export function buildOptimizerBrief(optimizer: OptimizerDefinition): Record<stri
     scoreImprovementPolicy: optimizer.scoreImprovementPolicy ?? "threshold",
     confidenceThreshold: optimizer.confidenceThreshold,
     epsilonValue: optimizer.epsilonValue,
+    noiseFloor: optimizer.noiseFloor,
     minimumImprovement: optimizer.minimumImprovement,
     guardrailRepeats: optimizer.guardrailRepeats,
     guardrailAggregator: optimizer.guardrailAggregator,
