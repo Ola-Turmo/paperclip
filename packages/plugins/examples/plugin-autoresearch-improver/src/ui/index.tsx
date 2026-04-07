@@ -343,9 +343,11 @@ function scoreDelta(baseline: number | null, candidate: number | null): number |
 function guardrailSummary(run: OptimizerRunRecord): string {
   if (!run.guardrailAggregate) return "not configured";
   const guards = run.guardrailAggregate.guardrails;
+  const passed = run.guardrail?.passed;
   const entries = Object.entries(guards);
-  if (entries.length === 0) return "none";
-  return entries.map(([k, v]) => `${k}: ${v}`).join(", ");
+  if (entries.length === 0) return passed ? "none (passed)" : "none (failed)";
+  const summary = entries.map(([k, v]) => `${k}: ${v}`).join(", ");
+  return passed === false ? `${summary} (FAILED)` : `${summary} (OK)`;
 }
 
 type RunFilter = RunOutcome | "all" | "pending";
@@ -715,7 +717,7 @@ function ComparisonPanel({
           ) : null}
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <span>Guardrails</span>
-            <span style={{ fontSize: 12 }}>{guardrailSummary(run)}</span>
+            <span style={{ fontSize: 12, color: run.guardrail?.passed === false ? "#b91c1c" : "#166534" }}>{guardrailSummary(run)}</span>
           </div>
           {run.scoringRepeats.length > 1 ? (
             <div style={{ display: "flex", justifyContent: "space-between" }}>
