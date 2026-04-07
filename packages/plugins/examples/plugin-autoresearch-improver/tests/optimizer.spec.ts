@@ -14,6 +14,8 @@ import {
   emptyDiffArtifact,
   buildOptimizerBrief,
   formatCommandSummary,
+  normalizeDotPath,
+  summarizeOutput,
 } from "../src/lib/optimizer.js";
 
 describe("optimizer helpers", () => {
@@ -300,5 +302,24 @@ describe("optimizer helpers", () => {
     expect(brief.bestScore).toBe(0.95);
     expect(brief.mutablePaths).toEqual(["README.md"]);
     expect(brief.budgets).toBeDefined();
+  });
+
+  it("normalizeDotPath trims and returns undefined for empty values", () => {
+    expect(normalizeDotPath("  primary  ")).toBe("primary");
+    expect(normalizeDotPath("data.score")).toBe("data.score");
+    expect(normalizeDotPath("")).toBeUndefined();
+    expect(normalizeDotPath("   ")).toBeUndefined();
+    expect(normalizeDotPath(123)).toBeUndefined();
+    expect(normalizeDotPath(null)).toBeUndefined();
+  });
+
+  it("summarizeOutput truncates long output with a marker", () => {
+    const short = "short output";
+    expect(summarizeOutput(short, 50)).toBe(short);
+    const long = "a".repeat(100);
+    const result = summarizeOutput(long, 20);
+    expect(result).toContain("[truncated");
+    expect(result).toContain("80 chars");
+    expect(result).toContain(long.slice(0, 20));
   });
 });
