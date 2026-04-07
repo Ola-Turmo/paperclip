@@ -1896,8 +1896,27 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
         optimizers: optimizers.length,
         activeOptimizers: optimizers.filter((entry) => entry.status === "active").length,
         acceptedRuns: runs.filter((entry) => entry.accepted).length,
-        pendingApprovalRuns: runs.filter((entry) => entry.approvalStatus === "pending").length
+        rejectedRuns: runs.filter((entry) => entry.outcome === "rejected").length,
+        invalidRuns: runs.filter((entry) => entry.outcome === "invalid").length,
+        pendingApprovalRuns: runs.filter((entry) => entry.approvalStatus === "pending").length,
+        totalRuns: runs.length
       },
+      metrics: (() => {
+        const scores = runs
+          .filter((r) => r.candidateScore != null && Number.isFinite(r.candidateScore))
+          .map((r) => r.candidateScore as number);
+        const deltas = runs
+          .filter((r) => r.baselineScore != null && r.candidateScore != null && Number.isFinite(r.baselineScore) && Number.isFinite(r.candidateScore))
+          .map((r) => (r.candidateScore as number) - (r.baselineScore as number));
+        const decisionRuns = runs.filter((r) => ["accepted", "rejected", "invalid"].includes(r.outcome));
+
+        const avgCandidateScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+        const avgScoreDelta = deltas.length > 0 ? deltas.reduce((a, b) => a + b, 0) / deltas.length : null;
+        const rejectedCount = runs.filter((r) => r.outcome === "rejected").length;
+        const rejectionRate = decisionRuns.length > 0 ? rejectedCount / decisionRuns.length : null;
+
+        return { avgScoreDelta, avgCandidateScore, rejectionRate };
+      })(),
       latestAcceptedRun
     };
 

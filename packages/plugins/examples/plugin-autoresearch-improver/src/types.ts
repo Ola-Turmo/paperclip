@@ -232,7 +232,18 @@ export interface OverviewData {
     optimizers: number;
     activeOptimizers: number;
     acceptedRuns: number;
+    rejectedRuns: number;
+    invalidRuns: number;
     pendingApprovalRuns: number;
+    totalRuns: number;
+  };
+  metrics: {
+    /** Average score improvement (delta) across all runs with valid deltas. */
+    avgScoreDelta: number | null;
+    /** Average candidate score across all runs. */
+    avgCandidateScore: number | null;
+    /** Rejection rate: rejected / (accepted + rejected + invalid). */
+    rejectionRate: number | null;
   };
   latestAcceptedRun: OptimizerRunRecord | null;
 }

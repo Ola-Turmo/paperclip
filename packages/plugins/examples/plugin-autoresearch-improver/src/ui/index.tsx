@@ -1452,10 +1452,34 @@ export function OptimizerDashboardWidget({ context }: PluginWidgetProps) {
   return (
     <section style={cardStyle}>
       <strong>Autoresearch Improver</strong>
-      <div style={{ marginTop: 8 }}>Optimizers: {data?.counts.optimizers ?? 0}</div>
-      <div>Active: {data?.counts.activeOptimizers ?? 0}</div>
-      <div>Accepted runs: {data?.counts.acceptedRuns ?? 0}</div>
-      <div>Pending approval: {data?.counts.pendingApprovalRuns ?? 0}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "4px 16px", marginTop: 8 }}>
+        <div><strong>Optimizers</strong></div>
+        <div><strong>Active</strong></div>
+        <div><strong>Total runs</strong></div>
+        <div>{data?.counts.optimizers ?? 0}</div>
+        <div>{data?.counts.activeOptimizers ?? 0}</div>
+        <div>{data?.counts.totalRuns ?? 0}</div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "4px 16px", marginTop: 10, fontSize: 13 }}>
+        <div>Accepted</div>
+        <div>Rejected</div>
+        <div>Invalid</div>
+        <div>Pending</div>
+        <div style={{ fontWeight: 600, color: "#166534" }}>{data?.counts.acceptedRuns ?? 0}</div>
+        <div style={{ fontWeight: 600, color: "#b91c1c" }}>{data?.counts.rejectedRuns ?? 0}</div>
+        <div style={{ fontWeight: 600, color: "#92400e" }}>{data?.counts.invalidRuns ?? 0}</div>
+        <div style={{ fontWeight: 600, color: "#d97706" }}>{data?.counts.pendingApprovalRuns ?? 0}</div>
+      </div>
+      {data?.metrics ? (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "4px 16px", marginTop: 10, fontSize: 12, opacity: 0.85 }}>
+          <div>Avg score</div>
+          <div>Avg delta</div>
+          <div>Rejection rate</div>
+          <div>{data.metrics.avgCandidateScore != null ? formatScore(data.metrics.avgCandidateScore) : "—"}</div>
+          <div>{data.metrics.avgScoreDelta != null ? data.metrics.avgScoreDelta.toFixed(4) : "—"}</div>
+          <div>{data.metrics.rejectionRate != null ? `${(data.metrics.rejectionRate * 100).toFixed(1)}%` : "—"}</div>
+        </div>
+      ) : null}
       <div style={{ marginTop: 8, fontSize: 13, opacity: 0.82 }}>
         {data?.latestAcceptedRun
           ? `Latest accepted score: ${formatScore(data.latestAcceptedRun.candidateScore)}`
