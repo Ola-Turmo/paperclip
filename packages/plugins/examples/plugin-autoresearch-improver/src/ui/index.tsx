@@ -55,6 +55,9 @@ type FormState = {
   guardrailRepeats: string;
   guardrailAggregator: "all" | "any";
   minimumImprovement: string;
+  scoreImprovementPolicy: "threshold" | "confidence" | "epsilon";
+  confidenceThreshold: string;
+  epsilonValue: string;
   mutationBudgetSeconds: string;
   scoreBudgetSeconds: string;
   guardrailBudgetSeconds: string;
@@ -135,6 +138,9 @@ function emptyForm(workspaceId = ""): FormState {
     guardrailRepeats: "1",
     guardrailAggregator: "all",
     minimumImprovement: "0",
+    scoreImprovementPolicy: "threshold",
+    confidenceThreshold: "2.0",
+    epsilonValue: "0.01",
     mutationBudgetSeconds: "300",
     scoreBudgetSeconds: "180",
     guardrailBudgetSeconds: "",
@@ -178,6 +184,9 @@ function formFromOptimizer(optimizer: OptimizerDefinition): FormState {
     guardrailRepeats: String(optimizer.guardrailRepeats),
     guardrailAggregator: optimizer.guardrailAggregator,
     minimumImprovement: String(optimizer.minimumImprovement),
+    scoreImprovementPolicy: optimizer.scoreImprovementPolicy ?? "threshold",
+    confidenceThreshold: optimizer.confidenceThreshold != null ? String(optimizer.confidenceThreshold) : "2.0",
+    epsilonValue: optimizer.epsilonValue != null ? String(optimizer.epsilonValue) : "0.01",
     mutationBudgetSeconds: String(optimizer.mutationBudgetSeconds),
     scoreBudgetSeconds: String(optimizer.scoreBudgetSeconds),
     guardrailBudgetSeconds: optimizer.guardrailBudgetSeconds ? String(optimizer.guardrailBudgetSeconds) : "",
@@ -222,6 +231,9 @@ function applyTemplate(template: OptimizerTemplate, current: FormState, workspac
     guardrailRepeats: values.guardrailRepeats != null ? String(values.guardrailRepeats) : current.guardrailRepeats,
     guardrailAggregator: values.guardrailAggregator ?? current.guardrailAggregator,
     minimumImprovement: values.minimumImprovement != null ? String(values.minimumImprovement) : current.minimumImprovement,
+    scoreImprovementPolicy: values.scoreImprovementPolicy ?? current.scoreImprovementPolicy,
+    confidenceThreshold: values.confidenceThreshold != null ? String(values.confidenceThreshold) : current.confidenceThreshold,
+    epsilonValue: values.epsilonValue != null ? String(values.epsilonValue) : current.epsilonValue,
     mutationBudgetSeconds: values.mutationBudgetSeconds != null ? String(values.mutationBudgetSeconds) : current.mutationBudgetSeconds,
     scoreBudgetSeconds: values.scoreBudgetSeconds != null ? String(values.scoreBudgetSeconds) : current.scoreBudgetSeconds,
     guardrailBudgetSeconds: values.guardrailBudgetSeconds != null ? String(values.guardrailBudgetSeconds) : current.guardrailBudgetSeconds,
@@ -265,6 +277,9 @@ function toActionPayload(form: FormState) {
     guardrailRepeats: Number(form.guardrailRepeats || 1),
     guardrailAggregator: form.guardrailAggregator,
     minimumImprovement: Number(form.minimumImprovement || 0),
+    scoreImprovementPolicy: form.scoreImprovementPolicy === "confidence" || form.scoreImprovementPolicy === "epsilon" ? form.scoreImprovementPolicy : undefined,
+    confidenceThreshold: form.scoreImprovementPolicy === "confidence" ? Number(form.confidenceThreshold || 2.0) : undefined,
+    epsilonValue: form.scoreImprovementPolicy === "epsilon" ? Number(form.epsilonValue || 0.01) : undefined,
     mutationBudgetSeconds: Number(form.mutationBudgetSeconds || 0),
     scoreBudgetSeconds: Number(form.scoreBudgetSeconds || 0),
     guardrailBudgetSeconds: form.guardrailBudgetSeconds ? Number(form.guardrailBudgetSeconds) : undefined,
@@ -1088,11 +1103,31 @@ function OptimizerEditor({
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
             <div>
               <strong>Minimum improvement</strong>
               <input style={{ ...inputStyle, marginTop: 6 }} value={form.minimumImprovement} onChange={(event) => setForm((prev) => ({ ...prev, minimumImprovement: event.target.value }))} />
             </div>
+            <div>
+              <strong>Improvement policy</strong>
+              <select style={{ ...inputStyle, marginTop: 6 }} value={form.scoreImprovementPolicy} onChange={(event) => setForm((prev) => ({ ...prev, scoreImprovementPolicy: event.target.value as "threshold" | "confidence" | "epsilon" }))}>
+                <option value="threshold">Threshold (delta &gt; min)</option>
+                <option value="confidence">Confidence (delta &gt; k*stdDev)</option>
+                <option value="epsilon">Epsilon (delta &gt; max(eps,noise))</option>
+              </select>
+            </div>
+            {form.scoreImprovementPolicy === "confidence" && (
+              <div>
+                <strong>k (stdDev multiplier)</strong>
+                <input style={{ ...inputStyle, marginTop: 6 }} value={form.confidenceThreshold} onChange={(event) => setForm((prev) => ({ ...prev, confidenceThreshold: event.target.value }))} />
+              </div>
+            )}
+            {form.scoreImprovementPolicy === "epsilon" && (
+              <div>
+                <strong>ε (epsilon value)</strong>
+                <input style={{ ...inputStyle, marginTop: 6 }} value={form.epsilonValue} onChange={(event) => setForm((prev) => ({ ...prev, epsilonValue: event.target.value }))} />
+              </div>
+            )}
             <div>
               <strong>Mutation budget</strong>
               <input style={{ ...inputStyle, marginTop: 6 }} value={form.mutationBudgetSeconds} onChange={(event) => setForm((prev) => ({ ...prev, mutationBudgetSeconds: event.target.value }))} />
