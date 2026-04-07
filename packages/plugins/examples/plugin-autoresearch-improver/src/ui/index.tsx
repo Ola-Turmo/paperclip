@@ -1077,17 +1077,34 @@ function OptimizerEditor({
 
           <div>
             <strong>Mutation command</strong>
-            <textarea style={{ ...inputStyle, minHeight: 94, marginTop: 6 }} value={form.mutationCommand} onChange={(event) => setForm((prev) => ({ ...prev, mutationCommand: event.target.value }))} />
+            <div style={{ position: "relative", marginTop: 6 }}>
+              <textarea style={{ ...inputStyle, minHeight: 94 }} value={form.mutationCommand} onChange={(event) => setForm((prev) => ({ ...prev, mutationCommand: event.target.value }))} />
+              <button type="button" title="Copy mutation command" style={{ position: "absolute", top: 6, right: 8, fontSize: 11, padding: "3px 8px", background: "rgba(100,116,139,0.12)", border: "1px solid rgba(100,116,139,0.25)", borderRadius: 6, cursor: "pointer" }} onClick={() => void navigator.clipboard.writeText(form.mutationCommand)}>
+                Copy
+              </button>
+            </div>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <strong>Score command</strong>
-              <textarea style={{ ...inputStyle, minHeight: 94, marginTop: 6 }} value={form.scoreCommand} onChange={(event) => setForm((prev) => ({ ...prev, scoreCommand: event.target.value }))} />
+              <div style={{ position: "relative", marginTop: 6 }}>
+                <textarea style={{ ...inputStyle, minHeight: 94 }} value={form.scoreCommand} onChange={(event) => setForm((prev) => ({ ...prev, scoreCommand: event.target.value }))} />
+                <button type="button" title="Copy score command" style={{ position: "absolute", top: 6, right: 8, fontSize: 11, padding: "3px 8px", background: "rgba(100,116,139,0.12)", border: "1px solid rgba(100,116,139,0.25)", borderRadius: 6, cursor: "pointer" }} onClick={() => void navigator.clipboard.writeText(form.scoreCommand)}>
+                  Copy
+                </button>
+              </div>
             </div>
             <div>
               <strong>Guardrail command</strong>
-              <textarea style={{ ...inputStyle, minHeight: 94, marginTop: 6 }} value={form.guardrailCommand} onChange={(event) => setForm((prev) => ({ ...prev, guardrailCommand: event.target.value }))} placeholder="Optional. Exit 0 or return guardrails=true." />
+              <div style={{ position: "relative", marginTop: 6 }}>
+                <textarea style={{ ...inputStyle, minHeight: 94 }} value={form.guardrailCommand} onChange={(event) => setForm((prev) => ({ ...prev, guardrailCommand: event.target.value }))} placeholder="Optional. Exit 0 or return guardrails=true." />
+                {form.guardrailCommand ? (
+                  <button type="button" title="Copy guardrail command" style={{ position: "absolute", top: 6, right: 8, fontSize: 11, padding: "3px 8px", background: "rgba(100,116,139,0.12)", border: "1px solid rgba(100,116,139,0.25)", borderRadius: 6, cursor: "pointer" }} onClick={() => void navigator.clipboard.writeText(form.guardrailCommand)}>
+                    Copy
+                  </button>
+                ) : null}
+              </div>
             </div>
           </div>
 
