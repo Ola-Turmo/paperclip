@@ -434,4 +434,12 @@ describe("optimizer helpers", () => {
     expect(extractScore("not a number")).toBeNull();
     expect(extractScore("   0.5   ")).toBe(0.5);
   });
+
+
+
+
+  it("normalizeRelativePath handles multiple trailing slashes", () => {
+    expect(normalizeRelativePath("src///")).toBe("src");
+    expect(normalizeRelativePath("///")).toBe(".");
+  });
 });
