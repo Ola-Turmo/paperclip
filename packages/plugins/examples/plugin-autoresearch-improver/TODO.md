@@ -78,7 +78,7 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
   - acceptance rate
   - invalidation rate
   - pending approval backlog
-  *(partial: these counts are available in the overview data and shown in the optimizer editor header)*
+  *(implemented: overview panel shows accepted/rejected/invalid/pending counts, avg score, avg delta, rejection rate)*
 
 ## Open design questions
 
