@@ -37,6 +37,12 @@ The UI exposes a Show/Hide history panel on the optimizer editor. Use the "Clone
 
 Optimizers can be paused with an optional reason (`pauseReason` field). Paused optimizers show ⏸ prefix in the dropdown and display the pause reason in a banner below the action buttons. Resume clears the pause reason and reactivates the optimizer.
 
+Optimizers can also auto-pause based on two conditions:
+- **Stagnation**: When `autoCreateIssueOnStagnation=true` and `consecutiveNonImprovements === stagnationIssueThreshold`, the optimizer pauses and creates a stagnation issue.
+- **Consecutive failures**: When `autoPauseOnConsecutiveFailures=true` and `consecutiveFailures >= stagnationIssueThreshold`, the optimizer pauses with a failure reason.
+
+Both conditions share the `stagnationIssueThreshold` as their trigger threshold.
+
 ## Richer metrics
 
 The overview dashboard shows:
@@ -517,6 +523,7 @@ The plugin instance config supports:
 - `guardrailAggregator`
 - `minimumImprovement`
 - `stagnationIssueThreshold`
+- `autoPauseOnConsecutiveFailures` (auto-pause on consecutive failures)
 - `scoreImprovementPolicy` ("threshold" | "confidence" | "epsilon")
 - `confidenceThreshold` (k multiplier for stdDev in confidence policy)
 - `epsilonValue` (minimum meaningful improvement for epsilon policy)

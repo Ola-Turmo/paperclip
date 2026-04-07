@@ -60,6 +60,8 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
 
 ## Nice to have
 
+- ✅ Auto-pause on consecutive failures when `consecutiveFailures >= stagnationIssueThreshold` *(implemented: new `autoPauseOnConsecutiveFailures` field, UI checkbox, auto-pause logic in finalizeRun, e2e test)*
+
 All previously planned items have been implemented. See the sections above for details.
 
 ## Open design questions
