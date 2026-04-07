@@ -13,7 +13,7 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
 
 - ✅ Add explicit invalid-run semantics to JSON scoring. *(implemented: `invalid` and `invalidReason` fields in StructuredMetricResult, checked in runOptimizerCycle)*
 - ✅ Add repeated guardrail execution, not only repeated scoring. *(implemented: guardrailRepeats and guardrailAggregator in measureGuardrail)*
-- Add epsilon and confidence policies for noisy scorers beyond `minimumImprovement`.
+  - ✅ Add epsilon and confidence policies for noisy scorers beyond `minimumImprovement`. *(implemented: scoreImprovementPolicy field, compareScoresWithPolicy(), confidence policy (k×stdDev), epsilon policy (max(epsilon,noiseFloor)))*
 - ✅ Handle merge conflicts on patch apply more gracefully. *(implemented: detectPatchConflicts, structured PatchConflictInfo on run, invalid outcome on conflict, UI conflict display)*
 - ✅ Add a "workspace changed since run creation" check before approval. *(implemented: dirty-repo guard in promotePendingRun before patch apply)*
 - ✅ Add better handling for binary files and large patches in diff artifacts. *(implemented: isBinaryFile(), binaryFiles field on RunDiffArtifact, excluded from text patch)*
@@ -22,7 +22,7 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
 
 - ✅ Allow configuring the proposal base branch explicitly. *(implemented: proposalBaseBranch field in OptimizerDefinition)*
 - ✅ Support optional `git push` as a first-class step before PR creation. *(implemented: proposalPushCommand with PAPERCLIP_PROPOSAL_REMOTE env var, push result tracked in artifact)*
-- Support a separate push command and PR command instead of one generic PR command.
+- ✅ Support a separate push command and PR command instead of one generic PR command. *(implemented: proposalPushCommand and proposalPrCommand as independent fields)*
 - ✅ Add branch existence checks and reuse policy. *(implemented: git branch --list check, rejection on existence in createPullRequestFromRun)*
 - ✅ Add cleanup policy for proposal branches created from rejected or obsolete runs. *(implemented: deleteProposalBranch action handler with git push --delete)*
 - Add support for multi-repo or monorepo-subtree workflows where the Paperclip workspace is not the repo root.

@@ -10,6 +10,17 @@ export type ScorerIsolationMode = "same_workspace" | "separate_workspace";
 
 export type GuardrailAggregator = "all" | "any";
 
+/**
+ * Policy for deciding whether a score improvement is real or noise.
+ *
+ * - "threshold": accept if delta > minimumImprovement (existing behavior)
+ * - "confidence": accept if delta > confidenceThreshold * stdDev(scores)
+ *   (requires scoreRepeats >= 2 to compute variance; useful for noisy scorers)
+ * - "epsilon": accept if delta > max(epsilonValue, noiseFloor)
+ *   (absolute minimum improvement regardless of variance)
+ */
+export type ScoreImprovementPolicy = "threshold" | "confidence" | "epsilon";
+
 export interface StructuredMetricResult {
   primary: number | null;
   metrics: Record<string, number | string | boolean | null>;
@@ -91,6 +102,14 @@ export interface OptimizerDefinition {
   guardrailRepeats: number;
   guardrailAggregator: GuardrailAggregator;
   minimumImprovement: number;
+  /** Policy for determining whether a score improvement is real or noise. */
+  scoreImprovementPolicy?: ScoreImprovementPolicy;
+  /** For policy="confidence": multiplier on standard deviation. Default: 2.0 */
+  confidenceThreshold?: number;
+  /** For policy="epsilon": minimum absolute improvement. Default: 0.01 */
+  epsilonValue?: number;
+  /** Computed noise floor from scorer variance; set internally after first scoring run. */
+  noiseFloor?: number | null;
   mutationBudgetSeconds: number;
   scoreBudgetSeconds: number;
   guardrailBudgetSeconds?: number;

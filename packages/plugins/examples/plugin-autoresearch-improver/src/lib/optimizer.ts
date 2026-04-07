@@ -3,6 +3,7 @@ import type {
   OptimizerDefinition,
   RunDiffArtifact,
   ScoreAggregator,
+  ScoreImprovementPolicy,
   ScoreDirection,
   StructuredMetricResult
 } from "../types.js";
@@ -273,6 +274,92 @@ export function compareScores(
     reason: `Candidate score ${candidate} did not clear the minimum improvement threshold against incumbent ${currentBest}.`,
     delta
   };
+}
+
+/**
+ * Compute the standard deviation of an array of numbers.
+ * Returns null if fewer than 2 valid scores are provided.
+ */
+export function computeStdDev(scores: number[]): number | null {
+  const valid = scores.filter((v) => Number.isFinite(v));
+  if (valid.length < 2) return null;
+  const mean = valid.reduce((sum, v) => sum + v, 0) / valid.length;
+  const variance = valid.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / valid.length;
+  return Math.sqrt(variance);
+}
+
+/**
+ * Determine whether a candidate improvement is statistically significant.
+ *
+ * @param scores - Array of candidate scores (from scoreRepeats). Used to compute variance.
+ * @param direction - maximize or minimize
+ * @param currentBest - The incumbent score
+ * @param candidate - The candidate score
+ * @param policy - "threshold" (default), "confidence" (delta > k*stdDev), or "epsilon" (delta > max(epsilon, noiseFloor))
+ * @param confidenceThreshold - Multiplier for stdDev in confidence policy (default 2.0)
+ * @param epsilonValue - Minimum absolute delta for epsilon policy (default 0.01)
+ * @param noiseFloor - Optional pre-computed noise floor (stdDev of incumbent scores)
+ */
+export function compareScoresWithPolicy(
+  scores: number[],
+  direction: ScoreDirection,
+  currentBest: number | null | undefined,
+  candidate: number | null | undefined,
+  policy: ScoreImprovementPolicy = "threshold",
+  minimumImprovement = 0,
+  confidenceThreshold = 2.0,
+  epsilonValue = 0.01,
+  noiseFloor?: number | null
+): { improved: boolean; reason: string; delta: number | null } {
+  if (candidate == null || !Number.isFinite(candidate)) {
+    return { improved: false, reason: "Candidate score was missing or invalid.", delta: null };
+  }
+  if (currentBest == null || !Number.isFinite(currentBest)) {
+    return { improved: true, reason: "No incumbent score existed, so this run becomes the baseline.", delta: null };
+  }
+
+  const delta = direction === "maximize" ? candidate - currentBest : currentBest - candidate;
+  if (delta <= 0) {
+    return { improved: false, reason: `Candidate score ${candidate} is not better than incumbent ${currentBest}.`, delta };
+  }
+
+  switch (policy) {
+    case "confidence": {
+      const stdDev = computeStdDev(scores);
+      if (stdDev == null) {
+        return {
+          improved: delta > minimumImprovement,
+          reason: `Confidence policy needs ≥2 scoring runs for variance; falling back to threshold (min=${minimumImprovement}).`,
+          delta
+        };
+      }
+      const threshold = stdDev * confidenceThreshold;
+      if (delta > threshold) {
+        return { improved: true, reason: `Candidate delta ${delta.toFixed(4)} exceeds ${confidenceThreshold}× stdDev (${threshold.toFixed(4)}).`, delta };
+      }
+      return { improved: false, reason: `Candidate delta ${delta.toFixed(4)} below ${confidenceThreshold}× stdDev (${threshold.toFixed(4)}); likely noise.`, delta };
+    }
+    case "epsilon": {
+      const scorerStdDev = computeStdDev(scores);
+      const effectiveNoiseFloor = noiseFloor ?? scorerStdDev ?? 0;
+      const effectiveThreshold = Math.max(epsilonValue, effectiveNoiseFloor);
+      if (delta > effectiveThreshold) {
+        return { improved: true, reason: `Candidate delta ${delta.toFixed(4)} exceeds epsilon/noise floor (${effectiveThreshold.toFixed(4)}).`, delta };
+      }
+      return { improved: false, reason: `Candidate delta ${delta.toFixed(4)} below epsilon/noise floor (${effectiveThreshold.toFixed(4)}).`, delta };
+    }
+    case "threshold":
+    default: {
+      if (delta > minimumImprovement) {
+        return { improved: true, reason: `Candidate score ${candidate} beat incumbent ${currentBest} by ${delta.toFixed(4)}.`, delta };
+      }
+      return {
+        improved: false,
+        reason: `Candidate score ${candidate} did not clear the minimum improvement threshold against incumbent ${currentBest}.`,
+        delta
+      };
+    }
+  }
 }
 
 export function summarizeOutput(value: string, maxChars: number): string {

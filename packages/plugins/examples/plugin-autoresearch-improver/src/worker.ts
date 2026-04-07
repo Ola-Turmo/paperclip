@@ -30,6 +30,7 @@ import {
   clampNonNegativeNumber,
   clampPositiveInteger,
   compareScores,
+  compareScoresWithPolicy,
   emptyDiffArtifact,
   extractScore,
   extractStructuredMetricResult,
@@ -1268,6 +1269,15 @@ async function createOptimizerFromParams(
     scoreRepeats: clampPositiveInteger(params.scoreRepeats, config.scoreRepeats),
     scoreAggregator: isScoreAggregator(params.scoreAggregator) ? params.scoreAggregator : "median",
     minimumImprovement: clampNonNegativeNumber(params.minimumImprovement, config.minimumImprovement),
+    scoreImprovementPolicy: (params.scoreImprovementPolicy === "confidence" || params.scoreImprovementPolicy === "epsilon")
+      ? params.scoreImprovementPolicy
+      : undefined,
+    confidenceThreshold: typeof params.confidenceThreshold === "number" && Number.isFinite(params.confidenceThreshold) && params.confidenceThreshold > 0
+      ? params.confidenceThreshold
+      : undefined,
+    epsilonValue: typeof params.epsilonValue === "number" && Number.isFinite(params.epsilonValue) && params.epsilonValue >= 0
+      ? params.epsilonValue
+      : undefined,
     mutationBudgetSeconds: clampPositiveInteger(params.mutationBudgetSeconds, config.defaultMutationBudgetSeconds),
     scoreBudgetSeconds: clampPositiveInteger(params.scoreBudgetSeconds, config.defaultScoreBudgetSeconds),
     guardrailBudgetSeconds: params.guardrailBudgetSeconds == null || params.guardrailBudgetSeconds === ""
@@ -1469,12 +1479,24 @@ async function runOptimizerCycle(
       config.maxOutputChars * 4
     );
 
-    const comparison = compareScores(
-      optimizer.scoreDirection,
-      baselineScore,
-      scoringResult.candidateScore,
-      optimizer.minimumImprovement
-    );
+    const comparison = (optimizer.scoreImprovementPolicy && optimizer.scoreImprovementPolicy !== "threshold")
+      ? compareScoresWithPolicy(
+          scoringResult.scoringRepeats.map((r) => r.score).filter((s): s is number => s != null),
+          optimizer.scoreDirection,
+          baselineScore,
+          scoringResult.candidateScore,
+          optimizer.scoreImprovementPolicy,
+          optimizer.minimumImprovement,
+          optimizer.confidenceThreshold ?? 2.0,
+          optimizer.epsilonValue ?? 0.01,
+          optimizer.noiseFloor
+        )
+      : compareScores(
+          optimizer.scoreDirection,
+          baselineScore,
+          scoringResult.candidateScore,
+          optimizer.minimumImprovement
+        );
 
     const scoringInvalid = scoringResult.scoringRepeats.some((entry) => entry.structured?.invalid === true);
     const failureReason = !mutation.ok
