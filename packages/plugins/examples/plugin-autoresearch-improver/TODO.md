@@ -16,16 +16,17 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
 - Add epsilon and confidence policies for noisy scorers beyond `minimumImprovement`.
 - ✅ Handle merge conflicts on patch apply more gracefully. *(implemented: detectPatchConflicts, structured PatchConflictInfo on run, invalid outcome on conflict, UI conflict display)*
 - ✅ Add a "workspace changed since run creation" check before approval. *(implemented: dirty-repo guard in promotePendingRun before patch apply)*
-- Add better handling for binary files and large patches in diff artifacts.
+- ✅ Add better handling for binary files and large patches in diff artifacts. *(implemented: isBinaryFile(), binaryFiles field on RunDiffArtifact, excluded from text patch)*
 
 ## Git and PR flow
 
-- Allow configuring the proposal base branch explicitly.
-- Support optional `git push` as a first-class step before PR creation.
+- ✅ Allow configuring the proposal base branch explicitly. *(implemented: proposalBaseBranch field in OptimizerDefinition)*
+- ✅ Support optional `git push` as a first-class step before PR creation. *(implemented: proposalPushCommand with PAPERCLIP_PROPOSAL_REMOTE env var, push result tracked in artifact)*
 - Support a separate push command and PR command instead of one generic PR command.
-- Add branch existence checks and reuse policy.
-- Add cleanup policy for proposal branches created from rejected or obsolete runs.
+- ✅ Add branch existence checks and reuse policy. *(implemented: git branch --list check, rejection on existence in createPullRequestFromRun)*
+- ✅ Add cleanup policy for proposal branches created from rejected or obsolete runs. *(implemented: deleteProposalBranch action handler with git push --delete)*
 - Add support for multi-repo or monorepo-subtree workflows where the Paperclip workspace is not the repo root.
+  *(partial: sandboxStrategy='copy' works in subdirectories; git_worktree requires workspace = repo root)*
 
 ## UI
 
@@ -33,7 +34,7 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
 - ✅ Add a cleaner side-by-side comparison view with score deltas, guardrail deltas, changed-file overlap, patch diff excerpts. *(implemented: enhanced ComparisonPanel with score deltas, guardrail summary, metric details, collapsible file list)*
 - ✅ Add filters for: accepted, pending approval, rejected, invalid, dry run. *(implemented: RunFilterBar with outcome-based filter chips)*
 - Add copyable scorer and mutator templates in the UI.
-- Add a clearer sandbox retention indicator and cleanup action for retained candidates.
+- ✅ Add a clearer sandbox retention indicator and cleanup action for retained candidates. *(implemented: sandbox status in UI, deleteProposalBranch action)*
 - ✅ Add warnings when an optimizer is configured for `automatic` apply without proposal settings. *(implemented: amber warning banner in optimizer editor)*
 
 ## Testing
@@ -47,7 +48,7 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
 - Add e2e coverage for:
   - subdirectory workspaces inside a larger git repo
   - untracked file creation inside the mutable surface
-  - deletion flows
+  - ✅ deletion flows *(implemented: deletion e2e test verifies run records without crash)*
 - Add UI-level tests for the comparison and approval flows.
 
 ## Documentation
