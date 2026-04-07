@@ -1083,6 +1083,47 @@ console.log(JSON.stringify({ primary: null, invalid: true, invalidReason: "alway
     expect(issue.id).toBeTruthy();
     expect(issue.title).toContain("Autoresearch result");
     expect(issue.title).toContain("Issue creation test");
+  })
+
+  it("confidence policy falls back to threshold when scoreRepeats is 1", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    await writeFile(path.join(workspaceRoot, "improved-scorer.mjs"), `
+import { writeFileSync } from "node:fs";
+writeFileSync("score.txt", JSON.stringify({ primary: 0.75, guardrails: { safe: true } }));
+console.log(JSON.stringify({ primary: 0.75, guardrails: { safe: true } }));
+`, "utf8");
+    await run("git", ["add", "improved-scorer.mjs"], workspaceRoot);
+    await run("git", ["commit", "-m", "add improved scorer"], workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Confidence policy fallback test",
+      objective: "Test fallback to threshold when repeats < 2",
+      mutablePaths: "README.md",
+      mutationCommand: 'node -e "const fs=require(\'node:fs\');fs.writeFileSync(\'README.md\',\'improved\\n\')"',
+      scoreCommand: "node improved-scorer.mjs",
+      scoreFormat: "json",
+      scoreKey: "primary",
+      scoreRepeats: 1,
+      scoreImprovementPolicy: "confidence",
+      confidenceThreshold: 2.0,
+      minimumImprovement: 0.05,
+      sandboxStrategy: "copy",
+      scorerIsolationMode: "same_workspace",
+      applyMode: "automatic"
+    }) as { optimizerId: string };
+
+    const result = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { run: { outcome: string; reason: string } };
+
+    expect(result.run.outcome).toBeTruthy();
+    expect(["accepted", "rejected"]).toContain(result.run.outcome);
   });
 
 });
