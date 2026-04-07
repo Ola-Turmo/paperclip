@@ -84,6 +84,8 @@ describe("optimizer helpers", () => {
     // Fewer than 2 scores → null
     expect(computeStdDev([1])).toBeNull();
     expect(computeStdDev([])).toBeNull();
+    // NaN and non-finite values are filtered out
+    expect(computeStdDev([1, NaN, 2, Infinity])).toBeCloseTo(0.5, 2);
   });
 
   it("uses threshold policy as baseline", () => {
@@ -119,6 +121,12 @@ describe("optimizer helpers", () => {
     // delta = 0.73 - 0.7 = 0.03 < 0.05 → not improved
     const below = compareScoresWithPolicy([0.73], "maximize", 0.7, 0.73, "epsilon", 0.01, 2.0, 0.05);
     expect(below.improved).toBe(false);
+
+    // Explicit noiseFloor overrides epsilon when higher
+    // epsilon=0.01, noiseFloor=0.08, threshold = max(0.01, 0.08) = 0.08
+    // delta = 0.06 < 0.08 → not improved
+    const noise = compareScoresWithPolicy([0.75, 0.78, 0.72], "maximize", 0.7, 0.76, "epsilon", 0.01, 2.0, 0.01, 0.08);
+    expect(noise.improved).toBe(false);
   });
 
   it("falls back to threshold when confidence policy has insufficient data", () => {
@@ -236,6 +244,17 @@ describe("optimizer helpers", () => {
     expect(r?.primary).toBe(0.85);
     expect(r?.metrics.quality).toBe(0.92);
     expect(r?.guardrails.safe).toBe(true);
+  });
+
+  it("aggregateScores handles edge cases", () => {
+    // All nulls returns null
+    expect(aggregateScores([null, null], "mean")).toBeNull();
+    // Mixed nulls with values
+    expect(aggregateScores([null, 1, null, 2], "mean")).toBe(1.5);
+    // Single value
+    expect(aggregateScores([42], "mean")).toBe(42);
+    // median with even count: average of two middle values
+    expect(aggregateScores([1, 2, 3, 4], "median")).toBe(2.5);
   });
 
   it("aggregates scores with all aggregator modes", () => {
@@ -402,6 +421,11 @@ describe("optimizer helpers", () => {
     const exact = compareScores("maximize", 0.5, 0.6, 0.1);
     expect(exact.improved).toBe(false);
     expect(exact.delta).toBeCloseTo(0.1);
+    // minimize direction: lower is better
+    const minimizeOk = compareScores("minimize", 0.5, 0.3, 0.1);
+    expect(minimizeOk.improved).toBe(true);
+    const minimizeFail = compareScores("minimize", 0.3, 0.5, 0.1);
+    expect(minimizeFail.improved).toBe(false);
   });
 
   it("extractScore handles patterns and edge cases", () => {

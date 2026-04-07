@@ -250,6 +250,7 @@ const optimizerTemplates: OptimizerTemplate[] = [
       applyMode: "automatic",
       requireHumanApproval: false,
       autoCreateIssueOnStagnation: true,
+      autoPauseOnConsecutiveFailures: true,
       stagnationIssueThreshold: 3
     }
   }
