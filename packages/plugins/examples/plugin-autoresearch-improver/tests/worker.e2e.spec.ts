@@ -1046,4 +1046,43 @@ console.log(JSON.stringify({ primary: null, invalid: true, invalidReason: "alway
     expect(firstRun.optimizer.consecutiveFailures).toBeGreaterThanOrEqual(1);
   });
 
+
+  it("creates an issue from an accepted run via the action", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Issue creation test",
+      objective: "Test issue creation",
+      mutablePaths: "README.md",
+      mutationCommand: 'node -e "const fs=require(\'node:fs\');fs.writeFileSync(\'README.md\',\'issue-test\\n\')"',
+      scoreCommand: readmeScoreCommand,
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "automatic"
+    }) as { optimizerId: string };
+
+    const firstRun = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { run: { runId: string; outcome: string } };
+    expect(firstRun.run.outcome).toBe("accepted");
+
+    // Create issue from the accepted run
+    const issue = await harness.performAction("create-issue-from-run", {
+      projectId,
+      optimizerId: optimizer.optimizerId,
+      titlePrefix: "Autoresearch result"
+    }) as { id: string; title: string };
+
+    expect(issue.id).toBeTruthy();
+    expect(issue.title).toContain("Autoresearch result");
+    expect(issue.title).toContain("Issue creation test");
+  });
+
 });
