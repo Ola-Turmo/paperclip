@@ -409,3 +409,41 @@ export function emptyDiffArtifact(): RunDiffArtifact {
     stats: { files: 0, additions: 0, deletions: 0 }
   };
 }
+
+import type { PluginConfigValues } from "../types.js";
+
+/**
+ * Validate plugin configuration and return warnings and errors.
+ * Covers sensible ranges and known problematic values.
+ */
+export function validateConfig(config: PluginConfigValues): { errors: string[]; warnings: string[] } {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (config.defaultMutationBudgetSeconds <= 0) {
+    errors.push("defaultMutationBudgetSeconds must be > 0.");
+  }
+  if (config.defaultScoreBudgetSeconds <= 0) {
+    errors.push("defaultScoreBudgetSeconds must be > 0.");
+  }
+  if (config.maxOutputChars < 1024) {
+    warnings.push(`maxOutputChars (${config.maxOutputChars}) is very small; large scorer outputs may be truncated.`);
+  }
+  if (config.sweepLimit <= 0) {
+    errors.push("sweepLimit must be > 0.");
+  }
+  if (config.scoreRepeats <= 0) {
+    errors.push("scoreRepeats must be > 0.");
+  }
+  if (config.minimumImprovement < 0) {
+    errors.push("minimumImprovement must be >= 0.");
+  }
+  if (config.stagnationIssueThreshold <= 0) {
+    warnings.push(`stagnationIssueThreshold (${config.stagnationIssueThreshold}) is <= 0; optimizers will never auto-pause on stagnation.`);
+  }
+  if (!config.keepTmpDirs) {
+    warnings.push("keepTmpDirs is false; retained sandboxes (dry runs, pending approvals) will be deleted after use.");
+  }
+
+  return { errors, warnings };
+}

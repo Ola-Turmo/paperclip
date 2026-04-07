@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateStructuredMetrics,
+  clampNonNegativeNumber,
+  clampPositiveInteger,
   compareScores,
   compareScoresWithPolicy,
   computeStdDev,
   extractScore,
   extractStructuredMetricResult,
-  normalizeMutablePaths
+  normalizeMutablePaths,
+  validateConfig
 } from "../src/lib/optimizer.js";
 
 describe("optimizer helpers", () => {
@@ -115,5 +118,38 @@ describe("optimizer helpers", () => {
     const r = compareScoresWithPolicy([0.85], "maximize", 0.7, 0.85, "confidence", 0.1, 2.0);
     expect(r.improved).toBe(true); // delta 0.15 > fallback 0.1
     expect(r.reason).toContain("falling back to threshold");
+  });
+
+
+  it("validates config and produces errors and warnings", () => {
+    // Good config - no errors
+    const ok = validateConfig({
+      defaultMutationBudgetSeconds: 300,
+      defaultScoreBudgetSeconds: 180,
+      defaultGuardrailBudgetSeconds: 120,
+      keepTmpDirs: true,
+      maxOutputChars: 8000,
+      sweepLimit: 10,
+      scoreRepeats: 3,
+      minimumImprovement: 0.01,
+      stagnationIssueThreshold: 5
+    });
+    expect(ok.errors).toHaveLength(0);
+    expect(ok.warnings).toHaveLength(0);
+
+    // Bad values - errors
+    const bad = validateConfig({
+      defaultMutationBudgetSeconds: 0,
+      defaultScoreBudgetSeconds: -5,
+      defaultGuardrailBudgetSeconds: 60,
+      keepTmpDirs: false,
+      maxOutputChars: 100,
+      sweepLimit: 0,
+      scoreRepeats: -1,
+      minimumImprovement: -1,
+      stagnationIssueThreshold: 0
+    });
+    expect(bad.errors.length).toBeGreaterThan(0);
+    expect(bad.warnings.length).toBeGreaterThan(0);
   });
 });
