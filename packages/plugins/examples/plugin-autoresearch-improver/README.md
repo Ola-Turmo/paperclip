@@ -277,13 +277,16 @@ The PR command receives:
 
 ## Approval UI
 
-The project tab now supports:
+The project tab supports:
 
-- pending-run approval and rejection
-- run-to-run side-by-side comparison
+- pending-run approval and rejection (with dirty-repo and stale-candidate guards)
+- run-to-run side-by-side comparison with score deltas, guardrail summary, and metric details
 - diff and structured metric inspection
+- run-state filters (All, Pending, Accepted, Rejected, Invalid, Dry Run)
+- first-class PR card with copyable branch, commit, and command fields
 - issue creation from any run
 - PR creation from applied runs
+- automatic apply warning when no proposal settings are configured
 
 ## Example setup
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   usePluginAction,
   usePluginData,
@@ -13,7 +13,8 @@ import type {
   OptimizerDefinition,
   OptimizerRunRecord,
   OptimizerTemplate,
-  OverviewData
+  OverviewData,
+  RunOutcome
 } from "../types.js";
 
 type WorkspaceInfo = {
@@ -280,12 +281,196 @@ function formatScore(value: number | null | undefined): string {
   return value == null ? "n/a" : String(value);
 }
 
+function formatDelta(delta: number | null | undefined, direction: "maximize" | "minimize"): string {
+  if (delta == null) return "n/a";
+  const sign = delta > 0 ? "+" : "";
+  return `${sign}${delta.toFixed(4)}`;
+}
+
 function statusTone(outcome: string): string {
   if (outcome === "accepted") return "#166534";
   if (outcome === "pending_approval") return "#1d4ed8";
   if (outcome === "dry_run_candidate") return "#7c2d12";
   if (outcome === "invalid") return "#b91c1c";
   return "#334155";
+}
+
+function statusLabel(outcome: string): string {
+  if (outcome === "accepted") return "Accepted";
+  if (outcome === "pending_approval") return "Pending Approval";
+  if (outcome === "dry_run_candidate") return "Dry Run";
+  if (outcome === "invalid") return "Invalid";
+  if (outcome === "rejected") return "Rejected";
+  return outcome;
+}
+
+function scoreDelta(baseline: number | null, candidate: number | null): number | null {
+  if (baseline == null || candidate == null) return null;
+  return candidate - baseline;
+}
+
+function guardrailSummary(run: OptimizerRunRecord): string {
+  if (!run.guardrailAggregate) return "not configured";
+  const guards = run.guardrailAggregate.guardrails;
+  const entries = Object.entries(guards);
+  if (entries.length === 0) return "none";
+  return entries.map(([k, v]) => `${k}: ${v}`).join(", ");
+}
+
+type RunFilter = RunOutcome | "all" | "pending";
+
+function RunFilterBar({
+  activeFilter,
+  onFilterChange,
+  runs
+}: {
+  activeFilter: RunFilter;
+  onFilterChange: (f: RunFilter) => void;
+  runs: OptimizerRunRecord[];
+}) {
+  const counts = useMemo(() => ({
+    all: runs.length,
+    accepted: runs.filter((r) => r.outcome === "accepted").length,
+    pending_approval: runs.filter((r) => r.outcome === "pending_approval").length,
+    rejected: runs.filter((r) => r.outcome === "rejected").length,
+    invalid: runs.filter((r) => r.outcome === "invalid").length,
+    dry_run_candidate: runs.filter((r) => r.outcome === "dry_run_candidate").length,
+    pending: runs.filter((r) => r.approvalStatus === "pending").length
+  }), [runs]);
+
+  const filters: Array<{ key: RunFilter; label: string; count: number }> = [
+    { key: "all", label: "All", count: counts.all },
+    { key: "pending_approval", label: "Pending", count: counts.pending_approval },
+    { key: "accepted", label: "Accepted", count: counts.accepted },
+    { key: "rejected", label: "Rejected", count: counts.rejected },
+    { key: "invalid", label: "Invalid", count: counts.invalid },
+    { key: "dry_run_candidate", label: "Dry Run", count: counts.dry_run_candidate }
+  ];
+
+  const chipStyle = (active: boolean): CSSProperties => ({
+    padding: "4px 10px",
+    borderRadius: 20,
+    border: active ? "1.5px solid #0f172a" : "1px solid rgba(100, 116, 139, 0.3)",
+    background: active ? "#0f172a" : "white",
+    color: active ? "white" : "#334155",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: active ? 600 : 400
+  });
+
+  return (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
+      {filters.map(({ key, label, count }) => (
+        <button
+          key={key}
+          type="button"
+          style={chipStyle(activeFilter === key)}
+          onClick={() => onFilterChange(key)}
+        >
+          {label} {count}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PullRequestCard({ pullRequest }: { pullRequest: NonNullable<OptimizerRunRecord["pullRequest"]> }) {
+  return (
+    <div style={{
+      marginTop: 8,
+      border: "1px solid rgba(22, 101, 52, 0.3)",
+      borderRadius: 10,
+      padding: "10px 12px",
+      background: "rgba(22, 101, 52, 0.04)"
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "#166534" }}>Pull Request</span>
+        {pullRequest.pullRequestUrl ? (
+          <a
+            href={pullRequest.pullRequestUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ fontSize: 12, color: "#1d4ed8" }}
+          >
+            {pullRequest.pullRequestUrl}
+          </a>
+        ) : null}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "3px 12px", fontSize: 12 }}>
+        {pullRequest.branchName ? (
+          <>
+            <span style={{ opacity: 0.7 }}>Branch</span>
+            <CopyableText text={pullRequest.branchName} />
+          </>
+        ) : null}
+        {pullRequest.baseBranch ? (
+          <>
+            <span style={{ opacity: 0.7 }}>Base</span>
+            <CopyableText text={pullRequest.baseBranch} />
+          </>
+        ) : null}
+        {pullRequest.remoteName ? (
+          <>
+            <span style={{ opacity: 0.7 }}>Remote</span>
+            <CopyableText text={pullRequest.remoteName} />
+          </>
+        ) : null}
+        {pullRequest.commitSha ? (
+          <>
+            <span style={{ opacity: 0.7 }}>Commit</span>
+            <CopyableText text={pullRequest.commitSha.slice(0, 12)} mono />
+          </>
+        ) : null}
+        {pullRequest.createdAt ? (
+          <>
+            <span style={{ opacity: 0.7 }}>Created</span>
+            <span>{new Date(pullRequest.createdAt).toLocaleString()}</span>
+          </>
+        ) : null}
+        {pullRequest.command ? (
+          <>
+            <span style={{ opacity: 0.7 }}>Command</span>
+            <CopyableText text={pullRequest.command} mono />
+          </>
+        ) : null}
+        {pullRequest.commandResult ? (
+          <>
+            <span style={{ opacity: 0.7 }}>Exit code</span>
+            <span style={{ color: pullRequest.commandResult.ok ? "#166534" : "#b91c1c" }}>
+              {pullRequest.commandResult.exitCode ?? "null"}
+            </span>
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function CopyableText({ text, mono }: { text: string; mono?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard not available in this context
+    }
+  }, [text]);
+  return (
+    <span
+      onClick={handleCopy}
+      title="Click to copy"
+      style={{
+        cursor: "pointer",
+        fontFamily: mono ? "monospace" : undefined,
+        color: copied ? "#166534" : "#1d4ed8",
+        fontSize: mono ? 11 : 12
+      }}
+    >
+      {copied ? "✓ copied" : text}
+    </span>
+  );
 }
 
 function RunCard({
@@ -304,37 +489,46 @@ function RunCard({
   const repeatSummary = run.scoringRepeats
     .map((entry, index) => `#${index + 1}: ${formatScore(entry.score)} (${entry.execution.exitCode ?? "null"})`)
     .join(" | ");
+  const delta = scoreDelta(run.baselineScore, run.candidateScore);
 
   return (
     <div style={{ border: "1px solid rgba(148, 163, 184, 0.35)", borderRadius: 12, padding: 14, background: "white" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <strong style={{ color: statusTone(run.outcome) }}>{run.outcome}</strong>
-        <span>{new Date(run.startedAt).toLocaleString()}</span>
+        <strong style={{ color: statusTone(run.outcome) }}>{statusLabel(run.outcome)}</strong>
+        <span style={{ fontSize: 12, opacity: 0.7 }}>
+          {new Date(run.startedAt).toLocaleString()} · <CopyableText text={run.runId.slice(0, 8)} mono />
+        </span>
       </div>
-      <div style={{ marginTop: 6 }}>{run.reason}</div>
-      <div style={{ marginTop: 8, fontSize: 13, opacity: 0.85 }}>
-        Baseline {formatScore(run.baselineScore)} | Candidate {formatScore(run.candidateScore)} | Approval {run.approvalStatus}
+      <div style={{ marginTop: 6, fontSize: 13 }}>{run.reason}</div>
+      <div style={{ marginTop: 8, display: "flex", gap: 16, flexWrap: "wrap", fontSize: 13 }}>
+        <span>Baseline <strong>{formatScore(run.baselineScore)}</strong></span>
+        <span>→</span>
+        <span>Candidate <strong>{formatScore(run.candidateScore)}</strong></span>
+        {delta != null ? (
+          <span style={{ color: delta > 0 ? "#166534" : delta < 0 ? "#b91c1c" : "#334155", fontWeight: 600 }}>
+            {formatDelta(delta, "maximize")}
+          </span>
+        ) : null}
+        <span>Approval: {run.approvalStatus}</span>
       </div>
-      <div style={{ marginTop: 6, fontSize: 13, opacity: 0.85 }}>
-        Diff {run.artifacts.stats.files} files, +{run.artifacts.stats.additions}, -{run.artifacts.stats.deletions}
+      <div style={{ marginTop: 5, fontSize: 12, opacity: 0.8 }}>
+        Diff: {run.artifacts.stats.files} files, +{run.artifacts.stats.additions}, -{run.artifacts.stats.deletions}
+        {run.scoringRepeats.length > 1 ? ` · Repeats: ${run.scoringRepeats.length}x` : ""}
+        {run.guardrailAggregate ? ` · Guardrail: ${guardrailSummary(run)}` : ""}
       </div>
-      {run.pullRequest?.branchName ? (
-        <div style={{ marginTop: 6, fontSize: 13, opacity: 0.85 }}>
-          Branch {run.pullRequest.branchName} {run.pullRequest.pullRequestUrl ? `| PR ${run.pullRequest.pullRequestUrl}` : ""}
-        </div>
-      ) : null}
       {run.artifacts.unauthorizedChangedFiles.length > 0 ? (
-        <div style={{ marginTop: 6, color: "#b91c1c", fontSize: 13 }}>
+        <div style={{ marginTop: 5, color: "#b91c1c", fontSize: 12 }}>
           Unauthorized changes: {run.artifacts.unauthorizedChangedFiles.join(", ")}
         </div>
       ) : null}
       {run.patchConflict?.hasConflicts ? (
-        <div style={{ marginTop: 6, color: "#b91c1c", fontSize: 13 }}>
+        <div style={{ marginTop: 5, color: "#b91c1c", fontSize: 12 }}>
           Patch conflict: {run.patchConflict.conflictingFiles.length > 0
             ? run.patchConflict.conflictingFiles.join(", ")
             : "detected"}
         </div>
       ) : null}
+      {run.pullRequest ? <PullRequestCard pullRequest={run.pullRequest} /> : null}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
         {run.approvalStatus === "pending" ? (
           <>
@@ -381,21 +575,83 @@ ${run.guardrail ? (run.guardrail.stdout || run.guardrail.stderr || "(no output)"
   );
 }
 
-function ComparisonPanel({ label, run }: { label: string; run: OptimizerRunRecord | null }) {
+function ComparisonPanel({
+  label,
+  run,
+  baselineScore
+}: {
+  label: string;
+  run: OptimizerRunRecord | null;
+  baselineScore?: number | null;
+}) {
+  const delta = run ? scoreDelta(baselineScore ?? run.baselineScore ?? null, run.candidateScore) : null;
   return (
     <div style={{ border: "1px solid rgba(148, 163, 184, 0.28)", borderRadius: 12, padding: 14, background: "white" }}>
       <strong>{label}</strong>
       {!run ? (
         <div style={{ marginTop: 8, opacity: 0.72 }}>No run selected.</div>
       ) : (
-        <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-          <div>Outcome: {run.outcome}</div>
-          <div>Score: {formatScore(run.candidateScore)}</div>
-          <div>Approval: {run.approvalStatus}</div>
-          <div>Files: {run.artifacts.changedFiles.join(", ") || "none"}</div>
-          <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12 }}>
-{JSON.stringify(run.scoringAggregate ?? {}, null, 2)}
-          </pre>
+        <div style={{ marginTop: 10, display: "grid", gap: 7, fontSize: 13 }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>Outcome</span>
+            <strong style={{ color: statusTone(run.outcome) }}>{statusLabel(run.outcome)}</strong>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>Score</span>
+            <strong>{formatScore(run.candidateScore)}</strong>
+          </div>
+          {delta != null ? (
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Delta</span>
+              <span style={{ color: delta > 0 ? "#166534" : delta < 0 ? "#b91c1c" : "#334155", fontWeight: 600 }}>
+                {formatDelta(delta, "maximize")}
+              </span>
+            </div>
+          ) : null}
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>Approval</span>
+            <span>{run.approvalStatus}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>Files changed</span>
+            <span>{run.artifacts.stats.files}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>Guardrails</span>
+            <span style={{ fontSize: 12 }}>{guardrailSummary(run)}</span>
+          </div>
+          {run.scoringRepeats.length > 1 ? (
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Repeats</span>
+              <span>{run.scoringRepeats.length}x (agg: {run.scoringRepeats.length > 0 ? formatScore(run.scoringRepeats[0].score) : "n/a"})</span>
+            </div>
+          ) : null}
+          {run.artifacts.unauthorizedChangedFiles.length > 0 ? (
+            <div style={{ color: "#b91c1c", fontSize: 12 }}>
+              Unauthorized: {run.artifacts.unauthorizedChangedFiles.join(", ")}
+            </div>
+          ) : null}
+          {run.patchConflict?.hasConflicts ? (
+            <div style={{ color: "#b91c1c", fontSize: 12 }}>
+              Conflict: {run.patchConflict.conflictingFiles.join(", ") || "detected"}
+            </div>
+          ) : null}
+          {Object.keys(run.scoringAggregate?.metrics ?? {}).length > 0 ? (
+            <details style={{ marginTop: 4 }}>
+              <summary style={{ cursor: "pointer", fontSize: 12 }}>Metrics</summary>
+              <pre style={{ margin: "6px 0 0", whiteSpace: "pre-wrap", fontSize: 11 }}>
+{JSON.stringify(run.scoringAggregate?.metrics ?? {}, null, 2)}
+              </pre>
+            </details>
+          ) : null}
+          {run.artifacts.changedFiles.length > 0 ? (
+            <details style={{ marginTop: 4 }}>
+              <summary style={{ cursor: "pointer", fontSize: 12 }}>Changed files ({run.artifacts.changedFiles.length})</summary>
+              <div style={{ marginTop: 4, fontSize: 11, opacity: 0.8 }}>
+                {run.artifacts.changedFiles.join(", ")}
+              </div>
+            </details>
+          ) : null}
         </div>
       )}
     </div>
@@ -466,6 +722,14 @@ function OptimizerEditor({
     () => (runsQuery.data ?? []).find((entry) => entry.runId === selectedOptimizer?.bestRunId) ?? null,
     [runsQuery.data, selectedOptimizer?.bestRunId]
   );
+
+  const [runFilter, setRunFilter] = useState<RunFilter>("all");
+  const filteredRuns = useMemo(() => {
+    const all = runsQuery.data ?? [];
+    if (runFilter === "all") return all;
+    if (runFilter === "pending") return all.filter((r) => r.approvalStatus === "pending");
+    return all.filter((r) => r.outcome === runFilter);
+  }, [runsQuery.data, runFilter]);
 
   useEffect(() => {
     if (selectedOptimizer) {
@@ -678,6 +942,11 @@ function OptimizerEditor({
         {selectedOptimizer ? (
           <div style={{ marginTop: 12, fontSize: 13, opacity: 0.82 }}>
             Queue {selectedOptimizer.queueState} | Best {formatScore(selectedOptimizer.bestScore)} | Accepted {selectedOptimizer.acceptedRuns} | Pending {selectedOptimizer.pendingApprovalRuns}
+          </div>
+        ) : null}
+        {selectedOptimizer?.applyMode === "automatic" && !selectedOptimizer?.proposalBranchPrefix && !selectedOptimizer?.proposalPrCommand ? (
+          <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 8, border: "1px solid rgba(234, 179, 8, 0.5)", background: "rgba(234, 179, 8, 0.06)", fontSize: 12, color: "#854d0e" }}>
+            ⚠️ <strong>Automatic apply</strong> is enabled but no proposal branch prefix or PR command is configured. Accepted candidates will be applied directly to the workspace without a review branch or PR. Consider adding a <code>proposalBranchPrefix</code> and <code>proposalPrCommand</code> if you want human review before workspace changes.
           </div>
         ) : null}
       </section>
@@ -911,18 +1180,29 @@ function OptimizerEditor({
           </select>
         </div>
         <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <ComparisonPanel label="Incumbent / best run" run={bestRun} />
-          <ComparisonPanel label="Selected candidate" run={compareRun} />
+          <ComparisonPanel label="Incumbent / best run" run={bestRun} baselineScore={selectedOptimizer?.bestScore ?? null} />
+          <ComparisonPanel label="Selected candidate" run={compareRun} baselineScore={selectedOptimizer?.bestScore ?? null} />
         </div>
       </section>
 
       <section style={cardStyle}>
-        <strong>Recent runs</strong>
-        <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-          {(runsQuery.data ?? []).length === 0 ? (
-            <div style={{ opacity: 0.75 }}>No runs yet.</div>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <strong>Recent runs</strong>
+        </div>
+        <div style={{ marginTop: 8 }}>
+          <RunFilterBar
+            activeFilter={runFilter}
+            onFilterChange={setRunFilter}
+            runs={runsQuery.data ?? []}
+          />
+        </div>
+        <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+          {filteredRuns.length === 0 ? (
+            <div style={{ opacity: 0.75 }}>
+              {runFilter === "all" ? "No runs yet." : `No ${statusLabel(runFilter)} runs.`}
+            </div>
           ) : (
-            (runsQuery.data ?? []).map((run) => (
+            filteredRuns.map((run) => (
               <RunCard
                 key={run.runId}
                 run={run}
