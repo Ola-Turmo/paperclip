@@ -154,6 +154,104 @@ const optimizerTemplates: OptimizerTemplate[] = [
       applyMode: "dry_run",
       requireHumanApproval: false
     }
+  },
+  {
+    key: "noisy-scorer-ratchet",
+    name: "Noisy Scorer Ratchet",
+    description: "For scorers with high variance (e.g. Lighthouse, user satisfaction surveys, sampled metrics). Uses confidence policy: delta must exceed k×stdDev of repeated scores.",
+    values: {
+      objective: "Optimize with a noisy scorer, accepting only statistically significant improvements.",
+      mutablePaths: ["src", "public"],
+      mutationCommand: "codex exec \"Read $PAPERCLIP_OPTIMIZER_BRIEF and improve the selected files only.\"",
+      scoreCommand: "node ./scripts/lighthouse-score.mjs",
+      scoreDirection: "maximize",
+      scoreFormat: "json",
+      scoreKey: "primary",
+      guardrailFormat: "number",
+      scoreRepeats: 5,
+      scoreAggregator: "median",
+      minimumImprovement: 0.05,
+      scoreImprovementPolicy: "confidence",
+      confidenceThreshold: 2.0,
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "manual_approval",
+      requireHumanApproval: true,
+      autoCreateIssueOnGuardrailFailure: true
+    }
+  },
+  {
+    key: "epsilon-stability",
+    name: "Epsilon Stability",
+    description: "For scorers where minimum meaningful improvement is known (e.g. p95 latency must improve by at least 50ms). Uses epsilon policy: delta must exceed max(epsilon, noiseFloor).",
+    values: {
+      objective: "Optimize with a known minimum improvement threshold.",
+      mutablePaths: ["src", "server"],
+      mutationCommand: "codex exec \"Read $PAPERCLIP_OPTIMIZER_BRIEF and improve the selected files only.\"",
+      scoreCommand: "node ./scripts/perf-score.mjs",
+      scoreDirection: "maximize",
+      scoreFormat: "json",
+      scoreKey: "primary",
+      guardrailFormat: "json",
+      scoreRepeats: 3,
+      scoreAggregator: "median",
+      minimumImprovement: 0.01,
+      scoreImprovementPolicy: "epsilon",
+      epsilonValue: 0.05,
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "automatic"
+    }
+  },
+  {
+    key: "auto-accept-fast",
+    name: "Auto-Accept Fast",
+    description: "Fast feedback loop for low-risk improvements. Automatic apply with strict minimum improvement. Good for non-critical workspace improvements where speed matters more than human review.",
+    values: {
+      objective: "Rapidly improve the workspace with automatic apply of strict improvements.",
+      mutablePaths: ["src", "README.md"],
+      mutationCommand: "codex exec \"Read $PAPERCLIP_OPTIMIZER_BRIEF and improve the selected files only.\"",
+      scoreCommand: "node ./scripts/score-json.mjs",
+      scoreDirection: "maximize",
+      scoreFormat: "json",
+      scoreKey: "primary",
+      guardrailFormat: "json",
+      guardrailKey: "guardrails",
+      scoreRepeats: 1,
+      scoreAggregator: "median",
+      minimumImprovement: 0.02,
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "automatic",
+      requireHumanApproval: false,
+      autoCreateIssueOnStagnation: true,
+      stagnationIssueThreshold: 5
+    }
+  },
+  {
+    key: "stagnation-guard",
+    name: "Stagnation Guard",
+    description: "Ratchet with auto-pause on stagnation. Creates an issue after 3 non-improvements in a row, then pauses for operator review. Useful for production-workspace optimizers where runaway non-improvements indicate a broken scorer or mutator.",
+    values: {
+      objective: "Improve the workspace while monitoring for stagnation or scorer degradation.",
+      mutablePaths: ["src", "tests"],
+      mutationCommand: "codex exec \"Read $PAPERCLIP_OPTIMIZER_BRIEF and improve the selected files only.\"",
+      scoreCommand: "node ./scripts/score-json.mjs",
+      scoreDirection: "maximize",
+      scoreFormat: "json",
+      scoreKey: "primary",
+      guardrailFormat: "json",
+      guardrailKey: "guardrails",
+      scoreRepeats: 3,
+      scoreAggregator: "median",
+      minimumImprovement: 0.01,
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "automatic",
+      requireHumanApproval: false,
+      autoCreateIssueOnStagnation: true,
+      stagnationIssueThreshold: 3
+    }
   }
 ];
 
@@ -1622,6 +1720,14 @@ async function runOptimizerCycle(
       updatedOptimizer.consecutiveNonImprovements === updatedOptimizer.stagnationIssueThreshold
     ) {
       await createIssueFromRun(ctx, optimizer.companyId, optimizer, run, "Optimizer stagnation");
+      // Auto-pause after stagnation threshold to prevent runaway non-improvements
+      updatedOptimizer.status = "paused";
+      updatedOptimizer.pauseReason = `Auto-paused after ${updatedOptimizer.stagnationIssueThreshold} consecutive non-improvements.`;
+      updatedOptimizer.updatedAt = nowIso();
+      updatedOptimizer.history = [
+        ...(updatedOptimizer.history ?? []),
+        { timestamp: nowIso(), action: "paused", description: `Auto-paused after ${updatedOptimizer.stagnationIssueThreshold} stagnation events.`, triggeredBy: "system" }
+      ];
     }
 
     return { optimizer: updatedOptimizer, run };
