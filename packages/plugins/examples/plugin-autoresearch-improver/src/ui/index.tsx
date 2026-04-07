@@ -1503,6 +1503,11 @@ export function OptimizerDashboardWidget({ context }: PluginWidgetProps) {
           ? `Latest accepted score: ${formatScore(data.latestAcceptedRun.candidateScore)}`
           : "No accepted runs yet."}
       </div>
+      {data?.config ? (
+        <div style={{ marginTop: 10, fontSize: 11, opacity: 0.72, borderTop: "1px solid rgba(148,163,184,0.2)", paddingTop: 8 }}>
+          Config: repeats={data.config.scoreRepeats} | guardrailRepeats={data.config.guardrailRepeats} | policy={data.config.scoreImprovementPolicy ?? "threshold"} | budget mut={data.config.defaultMutationBudgetSeconds}s score={data.config.defaultScoreBudgetSeconds}s | maxOutput={data.config.maxOutputChars} | sweepLimit={data.config.sweepLimit}
+        </div>
+      ) : null}
     </section>
   );
 }
