@@ -8,12 +8,18 @@ export type RunOutcome = "accepted" | "pending_approval" | "dry_run_candidate" |
 export type SandboxStrategy = "copy" | "git_worktree";
 export type ScorerIsolationMode = "same_workspace" | "separate_workspace";
 
+export type GuardrailAggregator = "all" | "any";
+
 export interface StructuredMetricResult {
   primary: number | null;
   metrics: Record<string, number | string | boolean | null>;
   guardrails: Record<string, boolean | number | string | null>;
   summary?: string;
   raw?: unknown;
+  /** Set by the scorer when the run should be treated as invalid regardless of score. */
+  invalid?: boolean;
+  /** Human-readable reason for invalidation, set by the scorer. */
+  invalidReason?: string;
 }
 
 export interface RunDiffArtifact {
@@ -29,6 +35,8 @@ export interface RunDiffArtifact {
 
 export interface PullRequestArtifact {
   branchName?: string;
+  baseBranch?: string;
+  remoteName?: string;
   commitSha?: string;
   pullRequestUrl?: string;
   command?: string;
@@ -55,6 +63,8 @@ export interface OptimizerDefinition {
   guardrailKey?: string;
   scoreRepeats: number;
   scoreAggregator: ScoreAggregator;
+  guardrailRepeats: number;
+  guardrailAggregator: GuardrailAggregator;
   minimumImprovement: number;
   mutationBudgetSeconds: number;
   scoreBudgetSeconds: number;
@@ -123,6 +133,12 @@ export interface OptimizerRunRecord {
   }>;
   scoringAggregate: StructuredMetricResult | null;
   guardrail?: CommandExecutionResult;
+  guardrailRepeats?: Array<{
+    execution: CommandExecutionResult;
+    result: StructuredMetricResult | null;
+    passed: boolean;
+  }>;
+  guardrailAggregate?: StructuredMetricResult | null;
   guardrailResult?: StructuredMetricResult | null;
   mutablePaths: string[];
   sandboxStrategy: SandboxStrategy;
@@ -133,6 +149,9 @@ export interface OptimizerRunRecord {
   gitWorkspaceRelativePath?: string;
   artifacts: RunDiffArtifact;
   pullRequest?: PullRequestArtifact | null;
+  /** Git commit SHA of the workspace HEAD at the time the run was created.
+   *  Used for stale-candidate detection before approval or PR creation. */
+  workspaceHeadAtRun?: string | null;
 }
 
 export interface PluginConfigValues {

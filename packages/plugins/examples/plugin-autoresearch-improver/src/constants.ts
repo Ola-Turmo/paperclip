@@ -44,6 +44,8 @@ export const DEFAULTS = {
   maxOutputChars: 8000,
   sweepLimit: 10,
   scoreRepeats: 3,
+  guardrailRepeats: 1,
+  guardrailAggregator: "all" as const,
   minimumImprovement: 0,
   stagnationIssueThreshold: 5
 } as const;

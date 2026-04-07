@@ -24,6 +24,7 @@ import {
   TOOL_KEYS
 } from "./constants.js";
 import {
+  aggregateGuardrailResults,
   aggregateStructuredMetrics,
   buildOptimizerBrief,
   clampNonNegativeNumber,
@@ -592,13 +593,13 @@ function isRunRecord(record: PluginEntityRecord): boolean {
 
 function asOptimizer(record: PluginEntityRecord): OptimizerDefinition {
   return {
-    ...(record.data as OptimizerDefinition),
+    ...(record.data as unknown as OptimizerDefinition),
     optimizerId: record.externalId ?? record.id
   };
 }
 
 function asRunRecord(record: PluginEntityRecord): OptimizerRunRecord {
-  return record.data as OptimizerRunRecord;
+  return record.data as unknown as OptimizerRunRecord;
 }
 
 async function listOptimizerEntities(ctx: PluginContext, projectId?: string): Promise<PluginEntityRecord[]> {
@@ -777,31 +778,60 @@ async function measureGuardrail(
   result: StructuredMetricResult | null;
   passed: boolean;
   failureReason?: string;
+  repeats?: Array<{
+    execution: CommandExecutionResult;
+    result: StructuredMetricResult | null;
+    passed: boolean;
+  }>;
+  aggregate?: StructuredMetricResult | null;
 }> {
   if (!optimizer.guardrailCommand) {
-    return { execution: undefined, result: null, passed: true };
+    return { execution: undefined, result: null, passed: true, repeats: [], aggregate: null };
   }
 
-  const execution = await runShellCommand(
-    optimizer.guardrailCommand,
-    cwd,
-    optimizer.guardrailBudgetSeconds ?? config.defaultGuardrailBudgetSeconds,
-    process.env,
-    config.maxOutputChars
-  );
-  const result = resultFromExecution(execution, optimizer.guardrailFormat, optimizer.guardrailKey);
-  const failedGuardrails = Object.entries(result?.guardrails ?? {}).filter(([, value]) => value === false);
-  const passed = execution.ok && failedGuardrails.length === 0;
+  const repeats = optimizer.guardrailRepeats ?? 1;
+  const guardrailRepeats: Array<{
+    execution: CommandExecutionResult;
+    result: StructuredMetricResult | null;
+    passed: boolean;
+  }> = [];
+
+  for (let index = 0; index < repeats; index += 1) {
+    const execution = await runShellCommand(
+      optimizer.guardrailCommand,
+      cwd,
+      optimizer.guardrailBudgetSeconds ?? config.defaultGuardrailBudgetSeconds,
+      process.env,
+      config.maxOutputChars
+    );
+    const result = resultFromExecution(execution, optimizer.guardrailFormat, optimizer.guardrailKey);
+    const failedGuardrails = Object.entries(result?.guardrails ?? {}).filter(([, value]) => value === false);
+    const passed = execution.ok && failedGuardrails.length === 0 && !result?.invalid;
+    guardrailRepeats.push({ execution, result, passed });
+  }
+
+  const aggregate = repeats > 1
+    ? aggregateGuardrailResults(
+        guardrailRepeats.map((entry) => entry.result).filter((entry): entry is StructuredMetricResult => entry != null),
+        optimizer.guardrailAggregator ?? "all"
+      )
+    : guardrailRepeats[0]?.result ?? null;
+
+  const failedGuardrails = Object.entries(aggregate?.guardrails ?? {}).filter(([, value]) => value === false);
+  const passed = guardrailRepeats.every((entry) => entry.passed);
 
   return {
-    execution,
-    result,
+    execution: guardrailRepeats[guardrailRepeats.length - 1]?.execution,
+    result: aggregate,
     passed,
-    failureReason: !execution.ok
-      ? "Guardrail command failed."
-      : failedGuardrails.length > 0
-        ? `Guardrails failed: ${failedGuardrails.map(([key]) => key).join(", ")}.`
-        : undefined
+    repeats: guardrailRepeats,
+    aggregate,
+    failureReason: !passed
+      ? (aggregate?.invalidReason
+        ?? (failedGuardrails.length > 0
+          ? `Guardrails failed: ${failedGuardrails.map(([key]) => key).join(", ")}.`
+          : "One or more guardrail repeats failed."))
+      : undefined
   };
 }
 
@@ -879,10 +909,6 @@ async function createPullRequestFromRun(
   run: OptimizerRunRecord,
   config: PluginConfigValues
 ): Promise<PullRequestArtifact> {
-  if (!run.applied) {
-    throw new Error("Run must be applied before creating a pull request.");
-  }
-
   const { workspacePath } = await resolveWorkspacePath(
     ctx,
     optimizer.companyId,
@@ -896,6 +922,42 @@ async function createPullRequestFromRun(
   if (run.artifacts.changedFiles.length === 0) {
     throw new Error("Run did not record any changed files.");
   }
+
+  // For pending (non-applied) runs, the workspace does not yet contain the run's
+  // changes (they are in the retained sandbox). Reject with dirty-repo guard to
+  // prevent creating a PR when the workspace state may have diverged.
+  if (!run.applied) {
+    // Dirty-repo safety: reject if the workspace has uncommitted changes.
+    // This guards against unrelated changes being swept into the proposal branch.
+    const { stdout: statusOutput } = await runGit(git.repoRoot, ["status", "--porcelain"]);
+    const dirtyFiles = statusOutput.trim().split("\n").filter((line) => line.trim() !== "");
+    if (dirtyFiles.length > 0) {
+      throw new Error(
+        `Workspace has uncommitted changes (dirty repo). Proposal creation is blocked to prevent unrelated changes from being swept into the branch. Dirty files: ${dirtyFiles.join(", ")}`
+      );
+    }
+
+    // Stale-candidate safety: reject if the workspace HEAD changed since the run was created.
+    if (run.workspaceHeadAtRun) {
+      const { stdout: currentHead } = await runGit(git.repoRoot, ["rev-parse", "HEAD"]);
+      const currentHeadTrimmed = currentHead.trim();
+      if (currentHeadTrimmed !== run.workspaceHeadAtRun.trim()) {
+        throw new Error(
+          `Workspace HEAD has changed since this run was created (stale candidate). Run was created at ${run.workspaceHeadAtRun} but workspace is now at ${currentHeadTrimmed}. A new run is required.`
+        );
+      }
+    }
+
+    // Pending runs have not been applied; after the guards above, throw to
+    // prevent attempting to stage non-existent workspace files.
+    throw new Error("Run must be applied before creating a pull request.");
+  }
+
+  const { stdout: currentBranch } = await runGit(git.repoRoot, ["branch", "--show-current"]);
+  const baseBranch = currentBranch.trim() || "HEAD";
+  const { stdout: remoteInfo } = await runGit(git.repoRoot, ["config", "--get", `branch.${baseBranch}.remote`])
+    .catch(() => ({ stdout: "" }));
+  const remoteName = remoteInfo.trim() || undefined;
 
   const branchName = buildProposalBranchName(optimizer, run);
   await runGit(git.repoRoot, ["checkout", "-B", branchName]);
@@ -928,6 +990,8 @@ async function createPullRequestFromRun(
 
   return {
     branchName,
+    baseBranch,
+    remoteName,
     commitSha: commitSha.trim(),
     pullRequestUrl,
     command: optimizer.proposalPrCommand,
@@ -993,6 +1057,8 @@ async function createOptimizerFromParams(
     autoCreateIssueOnGuardrailFailure: params.autoCreateIssueOnGuardrailFailure === true,
     autoCreateIssueOnStagnation: params.autoCreateIssueOnStagnation === true,
     stagnationIssueThreshold: clampPositiveInteger(params.stagnationIssueThreshold, config.stagnationIssueThreshold),
+    guardrailRepeats: clampPositiveInteger(params.guardrailRepeats, 1),
+    guardrailAggregator: params.guardrailAggregator === "any" ? "any" : "all",
     proposalBranchPrefix: typeof params.proposalBranchPrefix === "string" && params.proposalBranchPrefix.trim()
       ? params.proposalBranchPrefix.trim()
       : undefined,
@@ -1133,6 +1199,15 @@ async function runOptimizerCycle(
     const baselineRunId = optimizer.bestRunId ?? null;
     const baselineScore = await measureBaselineScore(optimizer, workspacePath, config);
 
+    // Capture workspace HEAD at run start for stale-candidate detection
+    let workspaceHeadAtRun: string | null = null;
+    try {
+      const { stdout } = await runGit(workspacePath, ["rev-parse", "HEAD"]);
+      workspaceHeadAtRun = stdout.trim() || null;
+    } catch {
+      workspaceHeadAtRun = null;
+    }
+
     mutationSandbox = await createSandboxContext(optimizer.sandboxStrategy, workspacePath);
     briefPath = path.join(os.tmpdir(), `paperclip-optimizer-brief-${randomUUID()}.json`);
     await fs.writeFile(briefPath, JSON.stringify(buildOptimizerBrief(optimizer), null, 2), "utf8");
@@ -1162,17 +1237,21 @@ async function runOptimizerCycle(
       optimizer.minimumImprovement
     );
 
+    const scoringInvalid = scoringResult.scoringRepeats.some((entry) => entry.structured?.invalid === true);
     const failureReason = !mutation.ok
       ? "Mutation command failed."
       : artifacts.unauthorizedChangedFiles.length > 0
         ? `Mutation touched files outside the mutable surface: ${artifacts.unauthorizedChangedFiles.join(", ")}.`
-        : !scoringResult.scoringRepeats.every((entry) => entry.execution.ok)
-          ? "One or more scoring runs failed."
-          : scoringResult.candidateScore == null
-            ? "Candidate score was missing or invalid."
-            : !guardrail.passed
-              ? guardrail.failureReason ?? "Guardrail failed."
-              : undefined;
+        : scoringInvalid
+          ? (scoringResult.scoringRepeats.find((entry) => entry.structured?.invalid === true)?.structured?.invalidReason
+            ?? "Scorer marked this run as invalid.")
+          : !scoringResult.scoringRepeats.every((entry) => entry.execution.ok)
+            ? "One or more scoring runs failed."
+            : scoringResult.candidateScore == null
+              ? "Candidate score was missing or invalid."
+              : !guardrail.passed
+                ? guardrail.failureReason ?? "Guardrail failed."
+                : undefined;
 
     let outcome: RunOutcome = "rejected";
     let accepted = false;
@@ -1232,6 +1311,8 @@ async function runOptimizerCycle(
       scoringAggregate: scoringResult.scoringAggregate,
       guardrail: guardrail.execution,
       guardrailResult: guardrail.result,
+      guardrailRepeats: guardrail.repeats,
+      guardrailAggregate: guardrail.aggregate,
       mutablePaths: optimizer.mutablePaths,
       sandboxStrategy: mutationSandbox.strategy,
       sandboxPath: retainSandbox ? mutationSandbox.sandboxRoot : undefined,
@@ -1240,6 +1321,7 @@ async function runOptimizerCycle(
       gitRepoRoot: mutationSandbox.git?.repoRoot,
       gitWorkspaceRelativePath: mutationSandbox.git?.workspaceRelativePath,
       artifacts,
+      workspaceHeadAtRun,
       pullRequest: null
     };
 
@@ -1299,6 +1381,18 @@ async function promotePendingRun(
     optimizer.projectId,
     optimizer.workspaceId
   );
+
+  // Stale-candidate detection: check if the workspace HEAD changed since the run was created.
+  if (run.workspaceHeadAtRun && run.gitRepoRoot) {
+    const { stdout: currentHead } = await runGit(run.gitRepoRoot, ["rev-parse", "HEAD"]);
+    const currentHeadTrimmed = currentHead.trim();
+    if (currentHeadTrimmed !== run.workspaceHeadAtRun.trim()) {
+      throw new Error(
+        `Workspace HEAD has changed since this run was created (stale candidate). Run was created at commit ${run.workspaceHeadAtRun} but workspace is now at ${currentHeadTrimmed}. Please run the optimizer again to get a fresh candidate before approving.`
+      );
+    }
+  }
+
   const sandboxWorkspacePath = resolveRunSandboxWorkspacePath(run);
   if (run.sandboxStrategy === "git_worktree" && run.gitRepoRoot && run.gitWorkspaceRelativePath) {
     const gitContext: GitWorkspaceContext = {
@@ -1436,7 +1530,7 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
     const projectId = typeof params.projectId === "string" ? params.projectId : undefined;
     const entities = await listRunEntities(ctx, projectId);
     return entities
-      .filter((entry) => isRunRecord(entry) && (entry.data as OptimizerRunRecord).optimizerId === optimizerId)
+      .filter((entry) => isRunRecord(entry) && asRunRecord(entry).optimizerId === optimizerId)
       .map(asRunRecord)
       .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
       .slice(0, 30);

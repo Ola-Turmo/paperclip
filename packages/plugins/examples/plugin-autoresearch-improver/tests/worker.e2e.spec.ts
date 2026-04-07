@@ -40,6 +40,19 @@ async function createRepoWorkspace(): Promise<string> {
 
 async function setupHarness(): Promise<HarnessSetup> {
   const workspaceRoot = await createRepoWorkspace();
+  // Create the invalid-scorer helper script in the workspace root.
+  // This file is copied into the scorer sandbox (separate_workspace mode),
+  // allowing the invalid-scoring test to emit structured JSON without
+  // shell-quoting headaches for strings containing double quotes.
+  await writeFile(path.join(workspaceRoot, "score-invalid.mjs"),
+    `import { writeFileSync } from "node:fs";\n` +
+    `const obj = {"primary":0.99,"guardrails":{"safe":true},"invalid":true,"invalidReason":"test invalid"};\n` +
+    `console.log(JSON.stringify(obj));\n`,
+    "utf8"
+  );
+  // Add and commit the scorer script so it is present in git_worktree sandboxes.
+  await run("git", ["add", "score-invalid.mjs"], workspaceRoot);
+  await run("git", ["commit", "-m", "add invalid scorer script"], workspaceRoot);
   const harness = createTestHarness({ manifest });
   const companyId = "company-1";
   const projectId = "project-1";
@@ -192,5 +205,187 @@ describe("autoresearch improver worker e2e", () => {
     expect(result.run.outcome).toBe("invalid");
     expect(result.run.artifacts.unauthorizedChangedFiles).toContain("NOT_ALLOWED.txt");
     expect(await readFile(path.join(workspaceRoot, "README.md"), "utf8")).toBe("baseline\n");
+  });
+  it("supports repeated guardrail execution with all-pass aggregation", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+
+    cleanupPaths.push(workspaceRoot);
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Repeated guardrail",
+      objective: "Test guardrail repeats",
+      mutablePaths: "README.md",
+      mutationCommand: "node -e \"const fs=require('node:fs');fs.writeFileSync('README.md','candidate\\n')\"",
+      scoreCommand: readmeScoreCommand,
+      guardrailCommand: "node -e \"console.log(JSON.stringify({guardrails:{safe:true}}))\"",
+      guardrailFormat: "json",
+      guardrailKey: "guardrails",
+      guardrailRepeats: 3,
+      guardrailAggregator: "all",
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "automatic"
+    }) as { optimizerId: string };
+
+    const result = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { run: { outcome: string; guardrailRepeats?: unknown[] } };
+    expect(result.run.outcome).toBe("accepted");
+    expect((result.run as { outcome: string; guardrailRepeats?: unknown[] }).guardrailRepeats).toHaveLength(3);
+  });
+
+  it("supports repeated guardrail execution with any-pass aggregation", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Any-pass guardrail",
+      objective: "Test any-pass guardrail",
+      mutablePaths: "README.md",
+      mutationCommand: "node -e \"const fs=require('node:fs');fs.writeFileSync('README.md','candidate\\n')\"",
+      scoreCommand: readmeScoreCommand,
+      guardrailCommand: "node -e \"console.log(JSON.stringify({guardrails:{safe:true}}))\"",
+      guardrailFormat: "json",
+      guardrailKey: "guardrails",
+      guardrailRepeats: 2,
+      guardrailAggregator: "any",
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "automatic"
+    }) as { optimizerId: string };
+
+    const result = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { run: { outcome: string } };
+
+    expect(result.run.outcome).toBe("accepted");
+  });
+
+  it("marks a run invalid when the scorer returns invalid:true", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Invalid scorer",
+      objective: "Test invalid semantics",
+      mutablePaths: "README.md",
+      mutationCommand: "node -e \"const fs=require('node:fs');fs.writeFileSync('README.md','candidate\\n')\"",
+      scoreCommand: "node score-invalid.mjs",
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "automatic"
+    }) as { optimizerId: string };
+    const result = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { run: { outcome: string; reason: string } };
+
+    expect(result.run.outcome).toBe("invalid");
+    expect(result.run.reason).toMatch(/invalid|test invalid/i);
+    expect(await readFile(path.join(workspaceRoot, "README.md"), "utf8")).toBe("baseline\n");
+  });
+
+  it("tracks workspace HEAD at run creation and rejects stale candidates", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Stale check",
+      objective: "Test stale detection",
+      mutablePaths: "README.md",
+      mutationCommand: "node -e \"const fs=require('node:fs');fs.writeFileSync('README.md','candidate\\n')\"",
+      scoreCommand: readmeScoreCommand,
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "manual_approval"
+    }) as { optimizerId: string };
+
+    const runCycle = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { run: { runId: string; outcome: string; workspaceHeadAtRun?: string | null } };
+    expect(runCycle.run.outcome).toBe("pending_approval");
+    expect(runCycle.run.workspaceHeadAtRun).toBeTruthy();
+
+    // Create an additional commit to make the workspace HEAD stale
+    await run("git", ["config", "user.email", "paprclip@example.test"], workspaceRoot);
+    await run("git", ["config", "user.name", "Paprclip Tests"], workspaceRoot);
+    await writeFile(path.join(workspaceRoot, "README.md"), "baseline\n\nother change\n", "utf8");
+    await run("git", ["add", "README.md"], workspaceRoot);
+    await run("git", ["commit", "-m", "unrelated change"], workspaceRoot);
+
+    // Trying to approve the stale run should fail
+    await expect(
+      harness.performAction("approve-optimizer-run", {
+        projectId,
+        optimizerId: optimizer.optimizerId,
+        runId: runCycle.run.runId
+      })
+    ).rejects.toThrow(/stale/i);
+  });
+
+  it("detects dirty workspace and refuses to create a PR from a pending (non-applied) run", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Dirty check",
+      objective: "Test dirty repo detection",
+      mutablePaths: "README.md",
+      mutationCommand: "node -e \"const fs=require('node:fs');fs.writeFileSync('README.md','candidate\\n')\"",
+      scoreCommand: readmeScoreCommand,
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "manual_approval",
+      proposalBranchPrefix: "paprclip/e2e-dirty",
+      proposalPrCommand: "node -e \"console.log('https://example.test/pr/999')\""
+    }) as { optimizerId: string };
+    const runCycle = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { run: { runId: string; outcome: string; approvalStatus: string } };
+
+    // The run should be pending_approval (not yet applied).
+    expect(runCycle.run.outcome).toBe("pending_approval");
+    expect(runCycle.run.approvalStatus).toBe("pending");
+
+    // Make the workspace dirty with an unrelated file before any approval.
+    await writeFile(path.join(workspaceRoot, "DIRTY.txt"), "uncommitted change\n", "utf8");
+
+    // Attempting to create a PR from a pending (non-applied) run with a dirty
+    // workspace must be rejected to prevent sweeping unrelated changes.
+    await expect(
+      harness.performAction("create-pull-request-from-run", {
+        projectId,
+        optimizerId: optimizer.optimizerId,
+        runId: runCycle.run.runId
+      })
+    ).rejects.toThrow(/dirty/i);
   });
 });

@@ -110,12 +110,18 @@ export function extractStructuredMetricResult(
         ? Number(candidate)
         : null;
     const root = parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : {};
+    const invalid = root.invalid === true;
+    const invalidReason = typeof root.invalidReason === "string" ? root.invalidReason
+      : invalid ? "Scorer marked this run as invalid."
+      : undefined;
     return {
       primary,
       metrics: asMetricMap(root.metrics ?? root),
       guardrails: asMetricMap(root.guardrails),
       summary: typeof root.summary === "string" ? root.summary : undefined,
-      raw: parsed
+      raw: parsed,
+      invalid,
+      invalidReason
     };
   } catch {
     return null;
@@ -178,12 +184,67 @@ export function aggregateStructuredMetrics(
     }
   }
 
+  const anyInvalid = results.some((entry) => entry.invalid === true);
+  const firstInvalidReason = results.find((entry) => entry.invalid === true)?.invalidReason;
+  const allInvalidReasons = results
+    .map((entry) => entry.invalidReason)
+    .filter(Boolean) as string[];
+
   return {
     primary,
     metrics,
     guardrails,
     summary: results.map((entry) => entry.summary).filter(Boolean).join(" | ") || undefined,
-    raw: results.map((entry) => entry.raw ?? null)
+    raw: results.map((entry) => entry.raw ?? null),
+    invalid: anyInvalid,
+    invalidReason: anyInvalid ? (firstInvalidReason ?? `One or more scoring repeats marked invalid.`) : undefined
+  };
+}
+
+/**
+ * Aggregate guardrail results across repeated runs.
+ * Boolean guardrails: "all" requires all true, "any" requires at least one true.
+ * The aggregate is marked invalid if any repeat was invalid.
+ */
+export function aggregateGuardrailResults(
+  results: StructuredMetricResult[],
+  aggregator: "all" | "any"
+): StructuredMetricResult {
+  const guardrailKeys = new Set<string>();
+  for (const result of results) {
+    Object.keys(result.guardrails).forEach((key) => guardrailKeys.add(key));
+  }
+
+  const guardrails: Record<string, boolean | number | string | null> = {};
+  for (const key of guardrailKeys) {
+    const values = results.map((entry) => entry.guardrails[key]);
+    if (values.every((value) => typeof value === "boolean")) {
+      const bools = values as boolean[];
+      guardrails[key] = aggregator === "all" ? bools.every(Boolean) : bools.some(Boolean);
+    } else if (values.every((value) => typeof value === "number")) {
+      // For numeric guardrail values, use mean as a sensible default
+      guardrails[key] = aggregateScores(values as number[], "mean");
+    } else {
+      guardrails[key] = values[values.length - 1] ?? null;
+    }
+  }
+
+  const anyInvalid = results.some((entry) => entry.invalid === true);
+  const invalidReasons = results
+    .map((entry) => entry.invalidReason)
+    .filter(Boolean) as string[];
+
+  return {
+    primary: null,
+    metrics: {},
+    guardrails,
+    summary: invalidReasons.length > 0
+      ? `Invalid reasons: ${invalidReasons.join(" | ")}`
+      : results.map((entry) => entry.summary).filter(Boolean).join(" | ") || undefined,
+    invalid: anyInvalid,
+    invalidReason: anyInvalid
+      ? `One or more guardrail repeats marked invalid: ${invalidReasons.join(" | ")}`
+      : undefined
   };
 }
 

@@ -51,6 +51,8 @@ type FormState = {
   guardrailKey: string;
   scoreRepeats: string;
   scoreAggregator: "median" | "mean" | "max" | "min";
+  guardrailRepeats: string;
+  guardrailAggregator: "all" | "any";
   minimumImprovement: string;
   mutationBudgetSeconds: string;
   scoreBudgetSeconds: string;
@@ -127,6 +129,8 @@ function emptyForm(workspaceId = ""): FormState {
     guardrailKey: "guardrails",
     scoreRepeats: "3",
     scoreAggregator: "median",
+    guardrailRepeats: "1",
+    guardrailAggregator: "all",
     minimumImprovement: "0",
     mutationBudgetSeconds: "300",
     scoreBudgetSeconds: "180",
@@ -166,6 +170,8 @@ function formFromOptimizer(optimizer: OptimizerDefinition): FormState {
     guardrailKey: optimizer.guardrailKey ?? "",
     scoreRepeats: String(optimizer.scoreRepeats),
     scoreAggregator: optimizer.scoreAggregator,
+    guardrailRepeats: String(optimizer.guardrailRepeats),
+    guardrailAggregator: optimizer.guardrailAggregator,
     minimumImprovement: String(optimizer.minimumImprovement),
     mutationBudgetSeconds: String(optimizer.mutationBudgetSeconds),
     scoreBudgetSeconds: String(optimizer.scoreBudgetSeconds),
@@ -206,6 +212,8 @@ function applyTemplate(template: OptimizerTemplate, current: FormState, workspac
     guardrailKey: values.guardrailKey ?? current.guardrailKey,
     scoreRepeats: values.scoreRepeats != null ? String(values.scoreRepeats) : current.scoreRepeats,
     scoreAggregator: values.scoreAggregator ?? current.scoreAggregator,
+    guardrailRepeats: values.guardrailRepeats != null ? String(values.guardrailRepeats) : current.guardrailRepeats,
+    guardrailAggregator: values.guardrailAggregator ?? current.guardrailAggregator,
     minimumImprovement: values.minimumImprovement != null ? String(values.minimumImprovement) : current.minimumImprovement,
     mutationBudgetSeconds: values.mutationBudgetSeconds != null ? String(values.mutationBudgetSeconds) : current.mutationBudgetSeconds,
     scoreBudgetSeconds: values.scoreBudgetSeconds != null ? String(values.scoreBudgetSeconds) : current.scoreBudgetSeconds,
@@ -245,6 +253,8 @@ function toActionPayload(form: FormState) {
     guardrailKey: form.guardrailKey || undefined,
     scoreRepeats: Number(form.scoreRepeats || 0),
     scoreAggregator: form.scoreAggregator,
+    guardrailRepeats: Number(form.guardrailRepeats || 1),
+    guardrailAggregator: form.guardrailAggregator,
     minimumImprovement: Number(form.minimumImprovement || 0),
     mutationBudgetSeconds: Number(form.mutationBudgetSeconds || 0),
     scoreBudgetSeconds: Number(form.scoreBudgetSeconds || 0),
@@ -749,7 +759,21 @@ function OptimizerEditor({
               <input style={{ ...inputStyle, marginTop: 6 }} value={form.guardrailKey} onChange={(event) => setForm((prev) => ({ ...prev, guardrailKey: event.target.value }))} placeholder="guardrails" />
             </div>
             <div>
-              <strong>Repeats</strong>
+              <strong>Guardrail repeats</strong>
+              <input style={{ ...inputStyle, marginTop: 6 }} value={form.guardrailRepeats} onChange={(event) => setForm((prev) => ({ ...prev, guardrailRepeats: event.target.value }))} placeholder="1" />
+            </div>
+            <div>
+              <strong>Guardrail aggregator</strong>
+              <select style={{ ...inputStyle, marginTop: 6 }} value={form.guardrailAggregator} onChange={(event) => setForm((prev) => ({ ...prev, guardrailAggregator: event.target.value as "all" | "any" }))}>
+                <option value="all">All must pass</option>
+                <option value="any">Any can pass</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+            <div>
+              <strong>Score repeats</strong>
               <input style={{ ...inputStyle, marginTop: 6 }} value={form.scoreRepeats} onChange={(event) => setForm((prev) => ({ ...prev, scoreRepeats: event.target.value }))} />
             </div>
             <div>

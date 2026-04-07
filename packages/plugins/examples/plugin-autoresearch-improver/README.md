@@ -41,6 +41,8 @@ Each optimizer stores:
 - optional `guardrailKey`
 - `scoreRepeats`
 - `scoreAggregator`
+- `guardrailRepeats`
+- `guardrailAggregator`
 - `minimumImprovement`
 - per-step budgets
 - `sandboxStrategy`
@@ -52,7 +54,8 @@ Each optimizer stores:
 - `autoCreateIssueOnGuardrailFailure`
 - `autoCreateIssueOnStagnation`
 - `stagnationIssueThreshold`
-- optional proposal branch prefix, commit message, and PR command
+- `guardrailRepeats`: number of times the guardrail command is executed per run (default: 1)
+- `guardrailAggregator`: pass criterion for repeated guardrails (`all` means all repeats must pass; `any` means at least one repeat can pass)
 
 The built-in UI also ships three templates:
 
@@ -72,8 +75,9 @@ For each run, the plugin:
 6. runs the scorer in a separate execution workspace when configured
 7. runs the scorer `scoreRepeats` times
 8. aggregates the result with `median`, `mean`, `max`, or `min`
-9. runs the optional guardrail command
-10. computes a diff artifact and detects unauthorized file changes
+9. runs the optional guardrail command `guardrailRepeats` times
+10. aggregates the guardrail result with `guardrailAggregator` (`all` or `any`)
+11. computes a diff artifact and detects unauthorized file changes
 11. compares candidate versus incumbent using `minimumImprovement`
 12. either:
    - applies allowed paths immediately
@@ -206,6 +210,7 @@ Each run stores:
 - repeated scoring results
 - aggregated structured metrics
 - optional guardrail result
+- guardrail repeat details
 - mutable paths
 - sandbox path when retained
 - scorer sandbox path when retained
@@ -359,5 +364,7 @@ The plugin instance config supports:
 - `maxOutputChars`
 - `sweepLimit`
 - `scoreRepeats`
+- `guardrailRepeats`
+- `guardrailAggregator`
 - `minimumImprovement`
 - `stagnationIssueThreshold`
