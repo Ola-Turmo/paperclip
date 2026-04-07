@@ -5,9 +5,8 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
 ## High priority
 
 - Separate scoring into a real external evaluator service instead of a separate local workspace.
-- Protect dirty repos before PR creation so unrelated local changes are never swept into proposal branches.
-- Add stale-candidate detection before approval or PR creation.
-  - If the underlying workspace or base branch changed, force a re-run instead of promoting an old candidate.
+- ✅ Protect dirty repos before PR creation so unrelated local changes are never swept into proposal branches. *(implemented: dirty-repo guard in `createPullRequestFromRun`)*
+- ✅ Add stale-candidate detection before approval or PR creation. *(implemented: workspace HEAD comparison in `promotePendingRun` and `createPullRequestFromRun`)*
 - Store richer PR metadata on runs.
   - PR number
   - base branch
@@ -17,15 +16,11 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
 
 ## Safety and correctness
 
-- Add explicit invalid-run semantics to JSON scoring.
-  - Example: `{ "primary": 0.91, "invalid": true, "reason": "sample ratio mismatch" }`
-- Add repeated guardrail execution, not only repeated scoring.
+- ✅ Add explicit invalid-run semantics to JSON scoring. *(implemented: `invalid` and `invalidReason` fields in StructuredMetricResult, checked in runOptimizerCycle)*
+- ✅ Add repeated guardrail execution, not only repeated scoring. *(implemented: guardrailRepeats and guardrailAggregator in measureGuardrail)*
 - Add epsilon and confidence policies for noisy scorers beyond `minimumImprovement`.
-- Handle merge conflicts on patch apply more gracefully.
-  - capture structured conflict details
-  - expose them in UI
-  - avoid partially-applied states
-- Add a “workspace changed since run creation” check before approval.
+- ✅ Handle merge conflicts on patch apply more gracefully. *(implemented: detectPatchConflicts, structured PatchConflictInfo on run, invalid outcome on conflict, UI conflict display)*
+- ✅ Add a "workspace changed since run creation" check before approval. *(implemented: dirty-repo guard in promotePendingRun before patch apply)*
 - Add better handling for binary files and large patches in diff artifacts.
 
 ## Git and PR flow
@@ -57,14 +52,15 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
 
 ## Testing
 
+- ✅ E2e coverage for patch-apply conflicts *(implemented: patch-apply conflict test with conflicting commit)*
+- ✅ E2e coverage for dirty workspace rejection before proposal creation *(implemented: dirty-repo PR rejection test)*
+- ✅ E2e coverage for dirty workspace rejection before approval *(implemented: dirty approval guard test)*
 - Add e2e coverage for:
   - copy-mode sandboxes
   - subdirectory workspaces inside a larger git repo
   - untracked file creation inside the mutable surface
   - deletion flows
-  - patch-apply conflicts
   - PR command failures
-  - dirty workspace rejection before proposal creation
 - Add assertions around run persistence after approval and rejection.
 - Add UI-level tests for the comparison and approval flows.
 
@@ -74,7 +70,7 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
   - `gh pr create`
   - branch push + API-based PR creation
   - internal enterprise git workflows
-- Add a “design limitations” section comparing:
+- Add a "design limitations" section comparing:
   - current scorer isolation
   - future remote evaluator isolation
 - Add more scorer examples.
@@ -87,7 +83,7 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
 
 - Add downloadable artifacts for patch, score JSON, and logs.
 - Add optimizer version history and config diffing.
-- Add a “clone optimizer” action.
+- Add a "clone optimizer" action.
 - Add per-optimizer pause reasons and maintenance windows.
 - Add richer metrics and dashboard summaries for:
   - average score delta

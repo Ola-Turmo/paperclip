@@ -44,6 +44,21 @@ export interface PullRequestArtifact {
   createdAt?: string;
 }
 
+/**
+ * Structured information about a patch-apply conflict.
+ * Populated when `git apply` fails with a non-zero exit code.
+ */
+export interface PatchConflictInfo {
+  /** Whether conflict markers were detected in the patch output. */
+  hasConflicts: boolean;
+  /** Paths that had conflicts, extracted from conflict markers. */
+  conflictingFiles: string[];
+  /** Raw git apply stderr output. */
+  stderr: string;
+  /** Exit code from git apply. */
+  exitCode: number;
+}
+
 export interface OptimizerDefinition {
   optimizerId: string;
   companyId: string;
@@ -148,9 +163,12 @@ export interface OptimizerRunRecord {
   gitRepoRoot?: string;
   gitWorkspaceRelativePath?: string;
   artifacts: RunDiffArtifact;
+  /** Populated when `git apply` fails with a non-zero exit code during automatic
+   *  or promoted apply. Contains structured conflict details. */
+  patchConflict?: PatchConflictInfo | null;
   pullRequest?: PullRequestArtifact | null;
   /** Git commit SHA of the workspace HEAD at the time the run was created.
-   *  Used for stale-candidate detection before approval or PR creation. */
+   *  Used for stale-candidate and workspace-change detection before approval or PR creation. */
   workspaceHeadAtRun?: string | null;
 }
 

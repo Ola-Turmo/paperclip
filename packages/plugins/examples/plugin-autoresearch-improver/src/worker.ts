@@ -46,6 +46,7 @@ import type {
   OptimizerRunRecord,
   OptimizerTemplate,
   OverviewData,
+  PatchConflictInfo,
   PluginConfigValues,
   PullRequestArtifact,
   RunDiffArtifact,
@@ -479,12 +480,56 @@ async function createWorkspacePatch(
   return stdout;
 }
 
+/**
+ * Detect conflict information from git apply stderr output.
+ * Conflict markers appear as "<<<<<<<", "=======", or ">>>>>>>" in the output,
+ * or git may report "error: patch failed:" for specific files.
+ */
+function detectPatchConflicts(stderr: string, exitCode: number): PatchConflictInfo {
+  const lines = stderr.split(/\r?\n/);
+  const conflictingFiles: string[] = [];
+  let hasConflicts = false;
+
+  for (const line of lines) {
+    if (
+      line.includes("<<<<<<<") ||
+      line.includes(">>>>>>>") ||
+      line.includes("=======") ||
+      /error: patch failed/i.test(line)
+    ) {
+      hasConflicts = true;
+    }
+    const fileMatch = line.match(/^error: (?:patch failed|checking patch|unalign|already exists): (.+)$/i);
+    if (fileMatch && fileMatch[1]) {
+      const filePath = fileMatch[1].trim();
+      if (!conflictingFiles.includes(filePath)) {
+        conflictingFiles.push(filePath);
+      }
+    }
+  }
+
+  return {
+    hasConflicts: hasConflicts || conflictingFiles.length > 0,
+    conflictingFiles,
+    stderr,
+    exitCode
+  };
+}
+
+/**
+ * Apply a git patch to the workspace, capturing structured conflict details
+ * when git apply fails due to overlapping changes.
+ *
+ * Throws an error if apply fails (including conflicts) so callers can decide
+ * how to handle the result. The conflict info is returned alongside the error
+ * via the `PatchConflictInfo` attached to the run record.
+ */
 async function applyPatchToWorkspace(
   workspacePath: string,
   git: GitWorkspaceContext | null,
   patch: string
-): Promise<void> {
-  if (!patch.trim()) return;
+): Promise<PatchConflictInfo | null> {
+  if (!patch.trim()) return null;
 
   if (!git) {
     throw new Error("Git patch apply requested without a git workspace.");
@@ -497,7 +542,26 @@ async function applyPatchToWorkspace(
     if (git.workspaceRelativePath !== ".") {
       args.splice(1, 0, "--directory", git.workspaceRelativePath);
     }
-    await runGit(git.repoRoot, args, 32 * 1024 * 1024);
+    const result = await runGit(git.repoRoot, args, 32 * 1024 * 1024);
+    return null; // no conflict
+  } catch (err) {
+    const error = err as { code?: number; stderr?: string; stdout?: string };
+    const stderr = error.stderr ?? "";
+    const exitCode = typeof error.code === "number" ? error.code : 1;
+    const conflictInfo = detectPatchConflicts(stderr, exitCode);
+
+    if (conflictInfo.hasConflicts || conflictInfo.conflictingFiles.length > 0) {
+      // Return conflict info so the caller can record it and surface it in the UI.
+      // Re-throw with a descriptive message so the run can be marked appropriately.
+      const fileList = conflictInfo.conflictingFiles.join(", ") || "one or more files";
+      throw new Error(
+        `Patch apply conflict: ${fileList}. The workspace has diverged since the candidate was generated. ` +
+        `Conflict details: ${stderr.slice(0, 500)}`
+      );
+    }
+
+    // Non-conflict failure (e.g., corrupt patch, permission issue)
+    throw new Error(`Patch apply failed (exit ${exitCode}): ${stderr.slice(0, 500)}`);
   } finally {
     await fs.rm(patchFile, { force: true }).catch(() => undefined);
   }
@@ -1258,6 +1322,7 @@ async function runOptimizerCycle(
     let applied = false;
     let approvalStatus: OptimizerRunRecord["approvalStatus"] = "not_needed";
     let reason = failureReason ?? comparison.reason;
+    let patchConflict: PatchConflictInfo | null = null;
 
     if (failureReason) {
       outcome = "invalid";
@@ -1273,20 +1338,33 @@ async function runOptimizerCycle(
       retainSandbox = true;
       reason = "Candidate improved the score and is waiting for human approval.";
     } else {
-      if (mutationSandbox.strategy === "git_worktree" && mutationSandbox.git) {
-        const patch = await createWorkspacePatch(
-          mutationSandbox.git,
-          mutationSandbox.sandboxRoot,
-          optimizer.mutablePaths
-        );
-        await applyPatchToWorkspace(workspacePath, mutationSandbox.git, patch);
-      } else {
-        await applySandboxToWorkspace(workspacePath, mutationSandbox.workspacePath, optimizer.mutablePaths);
+      try {
+        if (mutationSandbox.strategy === "git_worktree" && mutationSandbox.git) {
+          const patch = await createWorkspacePatch(
+            mutationSandbox.git,
+            mutationSandbox.sandboxRoot,
+            optimizer.mutablePaths
+          );
+          patchConflict = await applyPatchToWorkspace(workspacePath, mutationSandbox.git, patch);
+        } else {
+          await applySandboxToWorkspace(workspacePath, mutationSandbox.workspacePath, optimizer.mutablePaths);
+        }
+        outcome = "accepted";
+        accepted = true;
+        applied = true;
+        reason = comparison.reason;
+      } catch (applyError) {
+        // Capture the conflict info and mark the run as invalid.
+        // This prevents partially-applied states when git apply fails.
+        patchConflict = {
+          hasConflicts: true,
+          conflictingFiles: [],
+          stderr: applyError instanceof Error ? applyError.message : String(applyError),
+          exitCode: 1
+        };
+        outcome = "invalid";
+        reason = `Patch apply failed: ${applyError instanceof Error ? applyError.message : String(applyError)}`;
       }
-      outcome = "accepted";
-      accepted = true;
-      applied = true;
-      reason = comparison.reason;
     }
 
     const run: OptimizerRunRecord = {
@@ -1321,6 +1399,7 @@ async function runOptimizerCycle(
       gitRepoRoot: mutationSandbox.git?.repoRoot,
       gitWorkspaceRelativePath: mutationSandbox.git?.workspaceRelativePath,
       artifacts,
+      patchConflict,
       workspaceHeadAtRun,
       pullRequest: null
     };
@@ -1382,28 +1461,59 @@ async function promotePendingRun(
     optimizer.workspaceId
   );
 
-  // Stale-candidate detection: check if the workspace HEAD changed since the run was created.
-  if (run.workspaceHeadAtRun && run.gitRepoRoot) {
-    const { stdout: currentHead } = await runGit(run.gitRepoRoot, ["rev-parse", "HEAD"]);
-    const currentHeadTrimmed = currentHead.trim();
-    if (currentHeadTrimmed !== run.workspaceHeadAtRun.trim()) {
+  // Stale-candidate and workspace-change detection: check if the workspace HEAD
+  // changed or has uncommitted changes since the run was created.
+  if (run.gitRepoRoot) {
+    // Check 1: dirty workspace (uncommitted changes since the run was created).
+    // For git-worktree runs, the worktree is detached so any user changes should
+    // be on a different branch. For non-worktree scenarios, detect uncommitted changes.
+    const { stdout: statusOutput } = await runGit(run.gitRepoRoot, ["status", "--porcelain"]);
+    const dirtyFiles = statusOutput.trim().split(/\r?\n/).filter((line) => line.trim() !== "");
+    if (dirtyFiles.length > 0) {
       throw new Error(
-        `Workspace HEAD has changed since this run was created (stale candidate). Run was created at commit ${run.workspaceHeadAtRun} but workspace is now at ${currentHeadTrimmed}. Please run the optimizer again to get a fresh candidate before approving.`
+        `Workspace has uncommitted changes. Approval is blocked to prevent sweeping unrelated changes into the applied state. Dirty files: ${dirtyFiles.map((f) => f.replace(/^.. /, "")).join(", ")}`
       );
+    }
+
+    // Check 2: stale workspace HEAD (the commit the run was based on has moved).
+    if (run.workspaceHeadAtRun) {
+      const { stdout: currentHead } = await runGit(run.gitRepoRoot, ["rev-parse", "HEAD"]);
+      const currentHeadTrimmed = currentHead.trim();
+      if (currentHeadTrimmed !== run.workspaceHeadAtRun.trim()) {
+        throw new Error(
+          `Workspace HEAD has changed since this run was created (stale candidate). Run was created at commit ${run.workspaceHeadAtRun} but workspace is now at ${currentHeadTrimmed}. Please run the optimizer again to get a fresh candidate before approving.`
+        );
+      }
     }
   }
 
   const sandboxWorkspacePath = resolveRunSandboxWorkspacePath(run);
-  if (run.sandboxStrategy === "git_worktree" && run.gitRepoRoot && run.gitWorkspaceRelativePath) {
-    const gitContext: GitWorkspaceContext = {
-      repoRoot: run.gitRepoRoot,
-      workspaceRelativePath: run.gitWorkspaceRelativePath
+  let patchConflict: PatchConflictInfo | null = null;
+
+  try {
+    if (run.sandboxStrategy === "git_worktree" && run.gitRepoRoot && run.gitWorkspaceRelativePath) {
+      const gitContext: GitWorkspaceContext = {
+        repoRoot: run.gitRepoRoot,
+        workspaceRelativePath: run.gitWorkspaceRelativePath
+      };
+      const patch = await createWorkspacePatch(gitContext, run.sandboxPath, run.mutablePaths);
+      patchConflict = await applyPatchToWorkspace(workspacePath, gitContext, patch);
+    } else {
+      await applySandboxToWorkspace(workspacePath, sandboxWorkspacePath, run.mutablePaths);
+    }
+  } catch (applyError) {
+    // Record the conflict info on the run before surfacing the error.
+    patchConflict = {
+      hasConflicts: true,
+      conflictingFiles: [],
+      stderr: applyError instanceof Error ? applyError.message : String(applyError),
+      exitCode: 1
     };
-    const patch = await createWorkspacePatch(gitContext, run.sandboxPath, run.mutablePaths);
-    await applyPatchToWorkspace(workspacePath, gitContext, patch);
-  } else {
-    await applySandboxToWorkspace(workspacePath, sandboxWorkspacePath, run.mutablePaths);
+    throw new Error(
+      `Patch apply conflict during approval: ${applyError instanceof Error ? applyError.message : String(applyError)}`
+    );
   }
+
   const promotedRun: OptimizerRunRecord = {
     ...run,
     workspaceId,
@@ -1412,6 +1522,7 @@ async function promotePendingRun(
     accepted: true,
     applied: true,
     approvalStatus: "approved",
+    patchConflict,
     reason: `${run.reason} Approved by operator.`
   };
 

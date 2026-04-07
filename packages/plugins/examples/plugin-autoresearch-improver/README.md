@@ -78,8 +78,9 @@ For each run, the plugin:
 9. runs the optional guardrail command `guardrailRepeats` times
 10. aggregates the guardrail result with `guardrailAggregator` (`all` or `any`)
 11. computes a diff artifact and detects unauthorized file changes
-11. compares candidate versus incumbent using `minimumImprovement`
-12. either:
+12. captures workspace HEAD at run creation for stale-candidate detection
+13. compares candidate versus incumbent using `minimumImprovement`
+14. either:
    - applies allowed paths immediately
    - records a pending approval candidate
    - records a dry-run candidate
@@ -96,6 +97,9 @@ The plugin is designed around a constrained-mutation model:
 - changes outside the mutable surface are detected and recorded as unauthorized
 - the real workspace is not modified for rejected or invalid runs
 - manual approval and dry-run modes keep the candidate sandbox around for operator review
+- patch-apply conflicts are detected when git apply fails; the run is marked invalid and the workspace is never left in a partially-applied state
+- approval and PR creation are blocked when the workspace has uncommitted changes (dirty-repo guard)
+- approval is blocked when the workspace HEAD has changed since the run was created (stale-candidate detection)
 
 This is the Darwin Derby idea translated to Paperclip project workspaces.
 
@@ -219,6 +223,8 @@ Each run stores:
 - changed files
 - unauthorized changed files
 - patch preview
+- patch-apply conflict info when git apply fails (conflicting files, stderr excerpt)
+- workspace HEAD commit SHA at run creation (used for stale-candidate detection)
 - optional PR branch, commit, URL, and PR command result
 
 ## Queueing and automation

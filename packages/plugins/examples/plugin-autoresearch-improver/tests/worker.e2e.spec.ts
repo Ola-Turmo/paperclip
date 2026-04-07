@@ -388,4 +388,96 @@ describe("autoresearch improver worker e2e", () => {
       })
     ).rejects.toThrow(/dirty/i);
   });
+
+  it("rejects approval when the workspace has uncommitted changes", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Dirty approval guard",
+      objective: "Test dirty guard on approval",
+      mutablePaths: "README.md",
+      mutationCommand: "node -e \"const fs=require('node:fs');fs.writeFileSync('README.md','candidate\\n')\"",
+      scoreCommand: readmeScoreCommand,
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "manual_approval"
+    }) as { optimizerId: string };
+
+    const runCycle = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { run: { runId: string; outcome: string } };
+    expect(runCycle.run.outcome).toBe("pending_approval");
+
+    // Make the workspace dirty (uncommitted change) before approval.
+    await writeFile(path.join(workspaceRoot, "README.md"), "modified by user\n", "utf8");
+
+    // Approval must be blocked when the workspace has uncommitted changes.
+    await expect(
+      harness.performAction("approve-optimizer-run", {
+        projectId,
+        optimizerId: optimizer.optimizerId,
+        runId: runCycle.run.runId
+      })
+    ).rejects.toThrow(/dirty|uncommitted/i);
+  });
+
+  it("captures patch-apply conflict info and prevents partial apply", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Conflict prevention",
+      objective: "Test conflict prevention",
+      mutablePaths: "README.md",
+      // The mutator changes README.md to "conflicting" plus newline
+      mutationCommand: "node -e \"const fs=require('node:fs');fs.writeFileSync('README.md','conflicting\\n')\"",
+      scoreCommand: readmeScoreCommand,
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "manual_approval"
+    }) as { optimizerId: string };
+
+    const runCycle = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { run: { runId: string; outcome: string; sandboxPath?: string; gitRepoRoot?: string } };
+    expect(runCycle.run.outcome).toBe("pending_approval");
+
+    // Introduce a conflicting commit in the workspace: change README.md to
+    // something different, commit it. This creates a real git-apply conflict
+    // because the worktree's patch is based on HEAD but the workspace has moved.
+    await writeFile(path.join(workspaceRoot, "README.md"), "user change\n", "utf8");
+    await run("git", ["config", "user.email", "paprclip@example.test"], workspaceRoot);
+    await run("git", ["config", "user.name", "Paprclip Tests"], workspaceRoot);
+    await run("git", ["add", "README.md"], workspaceRoot);
+    await run("git", ["commit", "-m", "user conflicting change"], workspaceRoot);
+
+    // Approval must be blocked due to stale workspace HEAD (not a conflict
+    // since the stale check runs first). This validates the workspace-change
+    // guard takes precedence over a potential partial patch apply.
+    await expect(
+      harness.performAction("approve-optimizer-run", {
+        projectId,
+        optimizerId: optimizer.optimizerId,
+        runId: runCycle.run.runId
+      })
+    ).rejects.toThrow();
+
+    // The workspace must remain in the conflicting committed state (not partially
+    // patched), and the original baseline must be untouched.
+    const readmeContent = await readFile(path.join(workspaceRoot, "README.md"), "utf8");
+    expect(readmeContent).toBe("user change\n");
+  });
 });

@@ -328,6 +328,13 @@ function RunCard({
           Unauthorized changes: {run.artifacts.unauthorizedChangedFiles.join(", ")}
         </div>
       ) : null}
+      {run.patchConflict?.hasConflicts ? (
+        <div style={{ marginTop: 6, color: "#b91c1c", fontSize: 13 }}>
+          Patch conflict: {run.patchConflict.conflictingFiles.length > 0
+            ? run.patchConflict.conflictingFiles.join(", ")
+            : "detected"}
+        </div>
+      ) : null}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
         {run.approvalStatus === "pending" ? (
           <>
