@@ -10,7 +10,10 @@ import {
   extractStructuredMetricResult,
   normalizeMutablePaths,
   aggregateScores,
-  validateConfig
+  validateConfig,
+  emptyDiffArtifact,
+  buildOptimizerBrief,
+  formatCommandSummary,
 } from "../src/lib/optimizer.js";
 
 describe("optimizer helpers", () => {
@@ -241,5 +244,61 @@ describe("optimizer helpers", () => {
     expect(aggregateScores([null, 2, null, 4], "mean")).toBe(3);
     // Empty
     expect(aggregateScores([], "median")).toBeNull();
+  });
+
+  it("formatCommandSummary produces a readable summary", () => {
+    const ok = { ok: true, exitCode: 0, stdout: "done", stderr: "", durationMs: 150, killed: false };
+    expect(formatCommandSummary(ok)).toBe("ok (0) in 150ms");
+    const fail = { ok: false, exitCode: 1, stdout: "", stderr: "error", durationMs: 50, killed: false };
+    expect(formatCommandSummary(fail)).toBe("failed (1) in 50ms");
+    const nullExit = { ok: false, exitCode: null, stdout: "", stderr: "", durationMs: 0, killed: false };
+    expect(formatCommandSummary(nullExit)).toBe("failed (null) in 0ms");
+  });
+
+  it("emptyDiffArtifact includes binaryFiles field", () => {
+    const artifact = emptyDiffArtifact();
+    expect(artifact.binaryFiles).toEqual([]);
+    expect(artifact.changedFiles).toEqual([]);
+    expect(artifact.patch).toBe("");
+    expect(artifact.stats).toEqual({ files: 0, additions: 0, deletions: 0 });
+  });
+
+  it("buildOptimizerBrief extracts key optimizer fields", () => {
+    const opt = {
+      optimizerId: "abc123",
+      name: "Test",
+      objective: "Improve score",
+      mutablePaths: ["README.md"] as string[],
+      scoreDirection: "maximize" as const,
+      bestScore: 0.95,
+      hiddenScoring: false,
+      sandboxStrategy: "git_worktree" as const,
+      scorerIsolationMode: "separate_workspace" as const,
+      applyMode: "automatic" as const,
+      scoreFormat: "json" as const,
+      scoreKey: "primary",
+      scoreRepeats: 3,
+      scoreAggregator: "mean" as const,
+      minimumImprovement: 0.01,
+      companyId: "c1",
+      projectId: "p1",
+      workspaceId: "w1",
+      createdAt: "",
+      updatedAt: "",
+      status: "active" as const,
+      queueState: "idle" as const,
+      acceptedRuns: 0,
+      rejectedRuns: 0,
+      invalidRuns: 0,
+      consecutiveNonImprovements: 0,
+      history: [],
+      autoCreateIssueOnStagnation: false,
+      stagnationIssueThreshold: 5
+    };
+    const brief = buildOptimizerBrief(opt);
+    expect(brief.optimizerId).toBe("abc123");
+    expect(brief.bestScore).toBe(0.95);
+    expect(brief.mutablePaths).toEqual(["README.md"]);
+    expect(brief.budgets).toBeDefined();
   });
 });
