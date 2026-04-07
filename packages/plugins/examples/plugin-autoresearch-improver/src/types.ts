@@ -123,6 +123,8 @@ export interface OptimizerDefinition {
   requireHumanApproval: boolean;
   autoCreateIssueOnGuardrailFailure: boolean;
   autoCreateIssueOnStagnation: boolean;
+  /** If true, auto-pause when consecutiveFailures reaches stagnationIssueThreshold. */
+  autoPauseOnConsecutiveFailures?: boolean;
   stagnationIssueThreshold: number;
   proposalBranchPrefix?: string;
   proposalCommitMessage?: string;

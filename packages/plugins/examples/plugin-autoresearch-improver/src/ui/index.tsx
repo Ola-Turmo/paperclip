@@ -71,6 +71,7 @@ type FormState = {
   requireHumanApproval: boolean;
   autoCreateIssueOnGuardrailFailure: boolean;
   autoCreateIssueOnStagnation: boolean;
+  autoPauseOnConsecutiveFailures: boolean;
   stagnationIssueThreshold: string;
   proposalBranchPrefix: string;
   proposalCommitMessage: string;
@@ -154,6 +155,7 @@ function emptyForm(workspaceId = ""): FormState {
     requireHumanApproval: true,
     autoCreateIssueOnGuardrailFailure: true,
     autoCreateIssueOnStagnation: false,
+    autoPauseOnConsecutiveFailures: false,
     stagnationIssueThreshold: "5",
     proposalBranchPrefix: "",
     proposalCommitMessage: "",
@@ -200,6 +202,7 @@ function formFromOptimizer(optimizer: OptimizerDefinition): FormState {
     requireHumanApproval: optimizer.requireHumanApproval,
     autoCreateIssueOnGuardrailFailure: optimizer.autoCreateIssueOnGuardrailFailure,
     autoCreateIssueOnStagnation: optimizer.autoCreateIssueOnStagnation,
+    autoPauseOnConsecutiveFailures: optimizer.autoPauseOnConsecutiveFailures ?? false,
     stagnationIssueThreshold: String(optimizer.stagnationIssueThreshold),
     proposalBranchPrefix: optimizer.proposalBranchPrefix ?? "",
     proposalCommitMessage: optimizer.proposalCommitMessage ?? "",
@@ -247,6 +250,7 @@ function applyTemplate(template: OptimizerTemplate, current: FormState, workspac
     requireHumanApproval: values.requireHumanApproval ?? current.requireHumanApproval,
     autoCreateIssueOnGuardrailFailure: values.autoCreateIssueOnGuardrailFailure ?? current.autoCreateIssueOnGuardrailFailure,
     autoCreateIssueOnStagnation: values.autoCreateIssueOnStagnation ?? current.autoCreateIssueOnStagnation,
+    autoPauseOnConsecutiveFailures: values.autoPauseOnConsecutiveFailures ?? current.autoPauseOnConsecutiveFailures,
     stagnationIssueThreshold: values.stagnationIssueThreshold != null ? String(values.stagnationIssueThreshold) : current.stagnationIssueThreshold,
     proposalBranchPrefix: values.proposalBranchPrefix ?? current.proposalBranchPrefix,
     proposalCommitMessage: values.proposalCommitMessage ?? current.proposalCommitMessage,
@@ -293,6 +297,7 @@ function toActionPayload(form: FormState) {
     requireHumanApproval: form.requireHumanApproval,
     autoCreateIssueOnGuardrailFailure: form.autoCreateIssueOnGuardrailFailure,
     autoCreateIssueOnStagnation: form.autoCreateIssueOnStagnation,
+    autoPauseOnConsecutiveFailures: form.autoPauseOnConsecutiveFailures,
     stagnationIssueThreshold: Number(form.stagnationIssueThreshold || 0),
     proposalBranchPrefix: form.proposalBranchPrefix || undefined,
     proposalCommitMessage: form.proposalCommitMessage || undefined,
@@ -1332,6 +1337,7 @@ function OptimizerEditor({
             <label><input type="checkbox" checked={form.requireHumanApproval} onChange={(event) => setForm((prev) => ({ ...prev, requireHumanApproval: event.target.checked, applyMode: event.target.checked ? "manual_approval" : prev.applyMode === "manual_approval" ? "automatic" : prev.applyMode }))} /> Require human approval</label>
             <label><input type="checkbox" checked={form.autoCreateIssueOnGuardrailFailure} onChange={(event) => setForm((prev) => ({ ...prev, autoCreateIssueOnGuardrailFailure: event.target.checked }))} /> Issue on guardrail failure</label>
             <label><input type="checkbox" checked={form.autoCreateIssueOnStagnation} onChange={(event) => setForm((prev) => ({ ...prev, autoCreateIssueOnStagnation: event.target.checked }))} /> Issue on stagnation</label>
+            <label><input type="checkbox" checked={form.autoPauseOnConsecutiveFailures} onChange={(event) => setForm((prev) => ({ ...prev, autoPauseOnConsecutiveFailures: event.target.checked }))} /> Pause on consecutive failures</label>
           </div>
 
           <div>

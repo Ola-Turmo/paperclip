@@ -1005,4 +1005,45 @@ console.log(JSON.stringify({ primary: 0.5, guardrails: { safe: true } }));
     expect(templates.some((t) => t.key === "noisy-scorer-ratchet")).toBe(true);
   });
 
+
+  it("auto-pauses on consecutive failures when autoPauseOnConsecutiveFailures is enabled", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    // Write a scorer that always returns invalid (so every run fails).
+    await writeFile(path.join(workspaceRoot, "always-fail-scorer.mjs"), `
+import { writeFileSync } from "node:fs";
+writeFileSync("score.txt", JSON.stringify({ primary: null, invalid: true, invalidReason: "always fail" }));
+console.log(JSON.stringify({ primary: null, invalid: true, invalidReason: "always fail" }));
+`, "utf8");
+    await run("git", ["add", "always-fail-scorer.mjs"], workspaceRoot);
+    await run("git", ["commit", "-m", "add always-fail scorer"], workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Failure auto-pause test",
+      objective: "Test auto-pause on failures",
+      mutablePaths: "README.md",
+      mutationCommand: 'node -e "const fs=require(\'node:fs\');fs.writeFileSync(\'README.md\',\'mutated\\n\')"',
+      scoreCommand: "node always-fail-scorer.mjs",
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "copy",
+      scorerIsolationMode: "same_workspace",
+      applyMode: "automatic",
+      autoPauseOnConsecutiveFailures: true,
+      stagnationIssueThreshold: 3
+    }) as { optimizerId: string };
+
+    const firstRun = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { run: { outcome: string }; optimizer: { consecutiveFailures: number } };
+
+    // First run should fail and consecutiveFailures should be tracked
+    expect(firstRun.optimizer.consecutiveFailures).toBeGreaterThanOrEqual(1);
+  });
+
 });

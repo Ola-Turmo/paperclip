@@ -1405,6 +1405,7 @@ async function createOptimizerFromParams(
     requireHumanApproval,
     autoCreateIssueOnGuardrailFailure: params.autoCreateIssueOnGuardrailFailure === true,
     autoCreateIssueOnStagnation: params.autoCreateIssueOnStagnation === true,
+    autoPauseOnConsecutiveFailures: params.autoPauseOnConsecutiveFailures === true,
     stagnationIssueThreshold: clampPositiveInteger(params.stagnationIssueThreshold, config.stagnationIssueThreshold),
     guardrailRepeats: clampPositiveInteger(params.guardrailRepeats, 1),
     guardrailAggregator: params.guardrailAggregator === "any" ? "any" : "all",
@@ -1735,6 +1736,22 @@ async function runOptimizerCycle(
       updatedOptimizer.history = [
         ...(updatedOptimizer.history ?? []),
         { timestamp: nowIso(), action: "paused", description: `Auto-paused after ${updatedOptimizer.stagnationIssueThreshold} stagnation events.`, triggeredBy: "system" }
+      ];
+    }
+
+    // Auto-pause on consecutive failures (reuses stagnationIssueThreshold as the trigger).
+    // Only fires once: when consecutiveFailures first reaches the threshold.
+    if (
+      updatedOptimizer.autoPauseOnConsecutiveFailures &&
+      updatedOptimizer.consecutiveFailures > 0 &&
+      updatedOptimizer.consecutiveFailures >= updatedOptimizer.stagnationIssueThreshold
+    ) {
+      updatedOptimizer.status = "paused";
+      updatedOptimizer.pauseReason = `Auto-paused after ${updatedOptimizer.stagnationIssueThreshold} consecutive failures.`;
+      updatedOptimizer.updatedAt = nowIso();
+      updatedOptimizer.history = [
+        ...(updatedOptimizer.history ?? []),
+        { timestamp: nowIso(), action: "paused", description: `Auto-paused after ${updatedOptimizer.stagnationIssueThreshold} consecutive failures.`, triggeredBy: "system" }
       ];
     }
 
