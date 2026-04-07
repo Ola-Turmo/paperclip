@@ -656,6 +656,11 @@ function ComparisonPanel({
             <span>Files changed</span>
             <span>{run.artifacts.stats.files}</span>
           </div>
+          {run.reason ? (
+            <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
+              Reason: {run.reason.length > 80 ? run.reason.slice(0, 80) + "..." : run.reason}
+            </div>
+          ) : null}
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <span>Guardrails</span>
             <span style={{ fontSize: 12 }}>{guardrailSummary(run)}</span>
@@ -664,6 +669,17 @@ function ComparisonPanel({
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span>Repeats</span>
               <span>{run.scoringRepeats.length}x (agg: {run.scoringRepeats.length > 0 ? formatScore(run.scoringRepeats[0].score) : "n/a"})</span>
+            </div>
+          ) : null}
+          {run.scoringRepeats.length >= 2 ? (
+            <div style={{ fontSize: 11, opacity: 0.7 }}>
+              StdDev: {(() => {
+                const scores = run.scoringRepeats.map((r) => r.score).filter((s): s is number => s != null && Number.isFinite(s));
+                if (scores.length < 2) return "n/a";
+                const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
+                const variance = scores.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / scores.length;
+                return Math.sqrt(variance).toFixed(4);
+              })()}
             </div>
           ) : null}
           {run.artifacts.unauthorizedChangedFiles.length > 0 ? (
