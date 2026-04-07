@@ -386,6 +386,24 @@ describe("optimizer helpers", () => {
     expect(() => normalizeRelativePath("src/../outside")).toThrow();
   });
 
+  it("compareScores handles null and undefined inputs correctly", () => {
+    // No current best = always accept
+    const noBest = compareScores("maximize", null, 0.8);
+    expect(noBest.improved).toBe(true);
+    expect(noBest.reason).toContain("No incumbent");
+    // Null candidate = reject
+    const noCand = compareScores("maximize", 0.5, null);
+    expect(noCand.improved).toBe(false);
+    expect(noCand.delta).toBeNull();
+    // NaN candidate
+    const nanCand = compareScores("maximize", 0.5, NaN);
+    expect(nanCand.improved).toBe(false);
+    // Exactly equal delta = reject (must exceed minimum)
+    const exact = compareScores("maximize", 0.5, 0.6, 0.1);
+    expect(exact.improved).toBe(false);
+    expect(exact.delta).toBeCloseTo(0.1);
+  });
+
   it("extractScore handles patterns and edge cases", () => {
     expect(extractScore("Score: 42.5 points", "Score: ([\\d.]+)")).toBe(42.5);
     expect(extractScore("")).toBeNull();
