@@ -267,7 +267,7 @@ describe("optimizer helpers", () => {
     expect(artifact.stats).toEqual({ files: 0, additions: 0, deletions: 0 });
   });
 
-  it("buildOptimizerBrief extracts key optimizer fields", () => {
+  it("buildOptimizerBrief extracts key optimizer fields including policy and guardrail", () => {
     const opt = {
       optimizerId: "abc123",
       name: "Test",
@@ -284,6 +284,11 @@ describe("optimizer helpers", () => {
       scoreRepeats: 3,
       scoreAggregator: "mean" as const,
       minimumImprovement: 0.01,
+      scoreImprovementPolicy: "confidence" as const,
+      confidenceThreshold: 2.5,
+      epsilonValue: undefined,
+      guardrailRepeats: 2,
+      guardrailAggregator: "all" as const,
       companyId: "c1",
       projectId: "p1",
       workspaceId: "w1",
@@ -304,6 +309,10 @@ describe("optimizer helpers", () => {
     expect(brief.bestScore).toBe(0.95);
     expect(brief.mutablePaths).toEqual(["README.md"]);
     expect(brief.budgets).toBeDefined();
+    expect(brief.scoreImprovementPolicy).toBe("confidence");
+    expect(brief.confidenceThreshold).toBe(2.5);
+    expect(brief.guardrailRepeats).toBe(2);
+    expect(brief.guardrailAggregator).toBe("all");
   });
 
   it("normalizeDotPath trims and returns undefined for empty values", () => {
