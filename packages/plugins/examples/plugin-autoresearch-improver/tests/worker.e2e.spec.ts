@@ -865,4 +865,45 @@ console.log(JSON.stringify({ primary: 0.5, guardrails: { safe: true } }));
     expect(typeof firstRun.optimizer.consecutiveNonImprovements).toBe("number");
   });
 
+
+  it("manually pauses and resumes an optimizer with reason tracking", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Pause-resume test",
+      objective: "Test manual pause and resume",
+      mutablePaths: "README.md",
+      mutationCommand: 'node -e "const fs=require(\'node:fs\');fs.writeFileSync(\'README.md\',\'paused-test\\n\')"',
+      scoreCommand: readmeScoreCommand,
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "copy",
+      scorerIsolationMode: "same_workspace",
+      applyMode: "automatic"
+    }) as { optimizerId: string };
+
+    // Pause with a reason
+    const paused = await harness.performAction("pause-optimizer", {
+      projectId,
+      optimizerId: optimizer.optimizerId,
+      reason: "Reviewing results before continuing"
+    }) as { status: string; pauseReason?: string };
+
+    expect(paused.status).toBe("paused");
+    expect(paused.pauseReason).toBe("Reviewing results before continuing");
+
+    // Resume
+    const resumed = await harness.performAction("resume-optimizer", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { status: string; pauseReason?: string };
+
+    expect(resumed.status).toBe("active");
+    expect(resumed.pauseReason).toBeUndefined();
+  });
+
 });

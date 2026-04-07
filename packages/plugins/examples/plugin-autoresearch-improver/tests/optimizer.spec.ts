@@ -132,6 +132,8 @@ describe("optimizer helpers", () => {
       maxOutputChars: 8000,
       sweepLimit: 10,
       scoreRepeats: 3,
+      guardrailRepeats: 1,
+      guardrailAggregator: "all",
       minimumImprovement: 0.01,
       stagnationIssueThreshold: 5
     });
@@ -147,11 +149,54 @@ describe("optimizer helpers", () => {
       maxOutputChars: 100,
       sweepLimit: 0,
       scoreRepeats: -1,
+      guardrailRepeats: -1,
       minimumImprovement: -1,
       stagnationIssueThreshold: 0
     });
     expect(bad.errors.length).toBeGreaterThan(0);
     expect(bad.warnings.length).toBeGreaterThan(0);
+  });
+
+  it("validates policy fields in config", () => {
+    // confidence policy with < 2 repeats triggers a warning
+    const confWarn = validateConfig({
+      defaultMutationBudgetSeconds: 300, defaultScoreBudgetSeconds: 180,
+      defaultGuardrailBudgetSeconds: 120, keepTmpDirs: true, maxOutputChars: 8000,
+      sweepLimit: 10, scoreRepeats: 1, guardrailRepeats: 1, guardrailAggregator: "all",
+      minimumImprovement: 0, stagnationIssueThreshold: 5,
+      scoreImprovementPolicy: "confidence"
+    });
+    expect(confWarn.warnings.some((w) => w.includes("confidence") && w.includes("scoreRepeats"))).toBe(true);
+
+    // epsilon policy with no epsilonValue triggers a warning
+    const epsWarn = validateConfig({
+      defaultMutationBudgetSeconds: 300, defaultScoreBudgetSeconds: 180,
+      defaultGuardrailBudgetSeconds: 120, keepTmpDirs: true, maxOutputChars: 8000,
+      sweepLimit: 10, scoreRepeats: 3, guardrailRepeats: 1, guardrailAggregator: "all",
+      minimumImprovement: 0, stagnationIssueThreshold: 5,
+      scoreImprovementPolicy: "epsilon"
+    });
+    expect(epsWarn.warnings.some((w) => w.includes("epsilon") && w.includes("epsilonValue"))).toBe(true);
+
+    // epsilon policy with negative epsilonValue triggers an error
+    const epsErr = validateConfig({
+      defaultMutationBudgetSeconds: 300, defaultScoreBudgetSeconds: 180,
+      defaultGuardrailBudgetSeconds: 120, keepTmpDirs: true, maxOutputChars: 8000,
+      sweepLimit: 10, scoreRepeats: 3, guardrailRepeats: 1, guardrailAggregator: "all",
+      minimumImprovement: 0, stagnationIssueThreshold: 5,
+      scoreImprovementPolicy: "epsilon", epsilonValue: -0.5
+    });
+    expect(epsErr.errors.some((e) => e.includes("epsilonValue"))).toBe(true);
+
+    // very low confidenceThreshold triggers a warning
+    const ctWarn = validateConfig({
+      defaultMutationBudgetSeconds: 300, defaultScoreBudgetSeconds: 180,
+      defaultGuardrailBudgetSeconds: 120, keepTmpDirs: true, maxOutputChars: 8000,
+      sweepLimit: 10, scoreRepeats: 3, guardrailRepeats: 1, guardrailAggregator: "all",
+      minimumImprovement: 0, stagnationIssueThreshold: 5,
+      scoreImprovementPolicy: "confidence", confidenceThreshold: 0.1
+    });
+    expect(ctWarn.warnings.some((w) => w.includes("confidenceThreshold"))).toBe(true);
   });
 
 

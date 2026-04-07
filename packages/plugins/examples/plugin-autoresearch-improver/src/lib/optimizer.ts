@@ -435,6 +435,9 @@ export function validateConfig(config: PluginConfigValues): { errors: string[]; 
   if (config.scoreRepeats <= 0) {
     errors.push("scoreRepeats must be > 0.");
   }
+  if (config.guardrailRepeats !== undefined && config.guardrailRepeats <= 0) {
+    errors.push("guardrailRepeats must be > 0.");
+  }
   if (config.minimumImprovement < 0) {
     errors.push("minimumImprovement must be >= 0.");
   }
@@ -443,6 +446,20 @@ export function validateConfig(config: PluginConfigValues): { errors: string[]; 
   }
   if (!config.keepTmpDirs) {
     warnings.push("keepTmpDirs is false; retained sandboxes (dry runs, pending approvals) will be deleted after use.");
+  }
+  if (config.scoreImprovementPolicy === "confidence" && config.scoreRepeats < 2) {
+    warnings.push("scoreImprovementPolicy is 'confidence' but scoreRepeats < 2; cannot compute stdDev — falling back to threshold comparison.");
+  }
+  if (config.scoreImprovementPolicy === "epsilon") {
+    if (config.epsilonValue !== undefined && config.epsilonValue < 0) {
+      errors.push("epsilonValue must be >= 0.");
+    }
+    if (config.epsilonValue === undefined) {
+      warnings.push("scoreImprovementPolicy is 'epsilon' but epsilonValue is unset; using default 0.01.");
+    }
+  }
+  if (config.confidenceThreshold !== undefined && config.confidenceThreshold < 0.5) {
+    warnings.push(`confidenceThreshold (${config.confidenceThreshold}) is < 0.5; threshold-based comparison may be too lenient.`);
   }
 
   return { errors, warnings };
