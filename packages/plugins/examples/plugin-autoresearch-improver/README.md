@@ -432,6 +432,30 @@ pnpm --filter @paperclipai/plugin-autoresearch-improver-example build
 pnpm paperclipai plugin install ./packages/plugins/examples/plugin-autoresearch-improver
 ```
 
+## Template guide
+
+The plugin ships with these built-in templates. Select one from the UI template dropdown or clone and customize:
+
+| Template | Apply mode | Sandbox | Policy | Best for |
+|---|---|---|---|---|
+| Test Suite Ratchet | Manual approval | git_worktree | threshold | Code quality, test stability |
+| Lighthouse Candidate | Manual approval | git_worktree | threshold | Frontend performance |
+| Dry Run Prototype | Dry run | copy | threshold | Proposal generation, review-only |
+| Noisy Scorer Ratchet | Manual approval | git_worktree | confidence (k=2) | Lighthouse, sampled metrics |
+| Epsilon Stability | Automatic | git_worktree | epsilon | Latency, known minimum thresholds |
+| Auto-Accept Fast | Automatic | git_worktree | threshold | Low-risk, rapid improvement |
+| Stagnation Guard | Automatic | git_worktree | threshold | Production, auto-pause on stagnation |
+
+### Choosing a template
+
+**Start here**: Test Suite Ratchet with `manual_approval` — lets you review candidates before they affect the workspace.
+
+**For noisy scorers**: Use Noisy Scorer Ratchet. Set `scoreRepeats` to at least 5 to get enough data for the stdDev computation. Lower `confidenceThreshold` (e.g., 1.5) to accept smaller deltas.
+
+**For known minimums**: Use Epsilon Stability. Set `epsilonValue` to your minimum meaningful improvement (e.g., 0.05 for 5% quality gain).
+
+**For production**: Use Stagnation Guard with a low `stagnationIssueThreshold` (3-5). It auto-pauses and creates an issue when the scorer stops producing improvements.
+
 ## Development
 
 Inside this package:
