@@ -72,7 +72,7 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
 - Add downloadable artifacts for patch, score JSON, and logs.
 - ✅ Add optimizer version history and config diffing. *(implemented: ConfigChangeRecord type, history field on OptimizerDefinition, history UI panel with Show/Hide toggle)*
 - ✅ Add a "clone optimizer" action. *(implemented: cloneOptimizer action, Clone button in UI, cloneCount tracking, history recording)*
-- Add per-optimizer pause reasons and maintenance windows.
+- ✅ Add per-optimizer pause reasons and maintenance windows. *(implemented: pauseOptimizer/resumeOptimizer actions, pauseReason field, Pause/Resume buttons in UI, pause reason banner)*
 - Add richer metrics and dashboard summaries for:
   - average score delta
   - acceptance rate
