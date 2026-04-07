@@ -589,6 +589,44 @@ function RunCard({
           </button>
         ) : null}
       </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          style={{ ...buttonStyle, fontSize: 11, padding: "6px 10px" }}
+          onClick={() => {
+            const blob = new Blob([run.artifacts.patch || ""], { type: "text/plain" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `patch-${run.runId.slice(0, 8)}.patch`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+        >
+          Download patch
+        </button>
+        <button
+          type="button"
+          style={{ ...buttonStyle, fontSize: 11, padding: "6px 10px" }}
+          onClick={() => {
+            const scoreJson = JSON.stringify({
+              primary: run.candidateScore,
+              metrics: run.scoringAggregate?.metrics ?? {},
+              guardrails: run.scoringAggregate?.guardrails ?? {},
+              repeats: run.scoringRepeats.map((r) => ({ score: r.score, ok: r.execution.ok }))
+            }, null, 2);
+            const blob = new Blob([scoreJson], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `score-${run.runId.slice(0, 8)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+        >
+          Download score JSON
+        </button>
+      </div>
       <details style={{ marginTop: 10 }}>
         <summary>Artifacts and command output</summary>
         <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
