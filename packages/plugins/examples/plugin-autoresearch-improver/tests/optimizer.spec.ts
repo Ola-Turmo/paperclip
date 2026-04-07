@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  aggregateGuardrailResults,
   aggregateStructuredMetrics,
   clampNonNegativeNumber,
   clampPositiveInteger,
@@ -321,5 +322,53 @@ describe("optimizer helpers", () => {
     expect(result).toContain("[truncated");
     expect(result).toContain("80 chars");
     expect(result).toContain(long.slice(0, 20));
+  });
+
+  it("aggregateStructuredMetrics handles invalid results and mixed types", () => {
+    // Invalid result propagates correctly; guardrails must match across results
+    const r = aggregateStructuredMetrics([
+      { primary: 0.8, metrics: { q: 1 }, guardrails: { safe: true }, invalid: false },
+      { primary: null, metrics: {}, guardrails: { safe: true }, invalid: true, invalidReason: "Crash" }
+    ], "mean");
+    expect(r?.invalid).toBe(true);
+    expect(r?.invalidReason).toBeTruthy();
+    expect(r?.guardrails.safe).toBe(true);
+    // Empty array returns null
+    expect(aggregateStructuredMetrics([], "mean")).toBeNull();
+    // String metric falls back to last value
+    const mixed = aggregateStructuredMetrics([
+      { primary: 0.5, metrics: { label: "v1" }, guardrails: { safe: true } },
+      { primary: 0.6, metrics: { label: "v2" }, guardrails: { safe: true } }
+    ], "mean");
+    expect(mixed?.metrics.label).toBe("v2");
+  });
+
+  it("aggregateGuardrailResults respects 'all' and 'any' aggregator", () => {
+    const results = [
+      { primary: 0.8, metrics: {}, guardrails: { safe: true, fast: false } },
+      { primary: 0.9, metrics: {}, guardrails: { safe: true, fast: true } }
+    ];
+    // "all" requires both keys true across all results
+    const allResult = aggregateGuardrailResults(results, "all");
+    expect(allResult.guardrails.safe).toBe(true);
+    expect(allResult.guardrails.fast).toBe(false);
+    // "any" requires at least one true
+    const anyResult = aggregateGuardrailResults(results, "any");
+    expect(anyResult.guardrails.safe).toBe(true);
+    expect(anyResult.guardrails.fast).toBe(true);
+    // Numeric guardrail values use mean
+    const numericResults = [
+      { primary: 0.5, metrics: {}, guardrails: { score: 0.9 } },
+      { primary: 0.6, metrics: {}, guardrails: { score: 1.0 } }
+    ];
+    const numResult = aggregateGuardrailResults(numericResults, "all");
+    expect(numResult.guardrails.score).toBe(0.95);
+  });
+
+  it("extractScore handles patterns and edge cases", () => {
+    expect(extractScore("Score: 42.5 points", "Score: ([\\d.]+)")).toBe(42.5);
+    expect(extractScore("")).toBeNull();
+    expect(extractScore("not a number")).toBeNull();
+    expect(extractScore("   0.5   ")).toBe(0.5);
   });
 });
