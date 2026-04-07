@@ -46,8 +46,8 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
 - ✅ E2e coverage for PR command failures *(implemented: commandResult.ok=false is returned in artifact)*
 - ✅ Run persistence assertions after approval and rejection *(implemented: verify run record outcome/approvalStatus after reject action)*
 - Add e2e coverage for:
-  - subdirectory workspaces inside a larger git repo
-  - untracked file creation inside the mutable surface
+  - ✅ subdirectory workspaces inside a larger git repo *(implemented: copy-mode sandbox in non-git parent dir)*
+  - ✅ untracked file creation inside the mutable surface *(implemented: verifies run completes when mutation creates new files)*
   - ✅ deletion flows *(implemented: deletion e2e test verifies run records without crash)*
 - Add UI-level tests for the comparison and approval flows.
 
