@@ -517,3 +517,6 @@ The plugin instance config supports:
 - `guardrailAggregator`
 - `minimumImprovement`
 - `stagnationIssueThreshold`
+- `scoreImprovementPolicy` ("threshold" | "confidence" | "epsilon")
+- `confidenceThreshold` (k multiplier for stdDev in confidence policy)
+- `epsilonValue` (minimum meaningful improvement for epsilon policy)
