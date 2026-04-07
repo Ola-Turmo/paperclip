@@ -34,7 +34,7 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
 - ✅ Add a cleaner side-by-side comparison view with score deltas, guardrail deltas, changed-file overlap, patch diff excerpts. *(implemented: enhanced ComparisonPanel with score deltas, guardrail summary, metric details, collapsible file list)*
 - ✅ Add filters for: accepted, pending approval, rejected, invalid, dry run. *(implemented: RunFilterBar with outcome-based filter chips)*
   - Add copyable scorer and mutator templates in the UI.
-  - Add downloadable artifacts for patch, score JSON, and logs.
+  - ✅ Add downloadable artifacts for patch, score JSON, and logs. *(implemented: Download patch and Download score JSON buttons on run cards)*
 - ✅ Add a clearer sandbox retention indicator and cleanup action for retained candidates. *(implemented: sandbox status in UI, deleteProposalBranch action)*
 - ✅ Add warnings when an optimizer is configured for `automatic` apply without proposal settings. *(implemented: amber warning banner in optimizer editor)*
 
