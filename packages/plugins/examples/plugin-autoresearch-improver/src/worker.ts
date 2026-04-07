@@ -31,6 +31,7 @@ import {
   clampPositiveInteger,
   compareScores,
   compareScoresWithPolicy,
+  computeStdDev,
   emptyDiffArtifact,
   extractScore,
   extractStructuredMetricResult,
@@ -1723,6 +1724,14 @@ async function runOptimizerCycle(
       Boolean(failureReason),
       createdIssueTitle
     );
+
+    // Compute noiseFloor from scoring repeats for epsilon policy use.
+    // Uses the current run's scores to estimate scorer variance.
+    const recentScores = scoringResult.scoringRepeats.map((r) => r.score).filter((s): s is number => s != null && Number.isFinite(s));
+    if (recentScores.length >= 2) {
+      updatedOptimizer.noiseFloor = computeStdDev(recentScores);
+    }
+    await upsertOptimizer(ctx, updatedOptimizer);
 
     if (
       !comparison.improved &&
