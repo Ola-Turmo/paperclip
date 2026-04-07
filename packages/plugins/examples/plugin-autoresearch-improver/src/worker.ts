@@ -1452,6 +1452,7 @@ async function createOptimizerFromParams(
     runs: Math.max(0, Number(params.runs ?? 0) || 0),
     acceptedRuns: Math.max(0, Number(params.acceptedRuns ?? 0) || 0),
     rejectedRuns: Math.max(0, Number(params.rejectedRuns ?? 0) || 0),
+    invalidRuns: Math.max(0, Number(params.invalidRuns ?? 0) || 0),
     pendingApprovalRuns: Math.max(0, Number(params.pendingApprovalRuns ?? 0) || 0),
     consecutiveFailures: Math.max(0, Number(params.consecutiveFailures ?? 0) || 0),
     consecutiveNonImprovements: Math.max(0, Number(params.consecutiveNonImprovements ?? 0) || 0),
@@ -1497,7 +1498,8 @@ async function finalizeRun(
     ? "awaiting_approval"
     : "idle";
   const nextAcceptedRuns = optimizer.acceptedRuns + (run.applied ? 1 : 0);
-  const nextRejectedRuns = optimizer.rejectedRuns + ((run.outcome === "rejected" || run.outcome === "invalid") ? 1 : 0);
+  const nextRejectedRuns = optimizer.rejectedRuns + (run.outcome === "rejected" ? 1 : 0);
+  const nextInvalidRuns = optimizer.invalidRuns + (run.outcome === "invalid" ? 1 : 0);
   const nextPendingApprovalRuns = optimizer.pendingApprovalRuns + (run.approvalStatus === "pending" ? 1 : 0);
 
   const updatedOptimizer: OptimizerDefinition = {
@@ -1510,6 +1512,7 @@ async function finalizeRun(
     runs: optimizer.runs + 1,
     acceptedRuns: nextAcceptedRuns,
     rejectedRuns: nextRejectedRuns,
+    invalidRuns: nextInvalidRuns,
     pendingApprovalRuns: nextPendingApprovalRuns,
     consecutiveFailures: failureOccurred ? optimizer.consecutiveFailures + 1 : 0,
     consecutiveNonImprovements: candidateImproved
@@ -2159,6 +2162,7 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
       runs: 0,
       acceptedRuns: 0,
       rejectedRuns: 0,
+      invalidRuns: 0,
       pendingApprovalRuns: 0,
       bestScore: undefined,
       bestRunId: undefined,
