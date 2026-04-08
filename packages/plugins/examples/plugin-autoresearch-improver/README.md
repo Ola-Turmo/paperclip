@@ -31,7 +31,7 @@ Each optimizer maintains a change history (`history: ConfigChangeRecord[]`) reco
 - run acceptance and rejection
 - pause and resume events
 
-The UI exposes a Show/Hide history panel on the optimizer editor. Use the "Clone" button to duplicate an optimizer with a new ID and name. The original's `cloneCount` is incremented.
+The UI exposes a Show/Hide history panel on the optimizer editor with a Download button for exporting history as JSON. Use the "Clone" button to duplicate an optimizer with a new ID and name. The original's `cloneCount` is incremented. The optimizer dropdown also has an Export optimizer button for downloading individual optimizer JSON.
 
 ## Pause and resume
 
@@ -47,8 +47,10 @@ Both conditions share the `stagnationIssueThreshold` as their trigger threshold.
 
 The overview dashboard shows:
 
-- counts: total runs, accepted, rejected, invalid, pending
-- metrics: average candidate score, average score delta, rejection rate
+- counts: total optimizers, active, paused, total runs, accepted, rejected, invalid, pending
+- metrics: average candidate score, average score delta, acceptance rate, rejection rate, invalid rate, stdDev of deltas
+- latest accepted run with its score
+- instance config snapshot (scoreRepeats, guardrailRepeats, policy, budgets)
 
 ---
 
@@ -319,6 +321,10 @@ The project tab supports:
 
 - pending-run approval and rejection (with dirty-repo and stale-candidate guards)
 - run-to-run side-by-side comparison with score deltas, guardrail summary, and metric details
+- run search by reason text, changed file names, or run ID
+- download comparison JSON (incumbent vs. candidate)
+- download all runs for the optimizer as JSON
+- export optimizer definition as JSON
 - diff and structured metric inspection
 - run-state filters (All, Pending, Accepted, Rejected, Invalid, Dry Run)
 - first-class PR card with copyable branch, commit, and command fields
