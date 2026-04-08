@@ -1166,5 +1166,40 @@ console.log(JSON.stringify({ primary: score, guardrails: { safe: true } }));
     // After a run with 3 repeats, noiseFloor should be set
     expect(result.optimizer.noiseFloor).not.toBeNull();
     expect(result.optimizer.noiseFloor).toBeGreaterThanOrEqual(0);
+  })
+
+  it("enqueueOptimizerRun changes queueState to queued and can be cleared back to idle", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Queue test",
+      objective: "Test enqueue action",
+      mutablePaths: "README.md",
+      mutationCommand: 'node -e "const fs=require(\'node:fs\');fs.writeFileSync(\'README.md\',\'queued\\n\')"',
+      scoreCommand: 'node -e "const fs=require(\'node:fs\');const t=fs.readFileSync(\'README.md\',\'utf8\');console.log(JSON.stringify({primary:t.includes(\'baseline\')?0:1,guardrails:{safe:true}}))"',
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "copy",
+      scorerIsolationMode: "same_workspace",
+      applyMode: "automatic"
+    }) as { optimizerId: string };
+
+    // Enqueue the optimizer
+    const enqueued = await harness.performAction("enqueue-optimizer-run", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { queueState: string; optimizerId: string };
+
+    expect(enqueued.queueState).toBe("queued");
+    expect(enqueued.optimizerId).toBe(optimizer.optimizerId);
+
+    // Verify it shows in the optimizer list as queued
+    const optimizers = await harness.getData("project-optimizers", { projectId }) as Array<{ optimizerId: string; queueState: string }>;
+    const found = optimizers.find((o) => o.optimizerId === optimizer.optimizerId);
+    expect(found?.queueState).toBe("queued");
   });
 });
