@@ -1530,13 +1530,19 @@ export function OptimizerDashboardWidget({ context }: PluginWidgetProps) {
         <div style={{ fontWeight: 600, color: "#d97706" }}>{data?.counts.pendingApprovalRuns ?? 0}</div>
       </div>
       {data?.metrics ? (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "4px 16px", marginTop: 10, fontSize: 12, opacity: 0.85 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr 1fr", gap: "4px 16px", marginTop: 10, fontSize: 12, opacity: 0.85 }}>
           <div>Avg score</div>
           <div>Avg delta</div>
-          <div>Rejection rate</div>
+          <div>Accept rate</div>
+          <div>Reject rate</div>
+          <div>Invalid rate</div>
+          <div>StdDev(Δ)</div>
           <div>{data.metrics.avgCandidateScore != null ? formatScore(data.metrics.avgCandidateScore) : "—"}</div>
           <div>{data.metrics.avgScoreDelta != null ? data.metrics.avgScoreDelta.toFixed(4) : "—"}</div>
+          <div>{data.metrics.acceptanceRate != null ? `${(data.metrics.acceptanceRate * 100).toFixed(1)}%` : "—"}</div>
           <div>{data.metrics.rejectionRate != null ? `${(data.metrics.rejectionRate * 100).toFixed(1)}%` : "—"}</div>
+          <div>{data.metrics.invalidRate != null ? `${(data.metrics.invalidRate * 100).toFixed(1)}%` : "—"}</div>
+          <div>{data.metrics.stdDevOfDeltas != null ? data.metrics.stdDevOfDeltas.toFixed(4) : "—"}</div>
         </div>
       ) : null}
       <div style={{ marginTop: 8, fontSize: 13, opacity: 0.82 }}>

@@ -253,6 +253,14 @@ export interface OverviewData {
     avgCandidateScore: number | null;
     /** Rejection rate: rejected / (accepted + rejected + invalid). */
     rejectionRate: number | null;
+    /** Invalid rate: invalid / (accepted + rejected + invalid). */
+    invalidRate: number | null;
+    /** Acceptance rate: accepted / (accepted + rejected + invalid). */
+    acceptanceRate: number | null;
+    /** Standard deviation of candidate scores. */
+    stdDevOfScores: number | null;
+    /** Standard deviation of score deltas. */
+    stdDevOfDeltas: number | null;
   };
   latestAcceptedRun: OptimizerRunRecord | null;
 }

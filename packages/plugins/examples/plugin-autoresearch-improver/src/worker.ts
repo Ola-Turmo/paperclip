@@ -2077,9 +2077,16 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
         const avgCandidateScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
         const avgScoreDelta = deltas.length > 0 ? deltas.reduce((a, b) => a + b, 0) / deltas.length : null;
         const rejectedCount = runs.filter((r) => r.outcome === "rejected").length;
-        const rejectionRate = decisionRuns.length > 0 ? rejectedCount / decisionRuns.length : null;
+        const invalidCount = runs.filter((r) => r.outcome === "invalid").length;
+        const acceptedCount = runs.filter((r) => r.outcome === "accepted").length;
+        const totalDecisions = decisionRuns.length;
+        const rejectionRate = totalDecisions > 0 ? rejectedCount / totalDecisions : null;
+        const invalidRate = totalDecisions > 0 ? invalidCount / totalDecisions : null;
+        const acceptanceRate = totalDecisions > 0 ? acceptedCount / totalDecisions : null;
+        const stdDevOfScores = computeStdDev(scores);
+        const stdDevOfDeltas = computeStdDev(deltas);
 
-        return { avgScoreDelta, avgCandidateScore, rejectionRate };
+        return { avgScoreDelta, avgCandidateScore, rejectionRate, invalidRate, acceptanceRate, stdDevOfScores, stdDevOfDeltas };
       })(),
       latestAcceptedRun
     };
