@@ -274,3 +274,31 @@ Research questions:
 
 Return actionable heuristics for history-driven optimization management.
 ```
+
+
+## 12. Optimizer lifecycle and production readiness
+
+```text
+The autoresearch plugin manages a full optimizer lifecycle:
+- creation (from templates or blank)
+- configuration (50+ fields across objective, mutation, scoring, guardrails, apply, PR)
+- execution (sandbox creation, repeated scoring, guardrail evaluation, patch apply)
+- review (manual approval, issue creation, PR creation)
+- pause/resume (manual or auto-pause on stagnation/failures)
+- cloning (for A/B variation or branching)
+- deletion (branch cleanup, workspace reset)
+
+Research questions:
+1. How should a user decide when to clone an optimizer vs. adjust the existing one's config? What signals suggest "this optimizer is stuck in a local optimum"?
+2. When should an optimizer be deleted vs. paused? What is the cost of keeping stale optimizers around?
+3. What is the recommended naming/convention for optimizer names when running multiple variants (e.g., A/B testing two different scorers)?
+4. How should the mutation budget and score budget be tuned relative to expected mutation complexity and scoring speed?
+5. What are the minimum viable settings for each apply mode:
+   - manual_approval: minimum viable config
+   - automatic: minimum viable config (requires PR flow or dirty workspace guard?)
+   - dry_run: minimum viable config
+6. When is it appropriate to use scorerIsolationMode=same_workspace vs. separate_workspace? What are the trade-offs for scorer blinding?
+7. How should users handle the case where their scorer is external (e.g., an API endpoint)? The current plugin runs commands locally — what's the path for a remote scorer?
+
+Return a production-ready checklist for running optimizers in a real codebase.
+```
