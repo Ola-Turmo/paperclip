@@ -480,3 +480,22 @@ export function validateConfig(config: PluginConfigValues): { errors: string[]; 
 
   return { errors, warnings };
 }
+
+export function computePolicySuggestion(
+  optimizer: OptimizerDefinition,
+  runOutcome: string,
+  candidateImproved: boolean
+): string | null {
+  if (optimizer.scoreImprovementPolicy === "confidence" && optimizer.consecutiveNonImprovements >= 10) {
+    return "Consider switching to threshold policy — 10+ consecutive confidence rejections suggest the scorer variance is too high for k×stdDev to be reliable.";
+  }
+  if (optimizer.scoreImprovementPolicy === "epsilon" && optimizer.noiseFloor != null && optimizer.epsilonValue != null) {
+    if (optimizer.noiseFloor >= optimizer.epsilonValue * 0.5 && optimizer.consecutiveNonImprovements >= 5) {
+      return "noiseFloor (" + optimizer.noiseFloor.toFixed(4) + ") is >=50% of epsilonValue (" + optimizer.epsilonValue + "). Consider increasing epsilonValue or using threshold policy.";
+    }
+  }
+  if (optimizer.scoreImprovementPolicy === "threshold" && optimizer.runs >= 20 && optimizer.acceptedRuns === 0) {
+    return "No accepted runs after 20 attempts. Consider trying confidence policy with scoreRepeats ≥ 5 if the scorer is noisy.";
+  }
+  return null;
+}

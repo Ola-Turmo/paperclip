@@ -18,6 +18,7 @@ import {
   normalizeDotPath,
   normalizeRelativePath,
   summarizeOutput,
+  computePolicySuggestion,
 } from "../src/lib/optimizer.js";
 
 describe("optimizer helpers", () => {
@@ -562,4 +563,26 @@ describe("optimizer helpers", () => {
     const single = aggregateStructuredMetrics([r1], "median");
     expect(single?.primary).toBe(0.8);
   });
+  it("computePolicySuggestion returns suggestions at trigger thresholds", () => {
+    // Confidence: 10 consecutive non-improvements
+    const opt1: any = { scoreImprovementPolicy: "confidence", consecutiveNonImprovements: 10 };
+    expect(computePolicySuggestion(opt1, "rejected", false)).toContain("threshold");
+
+    // Epsilon: noiseFloor >= 50% of epsilonValue + 5 non-improvements
+    const opt2: any = { scoreImprovementPolicy: "epsilon", noiseFloor: 0.15, epsilonValue: 0.25, consecutiveNonImprovements: 5 };
+    expect(computePolicySuggestion(opt2, "rejected", false)).toContain("noiseFloor");
+
+    // Threshold: 20 runs, no accepted
+    const opt3: any = { scoreImprovementPolicy: "threshold", runs: 20, acceptedRuns: 0, consecutiveNonImprovements: 20 };
+    expect(computePolicySuggestion(opt3, "rejected", false)).toContain("confidence");
+
+    // No suggestion when conditions not met
+    const opt4: any = { scoreImprovementPolicy: "confidence", consecutiveNonImprovements: 3 };
+    expect(computePolicySuggestion(opt4, "rejected", false)).toBeNull();
+
+    // New optimizer
+    const opt5: any = { scoreImprovementPolicy: "epsilon", noiseFloor: null };
+    expect(computePolicySuggestion(opt5, "rejected", false)).toBeNull();
+  });
+
 });

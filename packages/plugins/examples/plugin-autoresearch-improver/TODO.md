@@ -61,6 +61,12 @@ This file tracks the remaining work after the current git-backed, scorer-isolate
 ## Nice to have
 
 - ✅ Auto-pause on consecutive failures when `consecutiveFailures >= stagnationIssueThreshold` *(implemented: new `autoPauseOnConsecutiveFailures` field, UI checkbox, auto-pause logic in finalizeRun, e2e test)*
+- ✅ `stagnationWebhookUrl` — webhook notification on stagnation or failure auto-pause *(implemented: POST JSON to configured URL with optimizerId, name, trigger, nonImprovements, failures, reason fields)*
+- ✅ `exportRuns` CSV format — machine-readable CSV alongside JSON export *(implemented: TOOL_KEYS.exportOptimizerRuns with format=csv|json, RFC-4180 compliant, full field coverage)*
+- ✅ Scoped mutator env vars — PAPERCLIP_OPTIMIZER_ID, STATUS, QUEUE_STATE, POLICY, NOISE_FLOOR, consecutive counts *(implemented: all env vars passed to mutationEnv in buildMutationEnv)*
+- ✅ `autoSuggestPolicy` suggestion field — suggest policy switch when current policy shows clear failure patterns *(implemented: computePolicySuggestion() with confidence/epsilon/threshold triggers, displayed in UI status bar and stagnation warning zone)*
+- ✅ Cross-optimizer comparison widget — `optimizer-comparison` data endpoint with per-optimizer best scores, deltas, acceptance rates, and current suggestion *(implemented: optimizerComparison registered in registerDataHandlers; suggestion displayed per-optimizer in UI status bar)*
+- ✅ noiseFloor reset on scorer change — clear noiseFloor when scoreCommand changes *(implemented: detected in saveOptimizer via scorerHash comparison)*
 
 All previously planned items have been implemented. See the sections above for details.
 

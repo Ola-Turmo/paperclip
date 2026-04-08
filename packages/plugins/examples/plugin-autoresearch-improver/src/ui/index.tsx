@@ -72,6 +72,7 @@ type FormState = {
   autoCreateIssueOnGuardrailFailure: boolean;
   autoCreateIssueOnStagnation: boolean;
   autoPauseOnConsecutiveFailures: boolean;
+  stagnationWebhookUrl: string;
   stagnationIssueThreshold: string;
   proposalBranchPrefix: string;
   proposalCommitMessage: string;
@@ -203,6 +204,7 @@ function formFromOptimizer(optimizer: OptimizerDefinition): FormState {
     autoCreateIssueOnGuardrailFailure: optimizer.autoCreateIssueOnGuardrailFailure,
     autoCreateIssueOnStagnation: optimizer.autoCreateIssueOnStagnation,
     autoPauseOnConsecutiveFailures: optimizer.autoPauseOnConsecutiveFailures ?? false,
+    stagnationWebhookUrl: optimizer.stagnationWebhookUrl ?? "",
     stagnationIssueThreshold: String(optimizer.stagnationIssueThreshold),
     proposalBranchPrefix: optimizer.proposalBranchPrefix ?? "",
     proposalCommitMessage: optimizer.proposalCommitMessage ?? "",
@@ -251,6 +253,7 @@ function applyTemplate(template: OptimizerTemplate, current: FormState, workspac
     autoCreateIssueOnGuardrailFailure: values.autoCreateIssueOnGuardrailFailure ?? current.autoCreateIssueOnGuardrailFailure,
     autoCreateIssueOnStagnation: values.autoCreateIssueOnStagnation ?? current.autoCreateIssueOnStagnation,
     autoPauseOnConsecutiveFailures: values.autoPauseOnConsecutiveFailures ?? current.autoPauseOnConsecutiveFailures,
+    stagnationWebhookUrl: values.stagnationWebhookUrl ?? current.stagnationWebhookUrl,
     stagnationIssueThreshold: values.stagnationIssueThreshold != null ? String(values.stagnationIssueThreshold) : current.stagnationIssueThreshold,
     proposalBranchPrefix: values.proposalBranchPrefix ?? current.proposalBranchPrefix,
     proposalCommitMessage: values.proposalCommitMessage ?? current.proposalCommitMessage,
@@ -298,6 +301,7 @@ function toActionPayload(form: FormState) {
     autoCreateIssueOnGuardrailFailure: form.autoCreateIssueOnGuardrailFailure,
     autoCreateIssueOnStagnation: form.autoCreateIssueOnStagnation,
     autoPauseOnConsecutiveFailures: form.autoPauseOnConsecutiveFailures,
+    stagnationWebhookUrl: form.stagnationWebhookUrl || undefined,
     stagnationIssueThreshold: Number(form.stagnationIssueThreshold || 0),
     proposalBranchPrefix: form.proposalBranchPrefix || undefined,
     proposalCommitMessage: form.proposalCommitMessage || undefined,
@@ -1134,6 +1138,16 @@ function OptimizerEditor({
             Queue {selectedOptimizer.queueState} | Best {formatScore(selectedOptimizer.bestScore)} | Accepted {selectedOptimizer.acceptedRuns} | Rejected {selectedOptimizer.rejectedRuns} | Invalid {selectedOptimizer.invalidRuns ?? 0} | No-improves {selectedOptimizer.consecutiveNonImprovements}/{selectedOptimizer.stagnationIssueThreshold} | Failures {selectedOptimizer.consecutiveFailures}{selectedOptimizer.noiseFloor != null ? ` | NoiseFloor ${selectedOptimizer.noiseFloor.toFixed(4)}` : ""}
           </div>
         ) : null}
+        {selectedOptimizer?.suggestion ? (
+          <div style={{ marginTop: 6, fontSize: 12, color: "#1d4ed8", background: "rgba(29,78,216,0.06)", padding: "6px 10px", borderRadius: 6, border: "1px solid rgba(29,78,216,0.15)" }}>
+            💡 {selectedOptimizer.suggestion}
+          </div>
+        ) : null}
+        {selectedOptimizer && selectedOptimizer.consecutiveNonImprovements >= Math.ceil(selectedOptimizer.stagnationIssueThreshold * 0.7) && selectedOptimizer.status === "active" && !selectedOptimizer.suggestion ? (
+          <div style={{ marginTop: 6, fontSize: 11, color: "#b45309", background: "rgba(234,179,8,0.06)", padding: "4px 8px", borderRadius: 5, border: "1px solid rgba(234,179,8,0.25)" }}>
+            ⚠️ {selectedOptimizer.consecutiveNonImprovements}/{selectedOptimizer.stagnationIssueThreshold} non-improvements — approaching stagnation threshold
+          </div>
+        ) : null}
         {selectedOptimizer?.applyMode === "automatic" && !selectedOptimizer?.proposalBranchPrefix && !selectedOptimizer?.proposalPrCommand ? (
           <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 8, border: "1px solid rgba(234, 179, 8, 0.5)", background: "rgba(234, 179, 8, 0.06)", fontSize: 12, color: "#854d0e" }}>
             ⚠️ <strong>Automatic apply</strong> is enabled but no proposal branch prefix or PR command is configured. Accepted candidates will be applied directly to the workspace without a review branch or PR. Configure <code>proposalBranchPrefix</code>, <code>proposalPushCommand</code>, and <code>proposalPrCommand</code> for a full git-backed review flow.
@@ -1321,6 +1335,10 @@ function OptimizerEditor({
             <div>
               <strong>Stagnation threshold</strong>
               <input style={{ ...inputStyle, marginTop: 6 }} value={form.stagnationIssueThreshold} onChange={(event) => setForm((prev) => ({ ...prev, stagnationIssueThreshold: event.target.value }))} />
+            </div>
+            <div>
+              <strong>Stagnation webhook URL</strong>
+              <input style={{ ...inputStyle, marginTop: 6 }} value={form.stagnationWebhookUrl} onChange={(event) => setForm((prev) => ({ ...prev, stagnationWebhookUrl: event.target.value }))} placeholder="https://... (optional)" />
             </div>
             <div>
               <strong>Status</strong>

@@ -117,6 +117,8 @@ export interface OptimizerDefinition {
   autoRun: boolean;
   sandboxStrategy: SandboxStrategy;
   scorerIsolationMode: ScorerIsolationMode;
+  /** Optional webhook URL called (POST JSON) on stagnation/failure auto-pause. Payload: { optimizerId, name, trigger, nonImprovements, failures, reason } */
+  stagnationWebhookUrl?: string | null;
   applyMode: ApplyMode;
   status: OptimizerStatus;
   queueState: RunQueueState;
@@ -140,6 +142,8 @@ export interface OptimizerDefinition {
   pauseReason?: string;
   /** Change history: records significant config changes. */
   history?: ConfigChangeRecord[];
+  /** Human-readable suggestion for the next step, e.g., 'Consider switching to threshold policy after 10 consecutive confidence rejections' */
+  suggestion?: string | null;
   bestScore?: number;
   bestRunId?: string;
   lastRunId?: string;

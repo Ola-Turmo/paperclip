@@ -13,7 +13,8 @@ export const DATA_KEYS = {
   projectOptimizers: "project-optimizers",
   optimizerRuns: "optimizer-runs",
   optimizerTemplates: "optimizer-templates",
-  optimizerHistory: "optimizer-history"
+  optimizerHistory: "optimizer-history",
+  optimizerComparison: "optimizer-comparison"
 } as const;
 
 export const ACTION_KEYS = {
@@ -34,7 +35,8 @@ export const ACTION_KEYS = {
 export const TOOL_KEYS = {
   listOptimizers: "list-optimizers",
   createIssueFromAcceptedRun: "create-issue-from-accepted-run",
-  createPullRequestFromAcceptedRun: "create-pull-request-from-accepted-run"
+  createPullRequestFromAcceptedRun: "create-pull-request-from-accepted-run",
+  exportOptimizerRuns: "export-optimizer-runs"
 } as const;
 
 export const JOB_KEYS = {

@@ -31,6 +31,7 @@ import {
   clampPositiveInteger,
   compareScores,
   compareScoresWithPolicy,
+  computePolicySuggestion,
   computeStdDev,
   emptyDiffArtifact,
   extractScore,
@@ -288,7 +289,7 @@ function parseDirection(value: unknown): ScoreDirection {
 function ensureNonEmptyString(value: unknown, field: string): string {
   const stringValue = typeof value === "string" ? value.trim() : "";
   if (!stringValue) {
-    throw new Error(`${field} is required`);
+    throw new Error(field + " is required");
   }
   return stringValue;
 }
@@ -307,7 +308,7 @@ function resolveInside(rootDir: string, relativePath: string): string {
   const resolved = safeRelative === "." ? root : path.resolve(root, safeRelative);
   const relative = path.relative(root, resolved);
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw new Error(`Path escapes workspace: ${relativePath}`);
+    throw new Error("Path escapes workspace: " + relativePath);
   }
   return resolved;
 }
@@ -324,7 +325,7 @@ async function pathExists(targetPath: string): Promise<boolean> {
 function pathIsAllowed(relativePath: string, mutablePaths: string[]): boolean {
   return mutablePaths.some((mutablePath) => {
     if (mutablePath === ".") return true;
-    return relativePath === mutablePath || relativePath.startsWith(`${mutablePath}/`);
+    return relativePath === mutablePath || relativePath.startsWith(mutablePath + "/");
   });
 }
 
@@ -471,13 +472,13 @@ async function createDiffArtifact(
       if (err.code === 1 && err.stdout) {
         patch += err.stdout;
       } else if (err.stderr) {
-        patch += `\n# Failed to compute diff for ${relativePath}\n${err.stderr}\n`;
+        patch += "\n# Failed to compute diff for " + relativePath + "\n" + err.stderr + "\n";
       }
     }
   }
 
   if (binaryFiles.length > 0) {
-    patch += `\n# Binary files changed (excluded from text diff): ${binaryFiles.join(", ")}\n`;
+    patch += "\n# Binary files changed (excluded from text diff): " + binaryFiles.join(", ") + "\n";
   }
 
   for (const line of patch.split(/\r?\n/)) {
@@ -558,7 +559,7 @@ function toRepoRelativePath(git: GitWorkspaceContext, workspaceRelativePath: str
   const normalized = normalizeRelativePath(workspaceRelativePath);
   return git.workspaceRelativePath === "."
     ? normalized
-    : `${git.workspaceRelativePath}/${normalized}`.replace(/\/+/g, "/");
+    : (git.workspaceRelativePath + "/" + normalized).replace(/\/+/g, "/");
 }
 
 async function createSandboxContext(
@@ -635,7 +636,7 @@ async function createWorkspacePatch(
   await runGit(sandboxRoot, ["add", "-N", "--", ...repoRelativePaths]).catch(() => undefined);
   const args = ["diff", "--binary"];
   if (git.workspaceRelativePath !== ".") {
-    args.push(`--relative=${git.workspaceRelativePath}`);
+    args.push("--relative=" + git.workspaceRelativePath);
   }
   args.push("HEAD", "--", ...repoRelativePaths);
   const { stdout } = await runGit(sandboxRoot, args, 32 * 1024 * 1024);
@@ -697,7 +698,7 @@ async function applyPatchToWorkspace(
     throw new Error("Git patch apply requested without a git workspace.");
   }
 
-  const patchFile = path.join(os.tmpdir(), `paperclip-autoresearch-${randomUUID()}.patch`);
+  const patchFile = path.join(os.tmpdir(), "paperclip-autoresearch-" + randomUUID() + ".patch");
   try {
     await fs.writeFile(patchFile, patch, "utf8");
     const args = ["apply", "--whitespace=nowarn", patchFile];
@@ -717,13 +718,13 @@ async function applyPatchToWorkspace(
       // Re-throw with a descriptive message so the run can be marked appropriately.
       const fileList = conflictInfo.conflictingFiles.join(", ") || "one or more files";
       throw new Error(
-        `Patch apply conflict: ${fileList}. The workspace has diverged since the candidate was generated. ` +
-        `Conflict details: ${stderr.slice(0, 500)}`
+        "Patch apply conflict: " + fileList + ". The workspace has diverged since the candidate was generated. " +
+        "Conflict details: " + stderr.slice(0, 500)
       );
     }
 
     // Non-conflict failure (e.g., corrupt patch, permission issue)
-    throw new Error(`Patch apply failed (exit ${exitCode}): ${stderr.slice(0, 500)}`);
+    throw new Error("Patch apply failed (exit " + exitCode + "): " + stderr.slice(0, 500));
   } finally {
     await fs.rm(patchFile, { force: true }).catch(() => undefined);
   }
@@ -894,7 +895,7 @@ async function upsertRun(ctx: PluginContext, run: OptimizerRunRecord): Promise<P
     scopeKind: "project",
     scopeId: run.projectId,
     externalId: run.runId,
-    title: `${run.outcome} run for ${run.optimizerId}`,
+    title: run.outcome + " run for " + run.optimizerId,
     status: run.outcome,
     data: run as unknown as Record<string, unknown>
   });
@@ -928,13 +929,13 @@ function resultFromExecution(
     return extractStructuredMetricResult(execution.stdout, key);
   }
 
-  const score = extractScore(`${execution.stdout}\n${execution.stderr}`, pattern);
+  const score = extractScore(execution.stdout + "\n" + execution.stderr, pattern);
   return {
     primary: score,
     metrics: score == null ? {} : { primary: score },
     guardrails: {},
-    summary: score == null ? "No numeric score found." : `Score ${score}`,
-    raw: `${execution.stdout}\n${execution.stderr}`.trim()
+    summary: score == null ? "No numeric score found." : "Score " + score,
+    raw: (execution.stdout + "\n" + execution.stderr).trim()
   };
 }
 
@@ -1060,7 +1061,7 @@ async function measureGuardrail(
     failureReason: !passed
       ? (aggregate?.invalidReason
         ?? (failedGuardrails.length > 0
-          ? `Guardrails failed: ${failedGuardrails.map(([key]) => key).join(", ")}.`
+          ? "Guardrails failed: " + failedGuardrails.map(([key]) => key).join(", ") + "."
           : "One or more guardrail repeats failed."))
       : undefined
   };
@@ -1073,7 +1074,7 @@ async function createIssueFromRun(
   run: OptimizerRunRecord,
   titlePrefix?: string
 ): Promise<{ id: string; title: string }> {
-  const title = `${titlePrefix ?? "Optimizer run"}: ${optimizer.name}`;
+  const title = (titlePrefix ?? "Optimizer run") + ": " + optimizer.name;
   const patchPreview = run.artifacts.patch || "(no diff patch captured)";
   const delta = (run.candidateScore != null && run.baselineScore != null)
     ? (run.candidateScore - run.baselineScore).toFixed(4)
@@ -1082,33 +1083,33 @@ async function createIssueFromRun(
   const scoringMetrics = run.scoringAggregate?.metrics;
   const guardrailVals = run.guardrailAggregate?.guardrails;
   const description = [
-    `Objective: ${optimizer.objective}`,
-    `Outcome: ${run.outcome}`,
-    `Reason: ${run.reason}`,
+    "Objective: " + optimizer.objective,
+    "Outcome: " + run.outcome,
+    "Reason: " + run.reason,
     "",
-    `Baseline score: ${run.baselineScore ?? "n/a"} | Candidate: ${run.candidateScore ?? "n/a"} | Delta: ${delta}`,
+    "Baseline score: " + (run.baselineScore ?? "n/a") + " | Candidate: " + (run.candidateScore ?? "n/a") + " | Delta: " + delta,
     scoringMetrics && Object.keys(scoringMetrics).length > 0
-      ? `Scoring metrics: ${Object.entries(scoringMetrics).map(([k, v]) => `${k}=${v}`).join(", ")}`
+      ? "Scoring metrics: " + Object.entries(scoringMetrics).map(([k, v]) => k + "=" + v).join(", ")
       : null,
     guardrailVals && Object.keys(guardrailVals).length > 0
-      ? `Guardrail results: ${Object.entries(guardrailVals).map(([k, v]) => `${k}=${v}`).join(", ")}`
-      : `Guardrail: ${run.guardrail ? formatCommandSummary(run.guardrail) : "not configured"}`,
-    `Duration: ${(durationMs / 1000).toFixed(1)}s | Scoring repeats: ${run.scoringRepeats.length}x`,
+      ? "Guardrail results: " + Object.entries(guardrailVals).map(([k, v]) => k + "=" + v).join(", ")
+      : "Guardrail: " + (run.guardrail ? formatCommandSummary(run.guardrail) : "not configured"),
+    "Duration: " + (durationMs / 1000).toFixed(1) + "s | Scoring repeats: " + run.scoringRepeats.length + "x",
     "",
-    `Mutation: ${formatCommandSummary(run.mutation)}`,
-    `Scoring: ${formatCommandSummary(run.scoring)}`,
+    "Mutation: " + formatCommandSummary(run.mutation),
+    "Scoring: " + formatCommandSummary(run.scoring),
     "",
-    `Changed files (${run.artifacts.changedFiles.length}): ${run.artifacts.changedFiles.join(", ") || "none"}`,
-    `Unauthorized changes: ${run.artifacts.unauthorizedChangedFiles.join(", ") || "none"}`,
+    "Changed files (" + run.artifacts.changedFiles.length + "): " + (run.artifacts.changedFiles.join(", ") || "none"),
+    "Unauthorized changes: " + (run.artifacts.unauthorizedChangedFiles.join(", ") || "none"),
     run.patchConflict?.hasConflicts
-      ? `Patch conflict: ${run.patchConflict.conflictingFiles.join(", ") || "detected but files unknown"}`
+      ? "Patch conflict: " + (run.patchConflict.conflictingFiles.join(", ") || "detected but files unknown")
       : null,
     "",
     optimizer.consecutiveNonImprovements > 0
-      ? `Consecutive non-improvements: ${optimizer.consecutiveNonImprovements} (threshold: ${optimizer.stagnationIssueThreshold})`
+      ? "Consecutive non-improvements: " + optimizer.consecutiveNonImprovements + " (threshold: " + optimizer.stagnationIssueThreshold + ")"
       : null,
     optimizer.consecutiveFailures > 0
-      ? `Consecutive failures: ${optimizer.consecutiveFailures}`
+      ? "Consecutive failures: " + optimizer.consecutiveFailures
       : null,
     "",
     "---",
@@ -1129,7 +1130,7 @@ async function createIssueFromRun(
     companyId,
     entityType: "issue",
     entityId: issue.id,
-    message: `Autoresearch Improver created issue "${title}" from run ${run.runId}.`,
+    message: 'Autoresearch Improver created issue "' + title + '" from run ' + run.runId + '.',
     metadata: {
       optimizerId: optimizer.optimizerId,
       runId: run.runId,
@@ -1141,14 +1142,14 @@ async function createIssueFromRun(
 }
 
 function buildProposalBranchName(optimizer: OptimizerDefinition, run: OptimizerRunRecord): string {
-  const prefix = optimizer.proposalBranchPrefix?.trim() || `paprclip/autoresearch/${optimizer.optimizerId.slice(0, 8)}`;
+  const prefix = optimizer.proposalBranchPrefix?.trim() || "paprclip/autoresearch/" + optimizer.optimizerId.slice(0, 8);
   const suffix = run.runId.slice(0, 8);
-  return `${prefix}-${suffix}`.replace(/[^a-zA-Z0-9/_-]+/g, "-");
+  return (prefix + "-" + suffix).replace(/[^a-zA-Z0-9/_-]+/g, "-");
 }
 
 function buildProposalCommitMessage(optimizer: OptimizerDefinition, run: OptimizerRunRecord): string {
   if (optimizer.proposalCommitMessage?.trim()) return optimizer.proposalCommitMessage.trim();
-  return `Autoresearch candidate: ${optimizer.name} (${run.runId.slice(0, 8)})`;
+  return "Autoresearch candidate: " + optimizer.name + " (" + run.runId.slice(0, 8) + ")";
 }
 
 function extractPullRequestUrl(output: string): string | undefined {
@@ -1202,7 +1203,7 @@ async function createPullRequestFromRun(
     const dirtyFiles = statusOutput.trim().split("\n").filter((line) => line.trim() !== "");
     if (dirtyFiles.length > 0) {
       throw new Error(
-        `Workspace has uncommitted changes (dirty repo). Proposal creation is blocked to prevent unrelated changes from being swept into the branch. Dirty files: ${dirtyFiles.join(", ")}`
+        "Workspace has uncommitted changes (dirty repo). Proposal creation is blocked to prevent unrelated changes from being swept into the branch. Dirty files: " + dirtyFiles.join(", ")
       );
     }
 
@@ -1212,7 +1213,7 @@ async function createPullRequestFromRun(
       const currentHeadTrimmed = currentHead.trim();
       if (currentHeadTrimmed !== run.workspaceHeadAtRun.trim()) {
         throw new Error(
-          `Workspace HEAD has changed since this run was created (stale candidate). Run was created at ${run.workspaceHeadAtRun} but workspace is now at ${currentHeadTrimmed}. A new run is required.`
+          "Workspace HEAD has changed since this run was created (stale candidate). Run was created at " + run.workspaceHeadAtRun + " but workspace is now at " + currentHeadTrimmed + ". A new run is required."
         );
       }
     }
@@ -1228,7 +1229,7 @@ async function createPullRequestFromRun(
     || "HEAD";
 
   // Resolve the default remote (origin) for push tracking.
-  const { stdout: remoteInfo } = await runGit(git.repoRoot, ["config", "--get", `branch.${baseBranch}.remote`])
+  const { stdout: remoteInfo } = await runGit(git.repoRoot, ["config", "--get", "branch." + baseBranch + ".remote"])
     .catch(() => ({ stdout: "" }));
   const remoteName = remoteInfo.trim() || undefined;
 
@@ -1239,7 +1240,7 @@ async function createPullRequestFromRun(
   const { stdout: existingBranches } = await runGit(git.repoRoot, ["branch", "--list", branchName]);
   if (existingBranches.trim()) {
     throw new Error(
-      `Proposal branch "${branchName}" already exists. Delete it first or change the proposalBranchPrefix to create a fresh branch.`
+      "Proposal branch \"" + branchName + "\" already exists. Delete it first or change the proposalBranchPrefix to create a fresh branch."
     );
   }
 
@@ -1295,7 +1296,7 @@ async function createPullRequestFromRun(
       },
       config.maxOutputChars
     );
-    const output = `${commandResult.stdout}\n${commandResult.stderr}`;
+    const output = commandResult.stdout + "\n" + commandResult.stderr;
     pullRequestUrl = extractPullRequestUrl(output);
     pullRequestNumber = extractPullRequestNumber(output);
   }
@@ -1345,7 +1346,7 @@ async function deleteProposalBranch(
 
   const deleteRemote = remote ?? run.pullRequest?.pushRemote ?? "origin";
   const pushResult = await runShellCommand(
-    `git push ${deleteRemote} --delete "${branchName}"`,
+    "git push " + deleteRemote + " --delete \"" + branchName + "\"",
     git.repoRoot,
     optimizer.scoreBudgetSeconds,
     process.env,
@@ -1354,7 +1355,7 @@ async function deleteProposalBranch(
 
   if (!pushResult.ok) {
     throw new Error(
-      `Failed to delete proposal branch "${branchName}" from ${deleteRemote}: ${pushResult.stderr || pushResult.stdout}`
+      "Failed to delete proposal branch \"" + branchName + "\" from " + deleteRemote + ": " + (pushResult.stderr || pushResult.stdout)
     );
   }
 
@@ -1427,6 +1428,7 @@ async function createOptimizerFromParams(
     autoCreateIssueOnGuardrailFailure: params.autoCreateIssueOnGuardrailFailure === true,
     autoCreateIssueOnStagnation: params.autoCreateIssueOnStagnation === true,
     autoPauseOnConsecutiveFailures: params.autoPauseOnConsecutiveFailures === true,
+    stagnationWebhookUrl: typeof params.stagnationWebhookUrl === "string" && params.stagnationWebhookUrl.trim() ? params.stagnationWebhookUrl.trim() : undefined,
     stagnationIssueThreshold: clampPositiveInteger(params.stagnationIssueThreshold, config.stagnationIssueThreshold),
     guardrailRepeats: clampPositiveInteger(params.guardrailRepeats, 1),
     guardrailAggregator: params.guardrailAggregator === "any" ? "any" : "all",
@@ -1476,7 +1478,13 @@ function buildMutationEnv(optimizer: OptimizerDefinition, baselineScore: number 
     PAPERCLIP_OPTIMIZER_SCORER_ISOLATION: optimizer.scorerIsolationMode,
     PAPERCLIP_OPTIMIZER_SCORE_REPEATS: String(optimizer.scoreRepeats),
     PAPERCLIP_OPTIMIZER_SCORE_AGGREGATOR: optimizer.scoreAggregator,
-    PAPERCLIP_OPTIMIZER_MINIMUM_IMPROVEMENT: String(optimizer.minimumImprovement)
+    PAPERCLIP_OPTIMIZER_MINIMUM_IMPROVEMENT: String(optimizer.minimumImprovement),
+    PAPERCLIP_OPTIMIZER_STATUS: optimizer.status,
+    PAPERCLIP_OPTIMIZER_QUEUE_STATE: optimizer.queueState,
+    PAPERCLIP_OPTIMIZER_CONSECUTIVE_NON_IMPROVEMENTS: String(optimizer.consecutiveNonImprovements),
+    PAPERCLIP_OPTIMIZER_CONSECUTIVE_FAILURES: String(optimizer.consecutiveFailures),
+    PAPERCLIP_OPTIMIZER_POLICY: optimizer.scoreImprovementPolicy ?? "threshold",
+    PAPERCLIP_OPTIMIZER_NOISE_FLOOR: optimizer.noiseFloor != null ? String(optimizer.noiseFloor) : ""
   };
 
   if (!optimizer.hiddenScoring) {
@@ -1484,6 +1492,21 @@ function buildMutationEnv(optimizer: OptimizerDefinition, baselineScore: number 
   }
 
   return mutationEnv;
+}
+
+async function notifyWebhook(url: string, payload: Record<string, unknown>): Promise<void> {
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      throw new Error("Webhook returned " + res.status + " " + res.statusText);
+    }
+  } catch (err) {
+    throw err; // re-throw so callers can catch it
+  }
 }
 
 async function finalizeRun(
@@ -1518,6 +1541,8 @@ async function finalizeRun(
     consecutiveNonImprovements: candidateImproved
       ? 0
       : optimizer.consecutiveNonImprovements + 1,
+    // Auto-suggest policy switch after many consecutive confidence rejections
+    suggestion: computePolicySuggestion(optimizer, run.outcome, candidateImproved),
     updatedAt: nowIso()
   };
 
@@ -1532,7 +1557,7 @@ async function finalizeRun(
     companyId: optimizer.companyId,
     entityType: "project",
     entityId: optimizer.projectId,
-    message: `Autoresearch Improver recorded ${run.outcome} run ${run.runId} for ${optimizer.name}.`,
+    message: "Autoresearch Improver recorded " + run.outcome + " run " + run.runId + " for " + optimizer.name + ".",
     metadata: {
       optimizerId: optimizer.optimizerId,
       runId: run.runId,
@@ -1550,7 +1575,7 @@ async function runOptimizerCycle(
   optimizer: OptimizerDefinition
 ): Promise<{ optimizer: OptimizerDefinition; run: OptimizerRunRecord }> {
   if (runningOptimizers.has(optimizer.optimizerId)) {
-    throw new Error(`Optimizer ${optimizer.name} is already running.`);
+    throw new Error("Optimizer " + optimizer.name + " is already running.");
   }
 
   runningOptimizers.add(optimizer.optimizerId);
@@ -1589,7 +1614,7 @@ async function runOptimizerCycle(
     }
 
     mutationSandbox = await createSandboxContext(optimizer.sandboxStrategy, workspacePath);
-    briefPath = path.join(os.tmpdir(), `paperclip-optimizer-brief-${randomUUID()}.json`);
+    briefPath = path.join(os.tmpdir(), "paperclip-optimizer-brief-" + randomUUID() + ".json");
     await fs.writeFile(briefPath, JSON.stringify(buildOptimizerBrief(optimizer), null, 2), "utf8");
 
     const mutation = await runShellCommand(
@@ -1633,7 +1658,7 @@ async function runOptimizerCycle(
     const failureReason = !mutation.ok
       ? "Mutation command failed."
       : artifacts.unauthorizedChangedFiles.length > 0
-        ? `Mutation touched files outside the mutable surface: ${artifacts.unauthorizedChangedFiles.join(", ")}.`
+        ? "Mutation touched files outside the mutable surface: " + artifacts.unauthorizedChangedFiles.join(", ") + "."
         : scoringInvalid
           ? (scoringResult.scoringRepeats.find((entry) => entry.structured?.invalid === true)?.structured?.invalidReason
             ?? "Scorer marked this run as invalid.")
@@ -1682,8 +1707,6 @@ async function runOptimizerCycle(
         applied = true;
         reason = comparison.reason;
       } catch (applyError) {
-        // Capture the conflict info and mark the run as invalid.
-        // This prevents partially-applied states when git apply fails.
         patchConflict = {
           hasConflicts: true,
           conflictingFiles: [],
@@ -1691,7 +1714,7 @@ async function runOptimizerCycle(
           exitCode: 1
         };
         outcome = "invalid";
-        reason = `Patch apply failed: ${applyError instanceof Error ? applyError.message : String(applyError)}`;
+        reason = "Patch apply failed: " + (applyError instanceof Error ? applyError.message : String(applyError));
       }
     }
 
@@ -1763,12 +1786,23 @@ async function runOptimizerCycle(
       await createIssueFromRun(ctx, optimizer.companyId, optimizer, run, "Optimizer stagnation");
       // Auto-pause after stagnation threshold to prevent runaway non-improvements
       updatedOptimizer.status = "paused";
-      updatedOptimizer.pauseReason = `Auto-paused after ${updatedOptimizer.stagnationIssueThreshold} consecutive non-improvements.`;
+      updatedOptimizer.pauseReason = "Auto-paused after " + updatedOptimizer.stagnationIssueThreshold + " consecutive non-improvements.";
       updatedOptimizer.updatedAt = nowIso();
       updatedOptimizer.history = [
         ...(updatedOptimizer.history ?? []),
-        { timestamp: nowIso(), action: "paused", description: `Auto-paused after ${updatedOptimizer.stagnationIssueThreshold} stagnation events.`, triggeredBy: "system" }
+        { timestamp: nowIso(), action: "paused", description: "Auto-paused after " + updatedOptimizer.stagnationIssueThreshold + " stagnation events.", triggeredBy: "system" }
       ];
+      if (updatedOptimizer.stagnationWebhookUrl) {
+        // Fire webhook asynchronously — don't block the run completion.
+        notifyWebhook(updatedOptimizer.stagnationWebhookUrl, {
+          optimizerId: updatedOptimizer.optimizerId,
+          name: updatedOptimizer.name,
+          trigger: "stagnation",
+          nonImprovements: updatedOptimizer.consecutiveNonImprovements,
+          failures: updatedOptimizer.consecutiveFailures,
+          reason: updatedOptimizer.pauseReason ?? ""
+        }).catch((err) => ctx.logger.error("Stagnation webhook failed", { error: err instanceof Error ? err.message : String(err) }));
+      }
     }
 
     // Auto-pause on consecutive failures (reuses stagnationIssueThreshold as the trigger).
@@ -1779,12 +1813,22 @@ async function runOptimizerCycle(
       updatedOptimizer.consecutiveFailures >= updatedOptimizer.stagnationIssueThreshold
     ) {
       updatedOptimizer.status = "paused";
-      updatedOptimizer.pauseReason = `Auto-paused after ${updatedOptimizer.stagnationIssueThreshold} consecutive failures.`;
+      updatedOptimizer.pauseReason = "Auto-paused after " + updatedOptimizer.stagnationIssueThreshold + " consecutive failures.";
       updatedOptimizer.updatedAt = nowIso();
       updatedOptimizer.history = [
         ...(updatedOptimizer.history ?? []),
-        { timestamp: nowIso(), action: "paused", description: `Auto-paused after ${updatedOptimizer.stagnationIssueThreshold} consecutive failures.`, triggeredBy: "system" }
+        { timestamp: nowIso(), action: "paused", description: "Auto-paused after " + updatedOptimizer.stagnationIssueThreshold + " consecutive failures.", triggeredBy: "system" }
       ];
+      if (updatedOptimizer.stagnationWebhookUrl) {
+        notifyWebhook(updatedOptimizer.stagnationWebhookUrl, {
+          optimizerId: updatedOptimizer.optimizerId,
+          name: updatedOptimizer.name,
+          trigger: "consecutive_failures",
+          nonImprovements: updatedOptimizer.consecutiveNonImprovements,
+          failures: updatedOptimizer.consecutiveFailures,
+          reason: updatedOptimizer.pauseReason ?? ""
+        }).catch((err) => ctx.logger.error("Failure webhook failed", { error: err instanceof Error ? err.message : String(err) }));
+      }
     }
 
     return { optimizer: updatedOptimizer, run };
@@ -1831,7 +1875,7 @@ async function promotePendingRun(
     const dirtyFiles = statusOutput.trim().split(/\r?\n/).filter((line) => line.trim() !== "");
     if (dirtyFiles.length > 0) {
       throw new Error(
-        `Workspace has uncommitted changes. Approval is blocked to prevent sweeping unrelated changes into the applied state. Dirty files: ${dirtyFiles.map((f) => f.replace(/^.. /, "")).join(", ")}`
+        "Workspace has uncommitted changes. Approval is blocked to prevent sweeping unrelated changes into the applied state. Dirty files: " + dirtyFiles.map((f) => f.replace(/^.. /, "")).join(", ")
       );
     }
 
@@ -1841,7 +1885,7 @@ async function promotePendingRun(
       const currentHeadTrimmed = currentHead.trim();
       if (currentHeadTrimmed !== run.workspaceHeadAtRun.trim()) {
         throw new Error(
-          `Workspace HEAD has changed since this run was created (stale candidate). Run was created at commit ${run.workspaceHeadAtRun} but workspace is now at ${currentHeadTrimmed}. Please run the optimizer again to get a fresh candidate before approving.`
+          "Workspace HEAD has changed since this run was created (stale candidate). Run was created at commit " + run.workspaceHeadAtRun + " but workspace is now at " + currentHeadTrimmed + ". Please run the optimizer again to get a fresh candidate before approving."
         );
       }
     }
@@ -1870,7 +1914,7 @@ async function promotePendingRun(
       exitCode: 1
     };
     throw new Error(
-      `Patch apply conflict during approval: ${applyError instanceof Error ? applyError.message : String(applyError)}`
+      "Patch apply conflict during approval: " + (applyError instanceof Error ? applyError.message : String(applyError))
     );
   }
 
@@ -1883,7 +1927,7 @@ async function promotePendingRun(
     applied: true,
     approvalStatus: "approved",
     patchConflict,
-    reason: `${run.reason} Approved by operator.`
+    reason: run.reason + " Approved by operator."
   };
 
   const updatedOptimizer: OptimizerDefinition = {
@@ -1900,7 +1944,7 @@ async function promotePendingRun(
     updatedAt: nowIso(),
     history: [
       ...(optimizer.history ?? []),
-      { timestamp: nowIso(), action: "run_accepted", description: `Run ${run.runId.slice(0, 8)}... accepted. Score: ${promotedRun.candidateScore ?? "n/a"}.`, runId: promotedRun.runId }
+      { timestamp: nowIso(), action: "run_accepted", description: "Run " + run.runId.slice(0, 8) + "... accepted. Score: " + (promotedRun.candidateScore ?? "n/a"), runId: promotedRun.runId }
     ]
   };
 
@@ -1910,7 +1954,7 @@ async function promotePendingRun(
     companyId: optimizer.companyId,
     entityType: "project",
     entityId: optimizer.projectId,
-    message: `Autoresearch Improver approved run ${run.runId} for ${optimizer.name}.`,
+    message: "Autoresearch Improver approved run " + run.runId + " for " + optimizer.name + ".",
     metadata: {
       optimizerId: optimizer.optimizerId,
       runId: run.runId
@@ -1955,7 +1999,7 @@ async function rejectPendingRun(
     updatedAt: nowIso(),
     history: [
       ...(optimizer.history ?? []),
-      { timestamp: nowIso(), action: "run_rejected", description: `Run ${run.runId.slice(0, 8)}... rejected. Note: ${typeof note === "string" && note.trim() ? note.trim() : "none"}.`, runId: run.runId }
+      { timestamp: nowIso(), action: "run_rejected", description: "Run " + run.runId.slice(0, 8) + "... rejected. Note: " + (typeof note === "string" && note.trim() ? note.trim() : "none"), runId: run.runId }
     ]
   };
 
@@ -1965,7 +2009,7 @@ async function rejectPendingRun(
     companyId: optimizer.companyId,
     entityType: "project",
     entityId: optimizer.projectId,
-    message: `Autoresearch Improver rejected pending run ${run.runId} for ${optimizer.name}.`,
+    message: "Autoresearch Improver rejected pending run " + run.runId + " for " + optimizer.name + ".",
     metadata: {
       optimizerId: optimizer.optimizerId,
       runId: run.runId
@@ -2093,6 +2137,47 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
 
     return overview;
   });
+
+  ctx.data.register(DATA_KEYS.optimizerComparison, async (params) => {
+    const projectId = typeof params.projectId === "string" ? params.projectId : null;
+    const optimizers = (await listOptimizerEntities(ctx))
+      .map(asOptimizer)
+      .filter((entry) => !projectId || entry.projectId === projectId);
+    const runs = (await listRunEntities(ctx))
+      .map(asRunRecord)
+      .filter((entry) => !projectId || entry.projectId === projectId);
+
+    return optimizers.map((opt) => {
+      const optRuns = runs.filter((r) => r.optimizerId === opt.optimizerId);
+      const acceptedRuns = optRuns.filter((r) => r.outcome === "accepted");
+      const bestRun = acceptedRuns.sort((a, b) =>
+        opt.scoreDirection === "lower-is-better"
+          ? (a.candidateScore ?? Infinity) - (b.candidateScore ?? Infinity)
+          : (b.candidateScore ?? -Infinity) - (a.candidateScore ?? -Infinity)
+      )[0] ?? null;
+      return {
+        optimizerId: opt.optimizerId,
+        name: opt.name,
+        status: opt.status,
+        scoreDirection: opt.scoreDirection,
+        totalRuns: optRuns.length,
+        acceptedRuns: acceptedRuns.length,
+        rejectedRuns: optRuns.filter((r) => r.outcome === "rejected").length,
+        invalidRuns: optRuns.filter((r) => r.outcome === "invalid").length,
+        pendingRuns: optRuns.filter((r) => r.approvalStatus === "pending").length,
+        bestScore: bestRun?.candidateScore ?? null,
+        bestScoreRunId: bestRun?.runId ?? null,
+        bestScoreBaseline: bestRun?.baselineScore ?? null,
+        scoreDelta: bestRun && bestRun.baselineScore != null && bestRun.candidateScore != null
+          ? bestRun.candidateScore - bestRun.baselineScore
+          : null,
+        lastRunAt: optRuns
+          .map((r) => r.startedAt)
+          .sort((a, b) => b.localeCompare(a))[0] ?? null,
+        suggestion: opt.suggestion ?? null
+      };
+    });
+  });
 }
 
 async function registerActionHandlers(ctx: PluginContext): Promise<void> {
@@ -2107,11 +2192,23 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
     });
 
     const now = nowIso();
+    const existingOptimizer = existing ? asOptimizer(existing) : null;
+    // If the scorer changed (scoreCommand, scoreFormat, scoreKey, or scoreRepeats), reset noiseFloor
+    // since the new scorer may have different variance characteristics.
+    const scorerChanged = existingOptimizer && (
+      existingOptimizer.scoreCommand !== params.scoreCommand ||
+      existingOptimizer.scoreFormat !== params.scoreFormat ||
+      existingOptimizer.scoreKey !== params.scoreKey ||
+      existingOptimizer.scoreRepeats !== params.scoreRepeats
+    );
+    if (scorerChanged && existingOptimizer?.noiseFloor != null) {
+      optimizer.noiseFloor = null;
+    }
     if (existing) {
       // Config update: append history entry
       optimizer.history = [
         ...(optimizer.history ?? []),
-        { timestamp: now, action: "config_updated", description: "Configuration updated.", triggeredBy: "user" }
+        { timestamp: now, action: "config_updated", description: scorerChanged ? "Configuration updated (scorer changed, noiseFloor reset)." : "Configuration updated.", triggeredBy: "user" }
       ];
     } else {
       // New optimizer: record creation
@@ -2151,7 +2248,7 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
 
     const entity = await findOptimizer(ctx, projectId, optimizerId);
     if (!entity) {
-      throw new Error(`Optimizer ${optimizerId} was not found.`);
+      throw new Error("Optimizer " + optimizerId + " was not found.");
     }
 
     const original = asOptimizer(entity);
@@ -2161,7 +2258,7 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
     const clone: OptimizerDefinition = {
       ...original,
       optimizerId: randomUUID(),
-      name: newName ?? `${original.name} (clone)`,
+      name: newName ?? (original.name + " (clone)"),
       companyId: original.companyId,
       projectId: original.projectId,
       createdAt: now,
@@ -2182,7 +2279,7 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
         {
           timestamp: now,
           action: "cloned",
-          description: `Cloned from optimizer "${original.name}" (${optimizerId.slice(0, 8)}...)`,
+          description: 'Cloned from optimizer "' + original.name + '" (' + optimizerId.slice(0, 8) + "...)",
           triggeredBy: params.triggeredBy ?? "system"
         }
       ]
@@ -2209,7 +2306,7 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
 
     const entity = await findOptimizer(ctx, projectId, optimizerId);
     if (!entity) {
-      throw new Error(`Optimizer ${optimizerId} was not found.`);
+      throw new Error("Optimizer " + optimizerId + " was not found.");
     }
 
     const optimizer = asOptimizer(entity);
@@ -2234,7 +2331,7 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
 
     const entity = await findOptimizer(ctx, projectId, optimizerId);
     if (!entity) {
-      throw new Error(`Optimizer ${optimizerId} was not found.`);
+      throw new Error("Optimizer " + optimizerId + " was not found.");
     }
 
     const optimizer = asOptimizer(entity);
@@ -2257,7 +2354,7 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
     const optimizerId = ensureNonEmptyString(params.optimizerId, "optimizerId");
     const entity = await findOptimizer(ctx, projectId, optimizerId);
     if (!entity) {
-      throw new Error(`Optimizer ${optimizerId} was not found.`);
+      throw new Error("Optimizer " + optimizerId + " was not found.");
     }
     return await runOptimizerCycle(ctx, asOptimizer(entity));
   });
@@ -2267,7 +2364,7 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
     const optimizerId = ensureNonEmptyString(params.optimizerId, "optimizerId");
     const entity = await findOptimizer(ctx, projectId, optimizerId);
     if (!entity) {
-      throw new Error(`Optimizer ${optimizerId} was not found.`);
+      throw new Error("Optimizer " + optimizerId + " was not found.");
     }
     const optimizer = asOptimizer(entity);
     const queued = {
@@ -2309,7 +2406,7 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
     const optimizerId = ensureNonEmptyString(params.optimizerId, "optimizerId");
     const optimizerEntity = await findOptimizer(ctx, projectId, optimizerId);
     if (!optimizerEntity) {
-      throw new Error(`Optimizer ${optimizerId} was not found.`);
+      throw new Error("Optimizer " + optimizerId + " was not found.");
     }
     const optimizer = asOptimizer(optimizerEntity);
     const runEntities = await listRunEntities(ctx, projectId);
@@ -2336,7 +2433,7 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
     const optimizerId = ensureNonEmptyString(params.optimizerId, "optimizerId");
     const optimizerEntity = await findOptimizer(ctx, projectId, optimizerId);
     if (!optimizerEntity) {
-      throw new Error(`Optimizer ${optimizerId} was not found.`);
+      throw new Error("Optimizer " + optimizerId + " was not found.");
     }
     const optimizer = asOptimizer(optimizerEntity);
     const targetRunId = typeof params.runId === "string" && params.runId.trim() ? params.runId.trim() : undefined;
@@ -2397,7 +2494,7 @@ async function registerToolHandlers(ctx: PluginContext): Promise<void> {
         content: optimizers.length === 0
           ? "No optimizers are configured for this project."
           : optimizers.map((entry) =>
-            `${entry.name}: status=${entry.status}, queue=${entry.queueState}, best=${entry.bestScore ?? "n/a"}, repeats=${entry.scoreRepeats}, apply=${entry.applyMode}, sandbox=${entry.sandboxStrategy}, scorer=${entry.scorerIsolationMode}`
+            entry.name + ': status=' + entry.status + ', queue=' + entry.queueState + ', best=' + (entry.bestScore ?? 'n/a') + ', repeats=' + entry.scoreRepeats + ', apply=' + entry.applyMode + ', sandbox=' + entry.sandboxStrategy + ', scorer=' + entry.scorerIsolationMode + '\n'
           ).join("\n"),
         data: optimizers
       };
@@ -2422,7 +2519,7 @@ async function registerToolHandlers(ctx: PluginContext): Promise<void> {
       const optimizerId = ensureNonEmptyString((params as { optimizerId?: string }).optimizerId, "optimizerId");
       const optimizerEntity = await findOptimizer(ctx, runCtx.projectId, optimizerId);
       if (!optimizerEntity) {
-        return { error: `Optimizer ${optimizerId} not found in project ${runCtx.projectId}.` };
+        return { error: "Optimizer " + optimizerId + " not found in project " + runCtx.projectId + "." };
       }
       const optimizer = asOptimizer(optimizerEntity);
       const runEntities = await listRunEntities(ctx, runCtx.projectId);
@@ -2431,7 +2528,7 @@ async function registerToolHandlers(ctx: PluginContext): Promise<void> {
         .filter((entry) => entry.optimizerId === optimizerId && entry.accepted)
         .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
       if (!acceptedRun) {
-        return { error: `Optimizer ${optimizer.name} has no accepted run yet.` };
+        return { error: "Optimizer " + optimizer.name + " has no accepted run yet." };
       }
 
       const issue = await createIssueFromRun(
@@ -2445,7 +2542,7 @@ async function registerToolHandlers(ctx: PluginContext): Promise<void> {
       );
 
       return {
-        content: `Created issue ${issue.title}`,
+        content: "Created issue " + issue.title,
         data: issue
       };
     }
@@ -2469,7 +2566,7 @@ async function registerToolHandlers(ctx: PluginContext): Promise<void> {
       const optimizerId = ensureNonEmptyString((params as { optimizerId?: string }).optimizerId, "optimizerId");
       const optimizerEntity = await findOptimizer(ctx, runCtx.projectId, optimizerId);
       if (!optimizerEntity) {
-        return { error: `Optimizer ${optimizerId} not found in project ${runCtx.projectId}.` };
+        return { error: "Optimizer " + optimizerId + " not found in project " + runCtx.projectId + "." };
       }
       const optimizer = asOptimizer(optimizerEntity);
       const targetRunId = typeof (params as { runId?: string }).runId === "string"
@@ -2479,7 +2576,7 @@ async function registerToolHandlers(ctx: PluginContext): Promise<void> {
         ? (await findRun(ctx, runCtx.projectId, targetRunId))?.data as OptimizerRunRecord | undefined
         : await findLatestAcceptedRun(ctx, runCtx.projectId, optimizerId) ?? undefined;
       if (!run || run.optimizerId !== optimizerId) {
-        return { error: `Optimizer ${optimizer.name} has no matching applied run yet.` };
+        return { error: "Optimizer " + optimizer.name + " has no matching applied run yet." };
       }
 
       const pullRequest = await createPullRequestFromRun(ctx, optimizer, run, await getConfig(ctx));
@@ -2488,12 +2585,77 @@ async function registerToolHandlers(ctx: PluginContext): Promise<void> {
         pullRequest
       });
 
-      return {
-        content: pullRequest.pullRequestUrl
-          ? `Created branch ${pullRequest.branchName} and pull request ${pullRequest.pullRequestUrl}`
-          : `Created branch ${pullRequest.branchName} and commit ${pullRequest.commitSha}`,
-        data: pullRequest
-      };
+      const content = pullRequest.pullRequestUrl
+        ? "Created branch " + pullRequest.branchName + " and pull request " + pullRequest.pullRequestUrl
+        : "Created branch " + pullRequest.branchName + " and commit " + pullRequest.commitSha;
+      return { content, data: pullRequest };
+    }
+  );
+
+  ctx.tools.register(
+    TOOL_KEYS.exportOptimizerRuns,
+    {
+      displayName: "Export optimizer runs as CSV",
+      description: "Export optimizer runs for a project as CSV. Optionally filter by optimizer or date range.",
+      parametersSchema: {
+        type: "object",
+        properties: {
+          optimizerId: { type: "string", description: "Filter to a specific optimizer ID." },
+          format: { type: "string", enum: ["csv", "json"], default: "csv", description: "Export format." }
+        }
+      }
+    },
+    async (params, runCtx): Promise<ToolResult> => {
+      const format = (params as { format?: string }).format ?? "csv";
+      const optimizerId = (params as { optimizerId?: string }).optimizerId;
+      const allRuns = (await listRunEntities(ctx))
+        .map(asRunRecord)
+        .filter((r) => r.projectId === runCtx.projectId)
+        .filter((r) => !optimizerId || r.optimizerId === optimizerId)
+        .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+
+      if (allRuns.length === 0) {
+        return { content: "No runs found.", data: [] };
+      }
+
+      if (format === "json") {
+        return { content: "Exported " + allRuns.length + " runs as JSON.", data: allRuns };
+      }
+
+      const headers = [
+        "runId", "optimizerId", "outcome", "approvalStatus", "accepted",
+        "startedAt", "completedAt", "durationMs",
+        "baselineScore", "candidateScore", "scoreDelta", "scoreImprovement",
+        "guardrailPass", "guardrailScore",
+        "runType", "status", "applyMode", "errorMessage",
+        "branchName", "commitSha", "patchConflicts"
+      ];
+      const rows = allRuns.map((r) => [
+        r.runId,
+        r.optimizerId,
+        r.outcome ?? "",
+        r.approvalStatus ?? "",
+        r.accepted ? "true" : "false",
+        r.startedAt,
+        r.completedAt ?? "",
+        r.durationMs != null ? String(r.durationMs) : "",
+        r.baselineScore != null ? String(r.baselineScore) : "",
+        r.candidateScore != null ? String(r.candidateScore) : "",
+        r.baselineScore != null && r.candidateScore != null ? String(r.candidateScore - r.baselineScore) : "",
+        r.scoreImprovement ?? "",
+        r.guardrailPass != null ? (r.guardrailPass ? "true" : "false") : "",
+        r.guardrailScore != null ? String(r.guardrailScore) : "",
+        r.runType ?? "",
+        r.status ?? "",
+        r.applyMode ?? "",
+        r.errorMessage ?? "",
+        r.pullRequest?.branchName ?? "",
+        r.pullRequest?.commitSha ?? "",
+        r.patchConflicts != null ? String(r.patchConflicts) : ""
+      ].map((v) => "\"" + String(v).replace(/"/g, "\"\"") + "\""));
+
+      const csv = [headers.join(","), ...rows.map((row) => row.join(","))].join("\n");
+      return { content: "Exported " + allRuns.length + " runs as CSV.\n\n" + csv, data: csv };
     }
   );
 }
@@ -2575,7 +2737,7 @@ const plugin: PaperclipPlugin = definePlugin({
     ]) {
       const value = config[key];
       if (value != null && (!Number.isFinite(Number(value)) || Number(value) <= 0)) {
-        errors.push(`${key} must be a positive number.`);
+        errors.push(key + " must be a positive number.");
       }
     }
 
