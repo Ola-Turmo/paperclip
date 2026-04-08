@@ -500,5 +500,66 @@ describe("optimizer helpers", () => {
     expect(formatCommandSummary(failNull)).toBe("failed (null) in 100ms");
     expect(formatCommandSummary(ok0)).toBe("ok (0) in 0ms");
     expect(formatCommandSummary(fail1)).toBe("failed (1) in 5000ms");
+  })
+
+  it("compareScoresWithPolicy uses noiseFloor override when provided", () => {
+    // epsilon policy, epsilonValue=0.01, noiseFloor override=0.15
+    // effective threshold = max(0.01, 0.15) = 0.15, delta=0.1 < 0.15 -> NOT improved
+    const result = compareScoresWithPolicy([0.5, 0.55, 0.48], "maximize", 0.5, 0.6, "epsilon", 0.01, 2.0, 0.01, 0.15);
+    expect(result.improved).toBe(false);
+
+    // noiseFloor override = 0.05 -> threshold = max(0.01, 0.05) = 0.05, delta=0.1 > 0.05 -> improved
+    const result2 = compareScoresWithPolicy([0.5, 0.55, 0.48], "maximize", 0.5, 0.6, "epsilon", 0.01, 2.0, 0.01, 0.05);
+    expect(result2.improved).toBe(true);
+
+    // null noiseFloor uses computed from scores (stdDev ~0.035), threshold = max(0.01, null) = 0.01
+    const result3 = compareScoresWithPolicy([0.5, 0.55, 0.48], "maximize", 0.5, 0.6, "epsilon", 0.01, 2.0, 0.01, undefined);
+    expect(result3.improved).toBe(true);
+  });
+
+  it("buildOptimizerBrief masks guardrailCommand for mutator blinding", () => {
+    const opt: any = {
+      optimizerId: "opt-1", name: "Test", objective: "test",
+      mutablePaths: ["src"], scoreDirection: "maximize", bestScore: null,
+      hiddenScoring: false, sandboxStrategy: "copy", scorerIsolationMode: "same_workspace",
+      applyMode: "automatic", scoreFormat: "json", scoreKey: "primary",
+      scorePattern: null, scoreRepeats: 1, scoreAggregator: "median",
+      scoreImprovementPolicy: "threshold", confidenceThreshold: null, epsilonValue: null,
+      noiseFloor: null, minimumImprovement: 0.01, guardrailFormat: "json", guardrailKey: "guardrails",
+      guardrailCommand: "npm test", guardrailRepeats: 1, guardrailAggregator: "all",
+      requireHumanApproval: false, autoCreateIssueOnStagnation: false,
+      autoCreateIssueOnGuardrailFailure: false, stagnationIssueThreshold: 5,
+      consecutiveNonImprovements: 0, consecutiveFailures: 0,
+      proposalBranchPrefix: null, proposalCommitMessage: null, notes: "",
+      mutationBudgetSeconds: 60, scoreBudgetSeconds: 30, guardrailBudgetSeconds: null
+    };
+
+    const brief = buildOptimizerBrief(opt);
+    expect(brief.guardrailCommand).toBe("<guardrail-command-set>");
+    expect(brief.mutablePaths).toEqual(["src"]);
+    expect(brief.scoreImprovementPolicy).toBe("threshold");
+    expect(brief.consecutiveNonImprovements).toBe(0);
+    expect(brief.consecutiveFailures).toBe(0);
+    expect(brief.requireHumanApproval).toBe(false);
+    expect(brief.budgets.mutationBudgetSeconds).toBe(60);
+  });
+
+  it("aggregateStructuredMetrics merges results with correct key priority", () => {
+    // primary is aggregated from all primary scores via the aggregator
+    const r1: any = { primary: 0.8, metrics: { latency: 100, quality: 0.9 }, guardrails: { safe: true }, summary: "ok" };
+    const r2: any = { primary: 0.85, metrics: { latency: 95, quality: 0.92 }, guardrails: { safe: true }, summary: "ok" };
+    const result = aggregateStructuredMetrics([r1, r2], "median");
+    // median of [0.8, 0.85] for 2 values = average of both = 0.825
+    expect(result?.primary).toBeCloseTo(0.825);
+    expect(result?.metrics).toBeDefined();
+    // metrics are aggregated per key: latency = median([100, 95]) = 97.5, quality = median([0.9, 0.92]) = 0.91
+    expect((result?.metrics as any).latency).toBeCloseTo(97.5);
+
+    // Empty array returns null
+    expect(aggregateStructuredMetrics([], "median")).toBeNull();
+
+    // Single value returned as-is
+    const single = aggregateStructuredMetrics([r1], "median");
+    expect(single?.primary).toBe(0.8);
   });
 });
