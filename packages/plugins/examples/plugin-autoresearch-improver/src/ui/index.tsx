@@ -1364,6 +1364,18 @@ function OptimizerEditor({
             )}
             <button type="button" style={buttonStyle} onClick={() => void handleClone()}>Clone</button>
             <button type="button" style={buttonStyle} onClick={() => void handleDelete()}>Delete</button>
+            <button type="button" style={{ ...buttonStyle, fontSize: 12 }} onClick={() => {
+              const runs = runsQuery.data ?? [];
+              const blob = new Blob([JSON.stringify({ optimizerId: selectedOptimizer?.optimizerId, optimizerName: selectedOptimizer?.name, runs }, null, 2)], { type: "application/json" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `optimizer-runs-${selectedOptimizer?.optimizerId.slice(0, 8) ?? "unknown"}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}>
+              Export all runs
+            </button>
           </div>
           {selectedOptimizer?.status === "paused" && selectedOptimizer?.pauseReason ? (
             <div style={{ marginTop: 6, fontSize: 12, color: "#92400e", background: "rgba(234,179,8,0.08)", padding: "6px 10px", borderRadius: 6 }}>
@@ -1434,6 +1446,22 @@ function OptimizerEditor({
           <ComparisonPanel label="Incumbent / best run" run={bestRun} baselineScore={selectedOptimizer?.bestScore ?? null} />
           <ComparisonPanel label="Selected candidate" run={compareRun} baselineScore={selectedOptimizer?.bestScore ?? null} />
         </div>
+        {bestRun || compareRun ? (
+          <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+            <button type="button" style={{ fontSize: 11, padding: "4px 10px", background: "rgba(100,116,139,0.1)", border: "1px solid rgba(100,116,139,0.25)", borderRadius: 6, cursor: "pointer" }} onClick={() => {
+              const comparison = { incumbent: bestRun, candidate: compareRun, optimizerId: selectedOptimizer?.optimizerId, optimizerName: selectedOptimizer?.name };
+              const blob = new Blob([JSON.stringify(comparison, null, 2)], { type: "application/json" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `run-comparison-${selectedCompareRunId?.slice(0, 8) ?? "selected"}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}>
+              Download comparison
+            </button>
+          </div>
+        ) : null}
       </section>
 
       <section style={cardStyle}>
