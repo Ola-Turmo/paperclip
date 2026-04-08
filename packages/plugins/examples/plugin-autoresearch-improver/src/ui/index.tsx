@@ -355,11 +355,15 @@ type RunFilter = RunOutcome | "all" | "pending";
 function RunFilterBar({
   activeFilter,
   onFilterChange,
-  runs
+  runs,
+  searchQuery,
+  onSearchChange
 }: {
   activeFilter: RunFilter;
   onFilterChange: (f: RunFilter) => void;
   runs: OptimizerRunRecord[];
+  searchQuery: string;
+  onSearchChange: (q: string) => void;
 }) {
   const counts = useMemo(() => ({
     all: runs.length,
@@ -392,7 +396,14 @@ function RunFilterBar({
   });
 
   return (
-    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
+    <div>
+      <input
+        style={{ ...inputStyle, fontSize: 12, padding: "4px 8px", marginBottom: 6, width: "100%" }}
+        placeholder="Search runs by reason or file..."
+        value={searchQuery}
+        onChange={(e) => onSearchChange(e.target.value)}
+      />
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
       {filters.map(({ key, label, count }) => (
         <button
           key={key}
@@ -403,6 +414,7 @@ function RunFilterBar({
           {label} {count}
         </button>
       ))}
+      </div>
     </div>
   );
 }
@@ -842,12 +854,18 @@ function OptimizerEditor({
   );
 
   const [runFilter, setRunFilter] = useState<RunFilter>("all");
+  const [runSearchQuery, setRunSearchQuery] = useState("");
   const filteredRuns = useMemo(() => {
     const all = runsQuery.data ?? [];
-    if (runFilter === "all") return all;
-    if (runFilter === "pending") return all.filter((r) => r.approvalStatus === "pending");
-    return all.filter((r) => r.outcome === runFilter);
-  }, [runsQuery.data, runFilter]);
+    const filtered = runFilter === "all" ? all : runFilter === "pending" ? all.filter((r) => r.approvalStatus === "pending") : all.filter((r) => r.outcome === runFilter);
+    if (!runSearchQuery.trim()) return filtered;
+    const q = runSearchQuery.toLowerCase();
+    return filtered.filter((r) =>
+      (r.reason ?? "").toLowerCase().includes(q) ||
+      r.artifacts.changedFiles.some((f) => f.toLowerCase().includes(q)) ||
+      r.runId.toLowerCase().includes(q)
+    );
+  }, [runsQuery.data, runFilter, runSearchQuery]);
 
   useEffect(() => {
     if (selectedOptimizer) {
@@ -1074,6 +1092,19 @@ function OptimizerEditor({
                 </option>
               ))}
             </select>
+            {selectedOptimizer ? (
+              <button type="button" title="Download optimizer JSON" style={{ marginTop: 4, fontSize: 10, padding: "2px 8px", background: "rgba(100,116,139,0.1)", border: "1px solid rgba(100,116,139,0.2)", borderRadius: 5, cursor: "pointer" }} onClick={() => {
+                const blob = new Blob([JSON.stringify(selectedOptimizer, null, 2)], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `optimizer-${selectedOptimizer.optimizerId.slice(0, 8)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}>
+                Export optimizer
+              </button>
+            ) : null}
           </div>
           <div>
             <strong>Template</strong>
@@ -1473,6 +1504,8 @@ function OptimizerEditor({
             activeFilter={runFilter}
             onFilterChange={setRunFilter}
             runs={runsQuery.data ?? []}
+            searchQuery={runSearchQuery}
+            onSearchChange={setRunSearchQuery}
           />
         </div>
         <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
