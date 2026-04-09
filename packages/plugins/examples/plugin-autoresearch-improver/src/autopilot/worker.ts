@@ -22,7 +22,14 @@ import {
   type PreferenceProfile,
   type IdeaStatus,
   type SwipeDecision,
-  type ResearchStatus
+  type ResearchStatus,
+  type PlanningArtifact,
+  type DeliveryRun,
+  type WorkspaceLease,
+  type CompanyBudget,
+  type RunStatus,
+  type ExecutionMode,
+  type ApprovalMode
 } from "./constants.js";
 
 function nowIso(): string {
@@ -85,6 +92,22 @@ function asSwipeEvent(record: PluginEntityRecord): SwipeEvent {
 
 function asPreferenceProfile(record: PluginEntityRecord): PreferenceProfile {
   return record.data as unknown as PreferenceProfile;
+}
+
+function asPlanningArtifact(record: PluginEntityRecord): PlanningArtifact {
+  return record.data as unknown as PlanningArtifact;
+}
+
+function asDeliveryRun(record: PluginEntityRecord): DeliveryRun {
+  return record.data as unknown as DeliveryRun;
+}
+
+function asWorkspaceLease(record: PluginEntityRecord): WorkspaceLease {
+  return record.data as unknown as WorkspaceLease;
+}
+
+function asCompanyBudget(record: PluginEntityRecord): CompanyBudget {
+  return record.data as unknown as CompanyBudget;
 }
 
 function isValidSwipeDecision(value: unknown): value is SwipeDecision {
@@ -341,6 +364,185 @@ async function upsertPreferenceProfile(
     title: `Preference profile for ${profile.projectId}`,
     status: "active",
     data: profile as unknown as Record<string, unknown>
+  });
+}
+
+// Planning artifact helpers
+async function findPlanningArtifact(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+  artifactId: string
+): Promise<PluginEntityRecord | null> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.planningArtifact,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 100,
+    offset: 0
+  });
+  return entities.find((e) => {
+    const data = e.data as unknown as PlanningArtifact;
+    return data.companyId === companyId && data.artifactId === artifactId;
+  }) ?? null;
+}
+
+async function listPlanningArtifactEntities(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+  ideaId?: string
+): Promise<PluginEntityRecord[]> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.planningArtifact,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 500,
+    offset: 0
+  });
+  return entities.filter((e) => {
+    const data = e.data as unknown as PlanningArtifact;
+    if (data.companyId !== companyId) return false;
+    if (ideaId && data.ideaId !== ideaId) return false;
+    return true;
+  });
+}
+
+async function upsertPlanningArtifact(
+  ctx: PluginContext,
+  artifact: PlanningArtifact
+): Promise<PluginEntityRecord> {
+  return await ctx.entities.upsert({
+    entityType: ENTITY_TYPES.planningArtifact,
+    scopeKind: "project",
+    scopeId: artifact.projectId,
+    externalId: artifact.artifactId,
+    title: artifact.title.slice(0, 80),
+    status: "active",
+    data: artifact as unknown as Record<string, unknown>
+  });
+}
+
+// Delivery run helpers
+async function findDeliveryRun(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+  runId: string
+): Promise<PluginEntityRecord | null> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.deliveryRun,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 200,
+    offset: 0
+  });
+  return entities.find((e) => {
+    const data = e.data as unknown as DeliveryRun;
+    return data.companyId === companyId && data.runId === runId;
+  }) ?? null;
+}
+
+async function listDeliveryRunEntities(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string
+): Promise<PluginEntityRecord[]> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.deliveryRun,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 500,
+    offset: 0
+  });
+  return entities.filter((e) => {
+    const data = e.data as unknown as DeliveryRun;
+    return data.companyId === companyId;
+  });
+}
+
+async function upsertDeliveryRun(
+  ctx: PluginContext,
+  run: DeliveryRun
+): Promise<PluginEntityRecord> {
+  return await ctx.entities.upsert({
+    entityType: ENTITY_TYPES.deliveryRun,
+    scopeKind: "project",
+    scopeId: run.projectId,
+    externalId: run.runId,
+    title: `Run ${run.runId.slice(0, 8)}`,
+    status: run.status === "completed" || run.status === "failed" || run.status === "cancelled" ? "inactive" : "active",
+    data: run as unknown as Record<string, unknown>
+  });
+}
+
+// Workspace lease helpers
+async function upsertWorkspaceLease(
+  ctx: PluginContext,
+  lease: WorkspaceLease
+): Promise<PluginEntityRecord> {
+  return await ctx.entities.upsert({
+    entityType: ENTITY_TYPES.workspaceLease,
+    scopeKind: "project",
+    scopeId: lease.projectId,
+    externalId: lease.leaseId,
+    title: `Lease for run ${lease.runId.slice(0, 8)}`,
+    status: lease.isActive ? "active" : "inactive",
+    data: lease as unknown as Record<string, unknown>
+  });
+}
+
+async function findActiveWorkspaceLease(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+  runId: string
+): Promise<WorkspaceLease | null> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.workspaceLease,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 100,
+    offset: 0
+  });
+  const matches = entities.filter((e) => {
+    const data = e.data as unknown as WorkspaceLease;
+    return data.companyId === companyId && data.runId === runId && data.isActive;
+  });
+  return matches.length > 0 ? asWorkspaceLease(matches[0]) : null;
+}
+
+// Company budget helpers
+async function findCompanyBudget(
+  ctx: PluginContext,
+  companyId: string
+): Promise<CompanyBudget | null> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.companyBudget,
+    scopeKind: "company",
+    scopeId: companyId,
+    limit: 10,
+    offset: 0
+  });
+  const matches = entities.filter((e) => {
+    const data = e.data as unknown as CompanyBudget;
+    return data.companyId === companyId;
+  });
+  return matches.length > 0 ? asCompanyBudget(matches[0]) : null;
+}
+
+async function upsertCompanyBudget(
+  ctx: PluginContext,
+  budget: CompanyBudget
+): Promise<PluginEntityRecord> {
+  return await ctx.entities.upsert({
+    entityType: ENTITY_TYPES.companyBudget,
+    scopeKind: "company",
+    scopeId: budget.companyId,
+    externalId: budget.budgetId,
+    title: `Budget for company ${budget.companyId}`,
+    status: "active",
+    data: budget as unknown as Record<string, unknown>
   });
 }
 
@@ -610,6 +812,60 @@ const plugin: PaperclipPlugin = definePlugin({
       const projectId = typeof params.projectId === "string" ? params.projectId : "";
       if (!companyId || !projectId) return null;
       return await findPreferenceProfile(ctx, companyId, projectId);
+    });
+
+    // Planning artifact data handlers
+    ctx.data.register(DATA_KEYS.planningArtifact, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const artifactId = typeof params.artifactId === "string" ? params.artifactId : "";
+      if (!companyId || !projectId || !artifactId) return null;
+      const entity = await findPlanningArtifact(ctx, companyId, projectId, artifactId);
+      if (!entity) return null;
+      const artifact = asPlanningArtifact(entity);
+      if (artifact.companyId !== companyId) return null;
+      return artifact;
+    });
+
+    ctx.data.register(DATA_KEYS.planningArtifacts, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const ideaId = typeof params.ideaId === "string" ? params.ideaId : undefined;
+      if (!companyId || !projectId) return [];
+      const entities = await listPlanningArtifactEntities(ctx, companyId, projectId, ideaId);
+      return entities.map(asPlanningArtifact).sort((a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    });
+
+    // Delivery run data handlers
+    ctx.data.register(DATA_KEYS.deliveryRun, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      if (!companyId || !projectId || !runId) return null;
+      const entity = await findDeliveryRun(ctx, companyId, projectId, runId);
+      if (!entity) return null;
+      const run = asDeliveryRun(entity);
+      if (run.companyId !== companyId) return null;
+      return run;
+    });
+
+    ctx.data.register(DATA_KEYS.deliveryRuns, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      if (!companyId || !projectId) return [];
+      const entities = await listDeliveryRunEntities(ctx, companyId, projectId);
+      return entities.map(asDeliveryRun).sort((a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    });
+
+    // Company budget data handler
+    ctx.data.register(DATA_KEYS.companyBudget, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      if (!companyId) return null;
+      return await findCompanyBudget(ctx, companyId);
     });
 
     // Register action handlers
@@ -1036,6 +1292,259 @@ const plugin: PaperclipPlugin = definePlugin({
 
       await upsertProductProgramRevision(ctx, revision);
       return revision;
+    });
+
+    ctx.actions.register(ACTION_KEYS.createPlanningArtifact, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const ideaId = typeof params.ideaId === "string" ? params.ideaId : "";
+      if (!companyId || !projectId || !ideaId) {
+        throw new Error("companyId, projectId, and ideaId are required");
+      }
+
+      // Get the idea to determine the automation tier from the autopilot project
+      const autopilotEntity = await findAutopilotProject(ctx, companyId, projectId);
+      const autopilot = autopilotEntity ? asAutopilotProject(autopilotEntity) : null;
+      const automationTier = autopilot?.automationTier ?? "supervised";
+
+      const artifact: PlanningArtifact = {
+        artifactId: randomUUID(),
+        companyId,
+        projectId,
+        ideaId,
+        title: typeof params.title === "string" ? params.title : "Planning Artifact",
+        scope: typeof params.scope === "string" ? params.scope : "",
+        dependencies: Array.isArray(params.dependencies) ? params.dependencies : [],
+        tests: Array.isArray(params.tests) ? params.tests : [],
+        executionMode: (params.executionMode === "convoy") ? "convoy" : "simple",
+        approvalMode: automationTier === "fullauto" ? "auto_approve" : "manual",
+        automationTier,
+        createdAt: nowIso(),
+        updatedAt: nowIso()
+      };
+
+      await upsertPlanningArtifact(ctx, artifact);
+      return artifact;
+    });
+
+    ctx.actions.register(ACTION_KEYS.createDeliveryRun, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const ideaId = typeof params.ideaId === "string" ? params.ideaId : "";
+      const artifactId = typeof params.artifactId === "string" ? params.artifactId : "";
+      if (!companyId || !projectId) {
+        throw new Error("companyId and projectId are required");
+      }
+
+      // Check budget cap before creating run
+      const companyBudget = await findCompanyBudget(ctx, companyId);
+      if (companyBudget && companyBudget.paused) {
+        throw new Error("Company autopilot budget is paused: " + (companyBudget.pauseReason ?? "Budget exceeded"));
+      }
+
+      // Check project budget via autopilot settings
+      const autopilotEntity = await findAutopilotProject(ctx, companyId, projectId);
+      const autopilot = autopilotEntity ? asAutopilotProject(autopilotEntity) : null;
+      if (autopilot?.paused) {
+        throw new Error("Project autopilot is paused: " + (autopilot.pauseReason ?? "Budget or policy pause"));
+      }
+
+      const automationTier = autopilot?.automationTier ?? "supervised";
+
+      const runId = randomUUID();
+      const branchName = typeof params.branchName === "string" ? params.branchName : `autopilot-run-${runId.slice(0, 8)}`;
+      const workspacePath = typeof params.workspacePath === "string" ? params.workspacePath : "";
+      const leasedPort = typeof params.leasedPort === "number" ? params.leasedPort : null;
+
+      // Create workspace lease
+      const lease: WorkspaceLease = {
+        leaseId: randomUUID(),
+        companyId,
+        projectId,
+        runId,
+        workspacePath,
+        branchName,
+        leasedPort,
+        gitRepoRoot: autopilot?.repoUrl ?? null,
+        isActive: true,
+        createdAt: nowIso(),
+        releasedAt: null
+      };
+      await upsertWorkspaceLease(ctx, lease);
+
+      const run: DeliveryRun = {
+        runId,
+        companyId,
+        projectId,
+        ideaId,
+        artifactId,
+        status: "pending",
+        automationTier,
+        branchName,
+        workspacePath,
+        leasedPort,
+        commitSha: null,
+        paused: false,
+        completedAt: null,
+        createdAt: nowIso(),
+        updatedAt: nowIso()
+      };
+
+      await upsertDeliveryRun(ctx, run);
+
+      // Update company budget used minutes
+      if (companyBudget) {
+        companyBudget.autopilotUsedMinutes += autopilot?.budgetMinutes ?? 0;
+        companyBudget.updatedAt = nowIso();
+        // Check if autopilot portion is exceeded
+        if (companyBudget.autopilotUsedMinutes >= companyBudget.autopilotBudgetMinutes) {
+          companyBudget.paused = true;
+          companyBudget.pauseReason = "Autopilot budget minutes exceeded";
+        }
+        await upsertCompanyBudget(ctx, companyBudget);
+      }
+
+      return { run, lease };
+    });
+
+    ctx.actions.register(ACTION_KEYS.pauseAutopilot, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      if (!companyId || !projectId) {
+        throw new Error("companyId and projectId are required");
+      }
+
+      const existing = await findAutopilotProject(ctx, companyId, projectId);
+      if (!existing) {
+        throw new Error("Autopilot project not found");
+      }
+
+      const autopilot = asAutopilotProject(existing);
+      autopilot.paused = true;
+      autopilot.pauseReason = typeof params.reason === "string" ? params.reason : "Operator paused";
+      autopilot.updatedAt = nowIso();
+
+      await upsertAutopilotProject(ctx, autopilot);
+      return { status: "paused", pauseReason: autopilot.pauseReason };
+    });
+
+    ctx.actions.register(ACTION_KEYS.resumeAutopilot, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      if (!companyId || !projectId) {
+        throw new Error("companyId and projectId are required");
+      }
+
+      const existing = await findAutopilotProject(ctx, companyId, projectId);
+      if (!existing) {
+        throw new Error("Autopilot project not found");
+      }
+
+      const autopilot = asAutopilotProject(existing);
+      autopilot.paused = false;
+      autopilot.pauseReason = undefined;
+      autopilot.updatedAt = nowIso();
+
+      await upsertAutopilotProject(ctx, autopilot);
+      return { status: "running", pauseReason: undefined };
+    });
+
+    ctx.actions.register(ACTION_KEYS.pauseDeliveryRun, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      if (!companyId || !projectId || !runId) {
+        throw new Error("companyId, projectId, and runId are required");
+      }
+
+      const entity = await findDeliveryRun(ctx, companyId, projectId, runId);
+      if (!entity) {
+        throw new Error("Delivery run not found");
+      }
+
+      const run = asDeliveryRun(entity);
+      run.paused = true;
+      run.pauseReason = typeof params.reason === "string" ? params.reason : "Operator paused";
+      run.status = "paused";
+      run.updatedAt = nowIso();
+
+      await upsertDeliveryRun(ctx, run);
+      return { status: "paused", pauseReason: run.pauseReason };
+    });
+
+    ctx.actions.register(ACTION_KEYS.resumeDeliveryRun, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      if (!companyId || !projectId || !runId) {
+        throw new Error("companyId, projectId, and runId are required");
+      }
+
+      const entity = await findDeliveryRun(ctx, companyId, projectId, runId);
+      if (!entity) {
+        throw new Error("Delivery run not found");
+      }
+
+      const run = asDeliveryRun(entity);
+      run.paused = false;
+      run.pauseReason = undefined;
+      run.status = "running";
+      run.updatedAt = nowIso();
+
+      await upsertDeliveryRun(ctx, run);
+      return { status: "running", pauseReason: undefined };
+    });
+
+    ctx.actions.register(ACTION_KEYS.updateCompanyBudget, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      if (!companyId) {
+        throw new Error("companyId is required");
+      }
+
+      const existing = await findCompanyBudget(ctx, companyId);
+      const budgetId = existing?.budgetId ?? randomUUID();
+
+      const budget: CompanyBudget = {
+        budgetId,
+        companyId,
+        totalBudgetMinutes: typeof params.totalBudgetMinutes === "number" ? params.totalBudgetMinutes : (existing?.totalBudgetMinutes ?? 0),
+        usedBudgetMinutes: typeof params.usedBudgetMinutes === "number" ? params.usedBudgetMinutes : (existing?.usedBudgetMinutes ?? 0),
+        autopilotBudgetMinutes: typeof params.autopilotBudgetMinutes === "number" ? params.autopilotBudgetMinutes : (existing?.autopilotBudgetMinutes ?? 0),
+        autopilotUsedMinutes: typeof params.autopilotUsedMinutes === "number" ? params.autopilotUsedMinutes : (existing?.autopilotUsedMinutes ?? 0),
+        paused: params.paused === true || (existing?.paused ?? false),
+        pauseReason: typeof params.pauseReason === "string" ? params.pauseReason : existing?.pauseReason,
+        updatedAt: nowIso()
+      };
+
+      await upsertCompanyBudget(ctx, budget);
+      return budget;
+    });
+
+    ctx.actions.register(ACTION_KEYS.checkBudgetAndPauseIfNeeded, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      if (!companyId || !projectId) {
+        throw new Error("companyId and projectId are required");
+      }
+
+      const autopilotEntity = await findAutopilotProject(ctx, companyId, projectId);
+      if (!autopilotEntity) return { paused: false, reason: null };
+
+      const autopilot = asAutopilotProject(autopilotEntity);
+      const companyBudget = await findCompanyBudget(ctx, companyId);
+
+      // Check company-level autopilot budget
+      if (companyBudget && companyBudget.autopilotUsedMinutes >= companyBudget.autopilotBudgetMinutes) {
+        if (!companyBudget.paused) {
+          companyBudget.paused = true;
+          companyBudget.pauseReason = "Company-wide autopilot budget minutes exceeded";
+          companyBudget.updatedAt = nowIso();
+          await upsertCompanyBudget(ctx, companyBudget);
+        }
+        return { paused: true, reason: companyBudget.pauseReason ?? "Budget exceeded" };
+      }
+
+      return { paused: autopilot.paused, reason: autopilot.pauseReason ?? null };
     });
 
     ctx.logger.info("Autopilot plugin ready", { pluginId: PLUGIN_ID });

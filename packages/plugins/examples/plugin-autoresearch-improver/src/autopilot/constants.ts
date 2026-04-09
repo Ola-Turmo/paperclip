@@ -7,7 +7,11 @@ export const ENTITY_TYPES = {
   researchFinding: "research-finding",
   idea: "idea",
   swipeEvent: "swipe-event",
-  preferenceProfile: "preference-profile"
+  preferenceProfile: "preference-profile",
+  planningArtifact: "planning-artifact",
+  deliveryRun: "delivery-run",
+  workspaceLease: "workspace-lease",
+  companyBudget: "company-budget"
 } as const;
 
 export const DATA_KEYS = {
@@ -25,7 +29,13 @@ export const DATA_KEYS = {
   maybePoolIdeas: "maybe-pool-ideas",
   swipeEvent: "swipe-event",
   swipeEvents: "swipe-events",
-  preferenceProfile: "preference-profile"
+  preferenceProfile: "preference-profile",
+  planningArtifact: "planning-artifact",
+  planningArtifacts: "planning-artifacts",
+  deliveryRun: "delivery-run",
+  deliveryRuns: "delivery-runs",
+  workspaceLease: "workspace-lease",
+  companyBudget: "company-budget"
 } as const;
 
 export const ACTION_KEYS = {
@@ -39,7 +49,15 @@ export const ACTION_KEYS = {
   addResearchFinding: "add-research-finding",
   generateIdeas: "generate-ideas",
   recordSwipe: "record-swipe",
-  updatePreferenceProfile: "update-preference-profile"
+  updatePreferenceProfile: "update-preference-profile",
+  createPlanningArtifact: "create-planning-artifact",
+  createDeliveryRun: "create-delivery-run",
+  pauseAutopilot: "pause-autopilot",
+  resumeAutopilot: "resume-autopilot",
+  pauseDeliveryRun: "pause-delivery-run",
+  resumeDeliveryRun: "resume-delivery-run",
+  updateCompanyBudget: "update-company-budget",
+  checkBudgetAndPauseIfNeeded: "check-budget-and-pause-if-needed"
 } as const;
 
 export const JOB_KEYS = {} as const;
@@ -47,10 +65,12 @@ export const JOB_KEYS = {} as const;
 export const TOOL_KEYS = {} as const;
 
 export type AutomationTier = "supervised" | "semiauto" | "fullauto";
-
 export type IdeaStatus = "active" | "maybe" | "approved" | "rejected" | "in_progress" | "completed";
 export type SwipeDecision = "pass" | "maybe" | "yes" | "now";
 export type ResearchStatus = "pending" | "running" | "completed" | "failed";
+export type RunStatus = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
+export type ExecutionMode = "simple" | "convoy";
+export type ApprovalMode = "manual" | "auto_approve";
 
 export interface AutopilotProject {
   autopilotId: string;
@@ -140,4 +160,65 @@ export interface PreferenceProfile {
   yesCount: number;
   nowCount: number;
   lastUpdated: string;
+}
+
+export interface PlanningArtifact {
+  artifactId: string;
+  companyId: string;
+  projectId: string;
+  ideaId: string;
+  title: string;
+  scope: string;
+  dependencies: string[];
+  tests: string[];
+  executionMode: ExecutionMode;
+  approvalMode: ApprovalMode;
+  automationTier: AutomationTier;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DeliveryRun {
+  runId: string;
+  companyId: string;
+  projectId: string;
+  ideaId: string;
+  artifactId: string;
+  status: RunStatus;
+  automationTier: AutomationTier;
+  branchName: string;
+  workspacePath: string;
+  leasedPort: number | null;
+  commitSha: string | null;
+  paused: boolean;
+  pauseReason?: string;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceLease {
+  leaseId: string;
+  companyId: string;
+  projectId: string;
+  runId: string;
+  workspacePath: string;
+  branchName: string;
+  leasedPort: number | null;
+  gitRepoRoot: string | null;
+  isActive: boolean;
+  createdAt: string;
+  releasedAt: string | null;
+}
+
+export interface CompanyBudget {
+  budgetId: string;
+  companyId: string;
+  totalBudgetMinutes: number;
+  usedBudgetMinutes: number;
+  autopilotBudgetMinutes: number;
+  autopilotUsedMinutes: number;
+  paused: boolean;
+  pauseReason?: string;
+  updatedAt: string;
 }

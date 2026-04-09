@@ -958,4 +958,779 @@ describe("autopilot worker", () => {
       expect(otherSwipes).toHaveLength(0);
     });
   });
+
+  describe("VAL-AUTOPILOT-030: Planning flow is created for approved ideas", () => {
+    it("creates a planning artifact from an approved idea", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      // Enable autopilot first
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      // Create an idea
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Add dark mode", description: "Dark theme option", rationale: "User demand", sourceReferences: [], score: 85 }]
+      }) as Array<{ ideaId: string }>;
+      const ideaId = ideas[0].ideaId;
+
+      // Create planning artifact
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId,
+        title: "Add dark mode",
+        scope: "Implement dark mode toggle in user settings with system preference detection",
+        dependencies: ["settings-component", "theme-system"],
+        tests: ["toggle-works", "preference-detected", "persists-on-reload"],
+        executionMode: "simple"
+      }) as { artifactId: string; ideaId: string; scope: string; dependencies: string[] };
+
+      expect(artifact).toMatchObject({
+        artifactId: expect.any(String),
+        ideaId,
+        scope: "Implement dark mode toggle in user settings with system preference detection",
+        dependencies: expect.arrayContaining(["settings-component", "theme-system"])
+      });
+    });
+
+    it("stores planning artifacts and retrieves them by idea", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "fullauto",
+        budgetMinutes: 240
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "API key management", description: "Manage API keys", rationale: "Enterprise", sourceReferences: [], score: 90 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "API key management",
+        scope: "Add API key management UI in settings",
+        dependencies: [],
+        tests: ["crud-operations", "permission-checks"],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const artifacts = await harness.getData("planning-artifacts", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId
+      }) as Array<{ artifactId: string }>;
+
+      expect(artifacts.some((a) => a.artifactId === artifact.artifactId)).toBe(true);
+    });
+
+    it("fullauto tier sets approvalMode to auto_approve in planning artifact", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "fullauto",
+        budgetMinutes: 300
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Auto approve test", description: "Test", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Auto approve test",
+        scope: "Test scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { approvalMode: string; automationTier: string };
+
+      expect(artifact.approvalMode).toBe("auto_approve");
+      expect(artifact.automationTier).toBe("fullauto");
+    });
+  });
+
+  describe("VAL-AUTOPILOT-031: Automation tiers enforce the configured approval path", () => {
+    it("supervised tier sets approvalMode to manual", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "supervised",
+        budgetMinutes: 60
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Supervised idea", description: "Desc", rationale: "", sourceReferences: [], score: 75 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Supervised idea",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { approvalMode: string; automationTier: string };
+
+      expect(artifact.approvalMode).toBe("manual");
+      expect(artifact.automationTier).toBe("supervised");
+    });
+
+    it("semiauto tier sets approvalMode to manual", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Semiauto idea", description: "Desc", rationale: "", sourceReferences: [], score: 78 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Semiauto idea",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { approvalMode: string; automationTier: string };
+
+      expect(artifact.approvalMode).toBe("manual");
+      expect(artifact.automationTier).toBe("semiauto");
+    });
+
+    it("fullauto tier sets approvalMode to auto_approve", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "fullauto",
+        budgetMinutes: 240
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Fullauto idea", description: "Desc", rationale: "", sourceReferences: [], score: 82 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Fullauto idea",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { approvalMode: string; automationTier: string };
+
+      expect(artifact.approvalMode).toBe("auto_approve");
+      expect(artifact.automationTier).toBe("fullauto");
+    });
+  });
+
+  describe("VAL-AUTOPILOT-032: Delivery run uses an isolated workspace and leased port", () => {
+    it("creates a delivery run with workspace and port metadata", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      // Set up company budget
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Delivery run test", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+      const ideaId = ideas[0].ideaId;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId,
+        title: "Delivery run test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const result = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/autopilot-delivery",
+        workspacePath: "/tmp/autopilot-workspace/delivery-test",
+        leasedPort: 3847
+      }) as { run: { runId: string; branchName: string; workspacePath: string; leasedPort: number | null }; lease: { leaseId: string; workspacePath: string; leasedPort: number | null } };
+
+      expect(result.run).toMatchObject({
+        runId: expect.any(String),
+        branchName: "feature/autopilot-delivery",
+        workspacePath: "/tmp/autopilot-workspace/delivery-test",
+        leasedPort: 3847
+      });
+      expect(result.lease).toMatchObject({
+        leaseId: expect.any(String),
+        workspacePath: "/tmp/autopilot-workspace/delivery-test",
+        leasedPort: 3847,
+        isActive: true
+      });
+    });
+
+    it("retrieves delivery runs by project", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "List runs test", description: "Desc", rationale: "", sourceReferences: [], score: 75 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "List runs test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/test-run",
+        workspacePath: "/tmp/test-workspace",
+        leasedPort: 4000
+      });
+
+      const runs = await harness.getData("delivery-runs", { companyId, projectId }) as Array<{ runId: string }>;
+
+      expect(runs.length).toBeGreaterThan(0);
+    });
+
+    it("returns workspace path and port metadata from delivery run data", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "fullauto",
+        budgetMinutes: 200
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Metadata test", description: "Desc", rationale: "", sourceReferences: [], score: 85 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Metadata test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const result = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/metadata-test",
+        workspacePath: "/var/workspaces/autopilot/metadata-test",
+        leasedPort: 4512
+      }) as { run: { runId: string } };
+
+      const runData = await harness.getData("delivery-run", {
+        companyId,
+        projectId,
+        runId: result.run.runId
+      }) as { branchName: string; workspacePath: string; leasedPort: number | null };
+
+      expect(runData).toMatchObject({
+        branchName: "feature/metadata-test",
+        workspacePath: "/var/workspaces/autopilot/metadata-test",
+        leasedPort: 4512
+      });
+    });
+  });
+
+  describe("VAL-AUTOPILOT-033: Budget caps pause future runs", () => {
+    it("pauses when company autopilot budget is exceeded", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      // Set up company budget already paused (budget exceeded)
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 500,
+        paused: true,
+        pauseReason: "Autopilot budget minutes exceeded"
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Budget pause test", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Budget pause test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      // Creating a delivery run should fail due to budget pause
+      await expect(
+        harness.performAction("create-delivery-run", {
+          companyId,
+          projectId,
+          ideaId: ideas[0].ideaId,
+          artifactId: artifact.artifactId,
+          branchName: "feature/budget-test",
+          workspacePath: "/tmp/budget-test",
+          leasedPort: 4500
+        })
+      ).rejects.toThrow("Company autopilot budget is paused");
+    });
+
+    it("pauses when project autopilot is paused", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      // Enable and then pause autopilot
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("save-autopilot-project", {
+        companyId,
+        projectId,
+        paused: true,
+        pauseReason: "Project budget review"
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Project pause test", description: "Desc", rationale: "", sourceReferences: [], score: 75 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Project pause test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      // Creating a delivery run should fail due to project pause
+      await expect(
+        harness.performAction("create-delivery-run", {
+          companyId,
+          projectId,
+          ideaId: ideas[0].ideaId,
+          artifactId: artifact.artifactId,
+          branchName: "feature/project-pause-test",
+          workspacePath: "/tmp/project-pause-test",
+          leasedPort: 4600
+        })
+      ).rejects.toThrow("Project autopilot is paused");
+    });
+
+    it("checkBudgetAndPauseIfNeeded returns paused status", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("save-autopilot-project", {
+        companyId,
+        projectId,
+        paused: true,
+        pauseReason: "Under review"
+      });
+
+      const result = await harness.performAction("check-budget-and-pause-if-needed", {
+        companyId,
+        projectId
+      }) as { paused: boolean; reason: string | null };
+
+      expect(result.paused).toBe(true);
+      expect(result.reason).toBe("Under review");
+    });
+  });
+
+  describe("VAL-AUTOPILOT-034: Operator can pause and resume autopilot or a specific run", () => {
+    it("pauses autopilot with a reason", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      const result = await harness.performAction("pause-autopilot", {
+        companyId,
+        projectId,
+        reason: "Quarterly review"
+      }) as { status: string; pauseReason: string };
+
+      expect(result.status).toBe("paused");
+      expect(result.pauseReason).toBe("Quarterly review");
+    });
+
+    it("resumes autopilot and clears pause reason", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("pause-autopilot", {
+        companyId,
+        projectId,
+        reason: "Maintenance"
+      });
+
+      const result = await harness.performAction("resume-autopilot", {
+        companyId,
+        projectId
+      }) as { status: string; pauseReason: undefined };
+
+      expect(result.status).toBe("running");
+      expect(result.pauseReason).toBeUndefined();
+    });
+
+    it("pauses a specific delivery run", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Run pause test", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Run pause test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const runResult = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/run-pause-test",
+        workspacePath: "/tmp/run-pause-test",
+        leasedPort: 4700
+      }) as { run: { runId: string } };
+
+      const pauseResult = await harness.performAction("pause-delivery-run", {
+        companyId,
+        projectId,
+        runId: runResult.run.runId,
+        reason: "Waiting for dependency"
+      }) as { status: string; pauseReason: string };
+
+      expect(pauseResult.status).toBe("paused");
+      expect(pauseResult.pauseReason).toBe("Waiting for dependency");
+    });
+
+    it("resumes a paused delivery run", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Run resume test", description: "Desc", rationale: "", sourceReferences: [], score: 75 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Run resume test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const runResult = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/run-resume-test",
+        workspacePath: "/tmp/run-resume-test",
+        leasedPort: 4800
+      }) as { run: { runId: string } };
+
+      await harness.performAction("pause-delivery-run", {
+        companyId,
+        projectId,
+        runId: runResult.run.runId,
+        reason: "Temp pause"
+      });
+
+      const resumeResult = await harness.performAction("resume-delivery-run", {
+        companyId,
+        projectId,
+        runId: runResult.run.runId
+      }) as { status: string; pauseReason: undefined };
+
+      expect(resumeResult.status).toBe("running");
+      expect(resumeResult.pauseReason).toBeUndefined();
+    });
+
+    it("state is preserved after pause/resume cycle", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "fullauto",
+        budgetMinutes: 240
+      });
+
+      // Pause
+      await harness.performAction("pause-autopilot", {
+        companyId,
+        projectId,
+        reason: "Code freeze"
+      });
+
+      // Resume
+      await harness.performAction("resume-autopilot", {
+        companyId,
+        projectId
+      });
+
+      // Verify settings are still there
+      const autopilotData = await harness.getData("autopilot-project", {
+        companyId,
+        projectId
+      }) as { enabled: boolean; automationTier: string; budgetMinutes: number; paused: boolean };
+
+      expect(autopilotData.enabled).toBe(true);
+      expect(autopilotData.automationTier).toBe("fullauto");
+      expect(autopilotData.budgetMinutes).toBe(240);
+      expect(autopilotData.paused).toBe(false);
+    });
+  });
+
+  describe("Cross-company isolation for delivery control", () => {
+    it("does not expose another company's delivery runs", async () => {
+      const { harness, companyId, projectId, otherCompanyId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Isolation test", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Isolation test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/isolation-test",
+        workspacePath: "/tmp/isolation-test",
+        leasedPort: 4900
+      });
+
+      const otherRuns = await harness.getData("delivery-runs", {
+        companyId: otherCompanyId,
+        projectId
+      });
+
+      expect(otherRuns).toHaveLength(0);
+    });
+
+    it("does not expose another company's company budget", async () => {
+      const { harness, companyId, otherCompanyId } = setup;
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 100
+      });
+
+      const otherBudget = await harness.getData("company-budget", {
+        companyId: otherCompanyId
+      });
+
+      expect(otherBudget).toBeNull();
+    });
+  });
 });
