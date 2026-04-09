@@ -691,7 +691,8 @@ describe("autoresearch improver worker e2e", () => {
   it("works when the workspace is a subdirectory of a larger git repo", async () => {
     // Test that copy-mode sandbox works when the workspace is inside a larger non-git directory.
     // This covers the case where Paperclip manages a subdirectory of a project.
-    const parentDir = await mkdir(path.join(os.tmpdir(), "paprclip-parent-" + Math.random().toString(36).slice(2)), { recursive: true });
+    const parentDir = path.join(os.tmpdir(), "paprclip-parent-" + Math.random().toString(36).slice(2));
+    await mkdir(parentDir, { recursive: true });
     const workspaceRoot = path.join(parentDir, "workspace-subdir");
     await mkdir(workspaceRoot, { recursive: true });
     await writeFile(path.join(workspaceRoot, "README.md"), "baseline\n", "utf8");

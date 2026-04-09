@@ -45,6 +45,7 @@ import {
 import type {
   ApplyMode,
   CommandExecutionResult,
+  ConfigChangeRecord,
   OptimizerDefinition,
   OptimizerRunRecord,
   OptimizerTemplate,
@@ -388,13 +389,20 @@ async function filesDiffer(leftPath: string, rightPath: string): Promise<boolean
   // indicator of binary content). If either file looks binary, fall back to
   // a size-only comparison since full byte comparison of large files is
   // expensive and not useful for text-oriented diff artifacts.
-  const [leftHead, rightHead] = await Promise.all([
-    fs.readFile(leftPath, { length: 512 }),
-    fs.readFile(rightPath, { length: 512 })
-  ]);
+  const [leftFile, rightFile] = await Promise.all([fs.open(leftPath, "r"), fs.open(rightPath, "r")]);
+  const leftHead = Buffer.alloc(512);
+  const rightHead = Buffer.alloc(512);
+  try {
+    await Promise.all([
+      leftFile.read(leftHead, 0, leftHead.length, 0),
+      rightFile.read(rightHead, 0, rightHead.length, 0)
+    ]);
+  } finally {
+    await Promise.all([leftFile.close(), rightFile.close()]);
+  }
 
-  const leftBinary = leftHead.some((byte) => byte === 0);
-  const rightBinary = rightHead.some((byte) => byte === 0);
+  const leftBinary = leftHead.some((byte: number) => byte === 0);
+  const rightBinary = rightHead.some((byte: number) => byte === 0);
   if (leftBinary || rightBinary) {
     // For binary files, trust the size check already done above.
     return leftStat.size !== rightStat.size;
@@ -1752,6 +1760,7 @@ async function runOptimizerCycle(
       artifacts,
       patchConflict,
       workspaceHeadAtRun,
+      invalidReason: outcome === "invalid" ? reason : undefined,
       pullRequest: null
     };
 
@@ -2151,7 +2160,7 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
       const optRuns = runs.filter((r) => r.optimizerId === opt.optimizerId);
       const acceptedRuns = optRuns.filter((r) => r.outcome === "accepted");
       const bestRun = acceptedRuns.sort((a, b) =>
-        opt.scoreDirection === "lower-is-better"
+        opt.scoreDirection === "minimize"
           ? (a.candidateScore ?? Infinity) - (b.candidateScore ?? Infinity)
           : (b.candidateScore ?? -Infinity) - (a.candidateScore ?? -Infinity)
       )[0] ?? null;
@@ -2280,7 +2289,9 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
           timestamp: now,
           action: "cloned",
           description: 'Cloned from optimizer "' + original.name + '" (' + optimizerId.slice(0, 8) + "...)",
-          triggeredBy: params.triggeredBy ?? "system"
+          triggeredBy: typeof params.triggeredBy === "string" && params.triggeredBy.trim()
+            ? params.triggeredBy.trim()
+            : "system"
         }
       ]
     };
@@ -2319,7 +2330,14 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
       updatedAt: now,
       history: [
         ...(optimizer.history ?? []),
-        { timestamp: now, action: "paused", description: reason, triggeredBy: params.triggeredBy ?? "operator" }
+        {
+          timestamp: now,
+          action: "paused",
+          description: reason,
+          triggeredBy: typeof params.triggeredBy === "string" && params.triggeredBy.trim()
+            ? params.triggeredBy.trim()
+            : "operator"
+        }
       ]
     });
     return { status: "paused", pauseReason: reason };
@@ -2343,7 +2361,14 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
       updatedAt: now,
       history: [
         ...(optimizer.history ?? []),
-        { timestamp: now, action: "resumed", description: "Optimizer resumed.", triggeredBy: params.triggeredBy ?? "operator" }
+        {
+          timestamp: now,
+          action: "resumed",
+          description: "Optimizer resumed.",
+          triggeredBy: typeof params.triggeredBy === "string" && params.triggeredBy.trim()
+            ? params.triggeredBy.trim()
+            : "operator"
+        }
       ]
     });
     return { status: "active" };
@@ -2624,11 +2649,11 @@ async function registerToolHandlers(ctx: PluginContext): Promise<void> {
 
       const headers = [
         "runId", "optimizerId", "outcome", "approvalStatus", "accepted",
-        "startedAt", "completedAt", "durationMs",
-        "baselineScore", "candidateScore", "scoreDelta", "scoreImprovement",
-        "guardrailPass", "guardrailScore",
-        "runType", "status", "applyMode", "errorMessage",
-        "branchName", "commitSha", "patchConflicts"
+        "startedAt", "finishedAt", "durationMs",
+        "baselineScore", "candidateScore", "scoreDelta", "improved",
+        "guardrailPass", "guardrailPrimary",
+        "sandboxStrategy", "approvalStatus", "applyState", "errorMessage",
+        "branchName", "commitSha", "patchConflict"
       ];
       const rows = allRuns.map((r) => [
         r.runId,
@@ -2637,21 +2662,21 @@ async function registerToolHandlers(ctx: PluginContext): Promise<void> {
         r.approvalStatus ?? "",
         r.accepted ? "true" : "false",
         r.startedAt,
-        r.completedAt ?? "",
-        r.durationMs != null ? String(r.durationMs) : "",
+        r.finishedAt,
+        String(Math.max(0, new Date(r.finishedAt).getTime() - new Date(r.startedAt).getTime())),
         r.baselineScore != null ? String(r.baselineScore) : "",
         r.candidateScore != null ? String(r.candidateScore) : "",
         r.baselineScore != null && r.candidateScore != null ? String(r.candidateScore - r.baselineScore) : "",
-        r.scoreImprovement ?? "",
-        r.guardrailPass != null ? (r.guardrailPass ? "true" : "false") : "",
-        r.guardrailScore != null ? String(r.guardrailScore) : "",
-        r.runType ?? "",
-        r.status ?? "",
-        r.applyMode ?? "",
-        r.errorMessage ?? "",
+        r.accepted ? "true" : "false",
+        r.guardrailRepeats ? (r.guardrailRepeats.every((entry) => entry.passed) ? "true" : "false") : "",
+        r.guardrailAggregate?.primary != null ? String(r.guardrailAggregate.primary) : "",
+        r.sandboxStrategy ?? "",
+        r.approvalStatus ?? "",
+        r.applied ? "applied" : "not_applied",
+        r.invalidReason ?? (r.outcome === "invalid" ? r.reason : ""),
         r.pullRequest?.branchName ?? "",
         r.pullRequest?.commitSha ?? "",
-        r.patchConflicts != null ? String(r.patchConflicts) : ""
+        r.patchConflict != null ? String(r.patchConflict.hasConflicts) : ""
       ].map((v) => "\"" + String(v).replace(/"/g, "\"\"") + "\""));
 
       const csv = [headers.join(","), ...rows.map((row) => row.join(","))].join("\n");

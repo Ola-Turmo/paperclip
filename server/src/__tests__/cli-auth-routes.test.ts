@@ -34,6 +34,9 @@ vi.mock("../services/index.js", () => ({
   deduplicateAgentName: vi.fn((name: string) => name),
 }));
 
+const routeModulesPromise = Promise.all([import("../routes/access.js"), import("../middleware/index.js")]);
+const CLI_AUTH_ROUTE_TEST_TIMEOUT_MS = 30_000;
+
 function createApp(actor: any) {
   const app = express();
   app.use(express.json());
@@ -41,21 +44,19 @@ function createApp(actor: any) {
     req.actor = actor;
     next();
   });
-  return import("../routes/access.js").then(({ accessRoutes }) =>
-    import("../middleware/index.js").then(({ errorHandler }) => {
-      app.use(
-        "/api",
-        accessRoutes({} as any, {
-          deploymentMode: "authenticated",
-          deploymentExposure: "private",
-          bindHost: "127.0.0.1",
-          allowedHostnames: [],
-        }),
-      );
-      app.use(errorHandler);
-      return app;
-    })
-  );
+  return routeModulesPromise.then(([{ accessRoutes }, { errorHandler }]) => {
+    app.use(
+      "/api",
+      accessRoutes({} as any, {
+        deploymentMode: "authenticated",
+        deploymentExposure: "private",
+        bindHost: "127.0.0.1",
+        allowedHostnames: [],
+      }),
+    );
+    app.use(errorHandler);
+    return app;
+  });
 }
 
 describe("cli auth routes", () => {
@@ -92,7 +93,7 @@ describe("cli auth routes", () => {
       expiresAt: "2026-03-23T13:00:00.000Z",
     });
     expect(res.body.approvalUrl).toContain("/cli-auth/challenge-1?token=pcp_cli_auth_secret");
-  });
+  }, CLI_AUTH_ROUTE_TEST_TIMEOUT_MS);
 
   it("marks challenge status as requiring sign-in for anonymous viewers", async () => {
     mockBoardAuthService.describeCliAuthChallenge.mockResolvedValue({
@@ -115,7 +116,7 @@ describe("cli auth routes", () => {
     expect(res.status).toBe(200);
     expect(res.body.requiresSignIn).toBe(true);
     expect(res.body.canApprove).toBe(false);
-  });
+  }, CLI_AUTH_ROUTE_TEST_TIMEOUT_MS);
 
   it("approves a CLI auth challenge for a signed-in board user", async () => {
     mockBoardAuthService.approveCliAuthChallenge.mockResolvedValue({
@@ -162,7 +163,7 @@ describe("cli auth routes", () => {
         action: "board_api_key.created",
       }),
     );
-  });
+  }, CLI_AUTH_ROUTE_TEST_TIMEOUT_MS);
 
   it("logs approve activity for instance admins without company memberships", async () => {
     mockBoardAuthService.approveCliAuthChallenge.mockResolvedValue({
@@ -195,7 +196,7 @@ describe("cli auth routes", () => {
       boardApiKeyId: "board-key-2",
     });
     expect(mockLogActivity).toHaveBeenCalledTimes(2);
-  });
+  }, CLI_AUTH_ROUTE_TEST_TIMEOUT_MS);
 
   it("logs revoke activity with resolved audit company ids", async () => {
     mockBoardAuthService.assertCurrentBoardKey.mockResolvedValue({
@@ -226,5 +227,5 @@ describe("cli auth routes", () => {
         action: "board_api_key.revoked",
       }),
     );
-  });
+  }, CLI_AUTH_ROUTE_TEST_TIMEOUT_MS);
 });

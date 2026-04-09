@@ -150,6 +150,7 @@ export interface OptimizerDefinition {
   runs: number;
   acceptedRuns: number;
   rejectedRuns: number;
+  invalidRuns: number;
   pendingApprovalRuns: number;
   consecutiveFailures: number;
   consecutiveNonImprovements: number;
@@ -184,6 +185,7 @@ export interface OptimizerRunRecord {
   applied: boolean;
   approvalStatus: "not_needed" | "pending" | "approved" | "rejected";
   reason: string;
+  invalidReason?: string;
   mutation: CommandExecutionResult;
   scoring: CommandExecutionResult;
   scoringRepeats: Array<{

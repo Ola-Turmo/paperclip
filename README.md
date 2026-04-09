@@ -230,6 +230,14 @@ pnpm db:generate      # Generate DB migration
 pnpm db:migrate       # Apply migrations
 ```
 
+Full verification before handoff:
+
+```bash
+pnpm -r typecheck
+pnpm test:run
+pnpm build
+```
+
 See [doc/DEVELOPING.md](doc/DEVELOPING.md) for the full development guide.
 
 <br/>

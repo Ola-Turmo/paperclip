@@ -157,6 +157,7 @@ function emptyForm(workspaceId = ""): FormState {
     autoCreateIssueOnGuardrailFailure: true,
     autoCreateIssueOnStagnation: false,
     autoPauseOnConsecutiveFailures: false,
+    stagnationWebhookUrl: "",
     stagnationIssueThreshold: "5",
     proposalBranchPrefix: "",
     proposalCommitMessage: "",
@@ -344,10 +345,28 @@ function scoreDelta(baseline: number | null, candidate: number | null): number |
   return candidate - baseline;
 }
 
+function getInvalidReason(run: OptimizerRunRecord): string | undefined {
+  return run.invalidReason
+    ?? run.scoringAggregate?.invalidReason
+    ?? run.guardrailAggregate?.invalidReason
+    ?? (run.outcome === "invalid" ? run.reason : undefined);
+}
+
+function guardrailPassed(run: OptimizerRunRecord): boolean | null {
+  if (run.guardrailRepeats && run.guardrailRepeats.length > 0) {
+    return run.guardrailRepeats.every((entry) => entry.passed);
+  }
+  if (run.guardrailAggregate) {
+    const hasFailure = Object.values(run.guardrailAggregate.guardrails).some((value) => value === false);
+    return run.guardrailAggregate.invalid ? false : !hasFailure;
+  }
+  return null;
+}
+
 function guardrailSummary(run: OptimizerRunRecord): string {
   if (!run.guardrailAggregate) return "not configured";
   const guards = run.guardrailAggregate.guardrails;
-  const passed = run.guardrail?.passed;
+  const passed = guardrailPassed(run);
   const entries = Object.entries(guards);
   if (entries.length === 0) return passed ? "none (passed)" : "none (failed)";
   const summary = entries.map(([k, v]) => `${k}: ${v}`).join(", ");
@@ -554,6 +573,7 @@ function RunCard({
     .map((entry, index) => `#${index + 1}: ${formatScore(entry.score)} (${entry.execution.exitCode ?? "null"})`)
     .join(" | ");
   const delta = scoreDelta(run.baselineScore, run.candidateScore);
+  const invalidReason = getInvalidReason(run);
 
   return (
     <div style={{ border: "1px solid rgba(148, 163, 184, 0.35)", borderRadius: 12, padding: 14, background: "white" }}>
@@ -564,9 +584,9 @@ function RunCard({
         </span>
       </div>
       <div style={{ marginTop: 6, fontSize: 13 }}>{run.reason}</div>
-      {run.invalidReason ? (
+      {invalidReason ? (
         <div style={{ marginTop: 5, color: "#b91c1c", fontSize: 12, fontWeight: 600 }}>
-          Invalid: {run.invalidReason}
+          Invalid: {invalidReason}
         </div>
       ) : null}
       <div style={{ marginTop: 8, display: "flex", gap: 16, flexWrap: "wrap", fontSize: 13 }}>
@@ -703,8 +723,8 @@ function ComparisonPanel({
             <span>Outcome</span>
             <strong style={{ color: statusTone(run.outcome) }}>{statusLabel(run.outcome)}</strong>
           </div>
-          {run.outcome === "invalid" && run.invalidReason ? (
-            <div style={{ color: "#b91c1c", fontSize: 12 }}>Invalid: {run.invalidReason}</div>
+          {run.outcome === "invalid" && getInvalidReason(run) ? (
+            <div style={{ color: "#b91c1c", fontSize: 12 }}>Invalid: {getInvalidReason(run)}</div>
           ) : null}
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <span>Score</span>
@@ -733,7 +753,7 @@ function ComparisonPanel({
           ) : null}
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <span>Guardrails</span>
-            <span style={{ fontSize: 12, color: run.guardrail?.passed === false ? "#b91c1c" : "#166534" }}>{guardrailSummary(run)}</span>
+            <span style={{ fontSize: 12, color: guardrailPassed(run) === false ? "#b91c1c" : "#166534" }}>{guardrailSummary(run)}</span>
           </div>
           {run.scoringRepeats.length > 1 ? (
             <div style={{ display: "flex", justifyContent: "space-between" }}>

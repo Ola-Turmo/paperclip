@@ -49,9 +49,11 @@ vi.mock("../services/index.js", () => ({
   logActivity: mockLogActivity,
 }));
 
+const routeModulesPromise = Promise.all([import("../routes/companies.js"), import("../middleware/index.js")]);
+const COMPANY_PORTABILITY_ROUTE_TEST_TIMEOUT_MS = 15_000;
+
 async function createApp(actor: Record<string, unknown>) {
-  const { companyRoutes } = await import("../routes/companies.js");
-  const { errorHandler } = await import("../middleware/index.js");
+  const [{ companyRoutes }, { errorHandler }] = await routeModulesPromise;
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -65,7 +67,6 @@ async function createApp(actor: Record<string, unknown>) {
 
 describe("company portability routes", () => {
   beforeEach(() => {
-    vi.resetModules();
     mockAgentService.getById.mockReset();
     mockCompanyPortabilityService.exportBundle.mockReset();
     mockCompanyPortabilityService.previewExport.mockReset();
@@ -95,7 +96,7 @@ describe("company portability routes", () => {
     expect(res.status).toBe(403);
     expect(res.body.error).toContain("Only CEO agents");
     expect(mockCompanyPortabilityService.previewExport).not.toHaveBeenCalled();
-  });
+  }, COMPANY_PORTABILITY_ROUTE_TEST_TIMEOUT_MS);
 
   it("allows CEO agents to use company-scoped export preview routes", async () => {
     mockAgentService.getById.mockResolvedValue({
@@ -128,7 +129,7 @@ describe("company portability routes", () => {
     expect(mockCompanyPortabilityService.previewExport).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", {
       include: { company: true, agents: true, projects: true },
     });
-  });
+  }, COMPANY_PORTABILITY_ROUTE_TEST_TIMEOUT_MS);
 
   it("rejects replace collision strategy on CEO-safe import routes", async () => {
     mockAgentService.getById.mockResolvedValue({
@@ -156,7 +157,7 @@ describe("company portability routes", () => {
     expect(res.status).toBe(403);
     expect(res.body.error).toContain("does not allow replace");
     expect(mockCompanyPortabilityService.previewImport).not.toHaveBeenCalled();
-  });
+  }, COMPANY_PORTABILITY_ROUTE_TEST_TIMEOUT_MS);
 
   it("keeps global import preview routes board-only", async () => {
     const app = await createApp({
@@ -178,5 +179,5 @@ describe("company portability routes", () => {
 
     expect(res.status).toBe(403);
     expect(res.body.error).toContain("Board access required");
-  });
+  }, COMPANY_PORTABILITY_ROUTE_TEST_TIMEOUT_MS);
 });

@@ -166,6 +166,7 @@ describe("optimizer helpers", () => {
       sweepLimit: 0,
       scoreRepeats: -1,
       guardrailRepeats: -1,
+      guardrailAggregator: "all",
       minimumImprovement: -1,
       stagnationIssueThreshold: 0
     });
@@ -271,11 +272,11 @@ describe("optimizer helpers", () => {
   });
 
   it("formatCommandSummary produces a readable summary", () => {
-    const ok = { ok: true, exitCode: 0, stdout: "done", stderr: "", durationMs: 150, killed: false };
+    const ok = { command: "echo done", cwd: "/tmp", ok: true, exitCode: 0, stdout: "done", stderr: "", durationMs: 150, timedOut: false };
     expect(formatCommandSummary(ok)).toBe("ok (0) in 150ms");
-    const fail = { ok: false, exitCode: 1, stdout: "", stderr: "error", durationMs: 50, killed: false };
+    const fail = { command: "exit 1", cwd: "/tmp", ok: false, exitCode: 1, stdout: "", stderr: "error", durationMs: 50, timedOut: false };
     expect(formatCommandSummary(fail)).toBe("failed (1) in 50ms");
-    const nullExit = { ok: false, exitCode: null, stdout: "", stderr: "", durationMs: 0, killed: false };
+    const nullExit = { command: "timeout", cwd: "/tmp", ok: false, exitCode: null, stdout: "", stderr: "", durationMs: 0, timedOut: true };
     expect(formatCommandSummary(nullExit)).toBe("failed (null) in 0ms");
   });
 
@@ -288,12 +289,15 @@ describe("optimizer helpers", () => {
   });
 
   it("buildOptimizerBrief extracts key optimizer fields including policy and guardrail", () => {
-    const opt = {
+    const opt: any = {
       optimizerId: "abc123",
       name: "Test",
       objective: "Improve score",
       mutablePaths: ["README.md"] as string[],
       scoreDirection: "maximize" as const,
+      mutationCommand: "codex exec",
+      scoreCommand: "node score.js",
+      guardrailCommand: "npm test",
       bestScore: 0.95,
       hiddenScoring: false,
       sandboxStrategy: "git_worktree" as const,
@@ -301,6 +305,8 @@ describe("optimizer helpers", () => {
       applyMode: "automatic" as const,
       scoreFormat: "json" as const,
       scoreKey: "primary",
+      guardrailFormat: "json" as const,
+      guardrailKey: "guardrails",
       scoreRepeats: 3,
       scoreAggregator: "mean" as const,
       minimumImprovement: 0.01,
@@ -316,15 +322,26 @@ describe("optimizer helpers", () => {
       updatedAt: "",
       status: "active" as const,
       queueState: "idle" as const,
+      requireHumanApproval: false,
+      autoCreateIssueOnGuardrailFailure: false,
+      autoRun: false,
+      runs: 0,
       acceptedRuns: 0,
       rejectedRuns: 0,
       invalidRuns: 0,
+      pendingApprovalRuns: 0,
+      consecutiveFailures: 0,
       consecutiveNonImprovements: 0,
       history: [],
       autoCreateIssueOnStagnation: false,
-      stagnationIssueThreshold: 5
+      stagnationIssueThreshold: 5,
+      mutationBudgetSeconds: 300,
+      scoreBudgetSeconds: 180,
+      guardrailBudgetSeconds: 120,
+      scorePattern: undefined,
+      noiseFloor: null
     };
-    const brief = buildOptimizerBrief(opt);
+    const brief = buildOptimizerBrief(opt) as any;
     expect(brief.optimizerId).toBe("abc123");
     expect(brief.bestScore).toBe(0.95);
     expect(brief.mutablePaths).toEqual(["README.md"]);
@@ -535,7 +552,7 @@ describe("optimizer helpers", () => {
       mutationBudgetSeconds: 60, scoreBudgetSeconds: 30, guardrailBudgetSeconds: null
     };
 
-    const brief = buildOptimizerBrief(opt);
+    const brief = buildOptimizerBrief(opt) as any;
     expect(brief.guardrailCommand).toBe("<guardrail-command-set>");
     expect(brief.mutablePaths).toEqual(["src"]);
     expect(brief.scoreImprovementPolicy).toBe("threshold");
