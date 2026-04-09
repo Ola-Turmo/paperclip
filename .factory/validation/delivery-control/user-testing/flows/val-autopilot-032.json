@@ -1,0 +1,78 @@
+{
+  "groupId": "val-autopilot-032",
+  "testedAt": "2026-04-09T23:15:00.000Z",
+  "isolation": {
+    "appUrl": "http://localhost:3100",
+    "session": "4660e352b63c__val032",
+    "companyId": "efe86897-afa7-4583-9a50-99bf210a7288",
+    "companyName": "Test Company",
+    "projectId": "fb4f56ca-f06f-461b-b6f8-0fcd877e1949",
+    "projectName": "Autopilot Browser Verification Project"
+  },
+  "toolsUsed": ["agent-browser", "curl"],
+  "assertions": [
+    {
+      "id": "VAL-AUTOPILOT-032",
+      "title": "Delivery run uses an isolated workspace and leased port",
+      "status": "blocked",
+      "steps": [
+        { "action": "Navigate to http://localhost:3100", "expected": "Application loads", "observed": "Application loaded successfully" },
+        { "action": "Navigate to Autopilot Browser Verification Project > Autopilot tab", "expected": "Autopilot settings visible with automation tier", "observed": "Autopilot tab displayed with 'Enable Product Autopilot' checked and 'Supervised' tier selected" },
+        { "action": "View existing runs via 'Show History (3)' button", "expected": "Run history shows branch, workspace path, and port metadata", "observed": "FAILED: Clicking 'Show History' does not reveal run details - history section not visible in UI" },
+        { "action": "Check for delivery run API endpoint", "expected": "POST /api/delivery-runs returns 200", "observed": "FAILED: No delivery-runs endpoint exists in REST API - autopilot plugin uses internal data layer" },
+        { "action": "Check execution workspaces for git worktree strategy", "expected": "Execution workspaces with strategyType=git_worktree and port allocation", "observed": "FAILED: Only found project_primary strategy workspaces - no git worktree delivery runs exist" },
+        { "action": "Check console errors", "expected": "Clean console or only minor warnings", "observed": "FAILED: Multiple 502 Bad Gateway errors from plugin backend services" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "delivery-control/val-autopilot-032/VAL-AUTOPILOT-032-initial-load.png",
+          "delivery-control/val-autopilot-032/VAL-AUTOPILOT-032-autopilot-tab.png",
+          "delivery-control/val-autopilot-032/VAL-AUTOPILOT-032-autopilot-history-visible.png",
+          "delivery-control/val-autopilot-032/VAL-AUTOPILOT-032-autopilot-full.png",
+          "delivery-control/val-autopilot-032/VAL-AUTOPILOT-032-final-state.png"
+        ],
+        "consoleErrors": "Multiple 502 Bad Gateway errors from plugin backend, WebSocket connection failures, React key prop warnings",
+        "network": "GET /api/companies/{id}/execution-workspaces -> 200 (returns only project_primary workspaces, no git worktree delivery runs); No delivery-runs endpoint exists"
+      },
+      "issues": "Cannot test VAL-AUTOPILOT-032 because: (1) The autopilot plugin backend is returning 502 Bad Gateway errors, making the delivery run functionality inaccessible. (2) No REST API endpoint exists for creating or viewing delivery runs - the plugin uses its own internal data model and SDK harness. (3) The 'Show History' button in the Autopilot tab does not reveal run details - the history content is not visible in the UI. (4) No existing execution workspaces with git worktree strategy and port allocation exist in the system - delivery runs have never been created through the autopilot flow."
+    }
+  ],
+  "frictions": [
+    {
+      "description": "Autopilot plugin backend services returning 502 Bad Gateway errors - the plugin's internal API is not accessible",
+      "resolved": false,
+      "resolution": "The browser console shows multiple 'Failed to load resource: the server responded with a status of 502 (Bad Gateway)' errors. This indicates the autopilot plugin's backend services are not functioning properly.",
+      "affectedAssertions": ["VAL-AUTOPILOT-032"]
+    },
+    {
+      "description": "Delivery run API endpoints do not exist in REST API - plugin-based architecture with internal data model",
+      "resolved": false,
+      "resolution": "The evidence requirement 'network(POST delivery run -> 200)' cannot be met because there is no /api/delivery-runs endpoint. The autopilot functionality is entirely within the plugin system and only accessible via the plugin SDK test harness, not via HTTP API.",
+      "affectedAssertions": ["VAL-AUTOPILOT-032"]
+    },
+    {
+      "description": "Show History button in Autopilot tab does not reveal run details in UI",
+      "resolved": false,
+      "resolution": "Clicking 'Show History (3)' changes the button text to 'Hide History' but does not visibly reveal the history content in the browser. The snapshot shows the same elements before and after clicking.",
+      "affectedAssertions": ["VAL-AUTOPILOT-032"]
+    }
+  ],
+  "blockers": [
+    {
+      "description": "Autopilot plugin backend returning 502 Bad Gateway - delivery run creation/viewing not functional",
+      "affectedAssertions": ["VAL-AUTOPILOT-032"],
+      "quickFixAttempted": "Verified health endpoint works (200 OK), but all plugin API calls fail with 502. The plugin services on port 13100 appear to be down or misconfigured."
+    },
+    {
+      "description": "No delivery run REST API endpoint - cannot create runs or verify workspace/port allocation via HTTP",
+      "affectedAssertions": ["VAL-AUTOPILOT-032"],
+      "quickFixAttempted": "Searched codebase for delivery-run routes - none found. The autopilot plugin uses its own internal data layer not exposed via REST."
+    },
+    {
+      "description": "No existing delivery runs with isolated workspaces (git worktree strategy) in the system",
+      "affectedAssertions": ["VAL-AUTOPILOT-032"],
+      "quickFixAttempted": "GET /api/companies/{id}/execution-workspaces returns only project_primary strategy workspaces. No git worktree delivery runs have been created."
+    }
+  ],
+  "summary": "VAL-AUTOPILOT-032 is blocked. The assertion requires testing that delivery runs allocate isolated workspaces (git worktrees) and show branch/workspace path/leased port metadata in the UI. However: (1) The autopilot plugin backend is returning 502 Bad Gateway errors, making the delivery run functionality inaccessible. (2) No REST API endpoints exist for delivery runs - the plugin uses an internal data model only accessible via SDK harness. (3) The 'Show History' button in the Autopilot tab does not reveal run details despite showing 3 historical runs exist. (4) No existing execution workspaces with git worktree strategy exist in the system - delivery runs have never been created through the autopilot flow. The workspace-runtime.ts code shows the infrastructure for git worktree allocation and port leasing exists in the backend, but the UI and API surfaces to trigger and view delivery runs are not functional due to plugin backend issues."
+}

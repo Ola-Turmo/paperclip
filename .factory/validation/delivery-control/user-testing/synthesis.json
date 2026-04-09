@@ -1,0 +1,102 @@
+{
+  "milestone": "delivery-control",
+  "round": 1,
+  "status": "fail",
+  "assertionsSummary": {
+    "total": 5,
+    "passed": 0,
+    "failed": 5,
+    "blocked": 5
+  },
+  "passedAssertions": [],
+  "failedAssertions": [
+    {
+      "id": "VAL-AUTOPILOT-030",
+      "reason": "Ideas and planningArtifacts data handlers not registered in root worker.ts. API returns 'No data handler registered for key ideas'. Planning artifacts feature not accessible via REST API or browser UI."
+    },
+    {
+      "id": "VAL-AUTOPILOT-031",
+      "reason": "Automation tier combobox dropdown options not interactable via browser automation (element is not visible). Delivery run REST API endpoints do not exist - plugin uses internal data layer only accessible via SDK harness."
+    },
+    {
+      "id": "VAL-AUTOPILOT-032",
+      "reason": "Autopilot plugin backend returning 502 Bad Gateway errors. No delivery run REST API endpoints exist. Show History button non-functional. No existing git worktree delivery runs found in system."
+    },
+    {
+      "id": "VAL-AUTOPILOT-033",
+      "reason": "Run Research button disabled until Product Program exists. Cannot trigger autopilot work without Product Program prerequisite. Pause reason UI element not found in current implementation."
+    },
+    {
+      "id": "VAL-AUTOPILOT-034",
+      "reason": "Optimizer status toggle partially functional but: (1) could not verify API 200 response due to network capture limitations, (2) no active delivery run existed to test run-level pause/resume specifically."
+    }
+  ],
+  "blockedAssertions": [
+    {
+      "id": "VAL-AUTOPILOT-030",
+      "blockedBy": "autopilot/worker.ts not registered as plugin entrypoint; ideas and planningArtifacts data handlers missing from root worker.ts"
+    },
+    {
+      "id": "VAL-AUTOPILOT-031",
+      "blockedBy": "Automation tier combobox non-interactive; delivery run API does not exist"
+    },
+    {
+      "id": "VAL-AUTOPILOT-032",
+      "blockedBy": "Plugin backend 502 errors; no REST API for delivery runs; no delivery runs created"
+    },
+    {
+      "id": "VAL-AUTOPILOT-033",
+      "blockedBy": "Product Program prerequisite required to enable Run Research"
+    },
+    {
+      "id": "VAL-AUTOPILOT-034",
+      "blockedBy": "No active delivery run to test run-level pause/resume; optimizer status toggle only partially testable"
+    }
+  ],
+  "appliedUpdates": [],
+  "systemicBlockers": [
+    {
+      "description": "Ideas and planningArtifacts data handlers exist in autopilot/worker.ts but the file is NOT the plugin entrypoint. The manifest.ts entrypoints.worker points to './dist/worker.js' (root worker.ts), which only registers: autopilotProject, autopilotProjects, productProgramRevision, productProgramRevisions. This means ideas and planning-artifacts API endpoints return 502 errors.",
+      "affectedAssertions": ["VAL-AUTOPILOT-030", "VAL-AUTOPILOT-032"],
+      "triagedTo": "planning-automation-tiers-and-delivery-runs feature fix"
+    },
+    {
+      "description": "Autopilot plugin REST API is incomplete - ideas, planningArtifacts, deliveryRuns, workspaces, and other critical entities are only accessible via the plugin's internal data layer (SDK harness) and not exposed via Paperclip REST API routes. The browser UI surfaces some plugin controls but many interactions (dropdowns, comboboxes) are non-interactive in headless browser automation.",
+      "affectedAssertions": ["VAL-AUTOPILOT-030", "VAL-AUTOPILOT-031", "VAL-AUTOPILOT-032", "VAL-AUTOPILOT-034"],
+      "triagedTo": "plugin REST API exposure work"
+    },
+    {
+      "description": "Plugin backend services returning 502 Bad Gateway errors - the autopilot plugin's internal API layer is inaccessible from the browser, preventing testing of workspace leasing, delivery runs, and other execution features.",
+      "affectedAssertions": ["VAL-AUTOPILOT-032"],
+      "triagedTo": "plugin backend service health"
+    },
+    {
+      "description": "Product Program is a hard prerequisite for enabling autopilot work (Run Research button disabled without it). This blocks testing of budget caps, automation tiers, and delivery runs without first completing Product Program setup.",
+      "affectedAssertions": ["VAL-AUTOPILOT-033"],
+      "triagedTo": "test setup or UX improvement"
+    }
+  ],
+  "frictions": [
+    {
+      "description": "Automation tier combobox (@e47) shows three options when expanded but options are not visible/interactable - 'element is not visible' error on all interaction attempts",
+      "affectedAssertions": ["VAL-AUTOPILOT-031"]
+    },
+    {
+      "description": "Show History button in Autopilot tab changes text to 'Hide History' on click but does not reveal history content in UI",
+      "affectedAssertions": ["VAL-AUTOPILOT-032"]
+    },
+    {
+      "description": "Browser network capture in agent-browser shows request URL but not HTTP status codes",
+      "affectedAssertions": ["VAL-AUTOPILOT-034"]
+    }
+  ],
+  "toolsUsed": ["agent-browser", "curl"],
+  "flowReports": [
+    "val-autopilot-030.json",
+    "val-autopilot-031.json",
+    "val-autopilot-032.json",
+    "val-autopilot-033.json",
+    "val-autopilot-034.json"
+  ],
+  "previousRound": null
+}

@@ -1,0 +1,67 @@
+{
+  "groupId": "val-autopilot-031",
+  "testedAt": "2026-04-09T22:30:00.000Z",
+  "isolation": {
+    "appUrl": "http://localhost:3100",
+    "session": "4660e352b63c__val031",
+    "companyId": "efe86897-afa7-4583-9a50-99bf210a7288",
+    "companyName": "Test Company",
+    "projectId": "fb4f56ca-f06f-461b-b6f8-0fcd877e1949",
+    "projectName": "Autopilot Browser Verification Project"
+  },
+  "toolsUsed": ["agent-browser", "curl"],
+  "assertions": [
+    {
+      "id": "VAL-AUTOPILOT-031",
+      "title": "Automation tiers enforce the configured approval path",
+      "status": "blocked",
+      "steps": [
+        { "action": "Navigate to http://localhost:3100", "expected": "Application loads", "observed": "Application loaded successfully" },
+        { "action": "Navigate to project Autopilot tab", "expected": "Autopilot settings visible", "observed": "Autopilot tab displayed with automation tier combobox" },
+        { "action": "View automation tier options", "expected": "Supervised, Semi-Auto, Full Auto options visible", "observed": "Combobox shows three options: Supervised, Semi-Auto, Full Auto" },
+        { "action": "Attempt to select Semi-Auto tier", "expected": "Tier changes to Semi-Auto", "observed": "FAILED: Dropdown option elements are not visible/interactable - element is not visible" },
+        { "action": "Verify delivery runs API", "expected": "GET delivery-runs endpoint returns 200", "observed": "FAILED: API route /api/autopilot/... not found - autopilot functionality is plugin-based and not exposed via REST API" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "delivery-control/val-autopilot-031/VAL-AUTOPILOT-031-01-landing.png",
+          "delivery-control/val-autopilot-031/VAL-AUTOPILOT-031-02-autopilot-tab.png",
+          "delivery-control/val-autopilot-031/VAL-AUTOPILOT-031-03-configuration-tab.png",
+          "delivery-control/val-autopilot-031/VAL-AUTOPILOT-031-04-autopilot-settings.png",
+          "delivery-control/val-autopilot-031/VAL-AUTOPILOT-031-05-optimizer-tab.png",
+          "delivery-control/val-autopilot-031/VAL-AUTOPILOT-031-07-autopilot-tab-return.png"
+        ],
+        "consoleErrors": "WebSocket closed without opened (may be related to dev server websockets)",
+        "network": "curl http://localhost:3100/api/health -> 200 OK; curl /api/autopilot/companies/.../projects/.../delivery-runs -> 404"
+      },
+      "issues": "Cannot interact with automation tier combobox - dropdown options are not visible. Delivery run API endpoints not exposed via REST API (plugin-based system). Browser automation blocked by non-interactive dropdown elements."
+    }
+  ],
+  "frictions": [
+    {
+      "description": "The automation tier combobox (@e47) shows three options when expanded but they are not visible/interactable via browser automation - element is not visible error",
+      "resolved": false,
+      "resolution": "Tried multiple approaches: select command, click on option, find text 'Semi-Auto' click. All failed with 'element is not visible'. The combobox may require specific browser interaction pattern not supported by agent-browser.",
+      "affectedAssertions": ["VAL-AUTOPILOT-031"]
+    },
+    {
+      "description": "Delivery run API endpoints are not exposed via Paperclip REST API - they exist only within the plugin system via plugin SDK test harness",
+      "resolved": false,
+      "resolution": "The autopilot functionality is implemented as a plugin (plugin-autoresearch-improver) with its own internal data model and actions. REST API does not expose autopilot entities like delivery-runs, planning-artifacts, ideas, etc. The validation contract expects network(GET delivery run -> 200) but the API endpoint does not exist.",
+      "affectedAssertions": ["VAL-AUTOPILOT-031"]
+    }
+  ],
+  "blockers": [
+    {
+      "description": "Automation tier combobox in Autopilot tab is non-interactive in browser automation - dropdown options render but cannot be clicked/selected via agent-browser",
+      "affectedAssertions": ["VAL-AUTOPILOT-031"],
+      "quickFixAttempted": "Tried select, click, find text commands - all failed with 'element is not visible'. The option elements exist in DOM but are not actionable."
+    },
+    {
+      "description": "Delivery run REST API endpoints do not exist - autopilot plugin entities are only accessible via plugin SDK harness, not via HTTP API",
+      "affectedAssertions": ["VAL-AUTOPILOT-031"],
+      "quickFixAttempted": "Tried GET /api/autopilot/companies/.../projects/.../delivery-runs - returns 404. The evidence requirement 'network(GET delivery run -> 200)' cannot be met because the endpoint does not exist in the REST API."
+    }
+  ],
+  "summary": "VAL-AUTOPILOT-031 is blocked. The Autopilot tab with automation tier settings is visible in the UI, but: (1) The combobox dropdown is non-interactive - options render but cannot be selected via browser automation. (2) Delivery run API endpoints are not exposed via REST API - the plugin system uses its own internal data layer. The validation contract expects browser interaction with tier settings and API calls to delivery-runs endpoint, neither of which work as expected. Unit tests in plugin-autoresearch-improver verify automation tier behavior via SDK harness, but this is not accessible via the browser UI or REST API."
+}

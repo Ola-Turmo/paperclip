@@ -1,0 +1,65 @@
+{
+  "groupId": "val-autopilot-033",
+  "testedAt": "2026-04-09T20:15:00.000Z",
+  "isolation": {
+    "appUrl": "http://localhost:3100",
+    "session": "4660e352b63c__val033",
+    "companyId": "efe86897-afa7-4583-9a50-99bf210a7288",
+    "companyName": "Test Company",
+    "projectId": "fb4f56ca-f06f-461b-b6f8-0fcd877e1949",
+    "projectName": "Autopilot Browser Verification Project"
+  },
+  "toolsUsed": ["agent-browser", "curl"],
+  "assertions": [
+    {
+      "id": "VAL-AUTOPILOT-033",
+      "title": "Budget caps pause future runs",
+      "status": "blocked",
+      "steps": [
+        { "action": "Navigate to project Autopilot tab", "expected": "Autopilot settings visible", "observed": "Autopilot settings visible with Enable Product Autopilot checkbox" },
+        { "action": "Set company budget to $1.00 via API", "expected": "Budget saved", "observed": "Company budget set to 100 cents successfully" },
+        { "action": "Check dashboard budget display", "expected": "Shows budget", "observed": "Dashboard shows '$0.00 Month Spend 0% of $1.00 budget'" },
+        { "action": "Check cost summary API", "expected": "GET cost status returns 200", "observed": "GET /api/companies/{id}/costs/summary -> 200 with {spendCents:0, budgetCents:100, utilizationPercent:0}" },
+        { "action": "Try to run research to exceed budget", "expected": "Run Research button enabled", "observed": "Run Research button is disabled - requires Product Program content" },
+        { "action": "Check for pause reason UI", "expected": "Pause reason visible when budget exceeded", "observed": "Could not test - cannot trigger autopilot work without Product Program" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "delivery-control/val-autopilot-033/VAL-AUTOPILOT-033-dashboard.png",
+          "delivery-control/val-autopilot-033/VAL-AUTOPILOT-033-autopilot-tab.png",
+          "delivery-control/val-autopilot-033/VAL-AUTOPILOT-033-costs-budgets.png"
+        ],
+        "consoleErrors": "none observed during testing",
+        "network": "GET /api/companies/efe86897-afa7-4583-9a50-99bf210a7288/costs/summary -> 200"
+      },
+      "issues": "Cannot complete full test - Product Program required to enable Run Research button. Without a Product Program, autopilot work cannot be triggered, so budget cap cannot be exceeded and pause behavior cannot be observed."
+    }
+  ],
+  "frictions": [
+    {
+      "description": "Run Research button is disabled until a Product Program is created - prerequisite not met for testing budget cap",
+      "resolved": false,
+      "resolution": "Would need to create Product Program content first, but this is outside the scope of simple budget cap test",
+      "affectedAssertions": ["VAL-AUTOPILOT-033"]
+    },
+    {
+      "description": "Project Budget tab 'Update budget' button was initially disabled - could not save project-level budget via UI",
+      "resolved": true,
+      "resolution": "Used company-level budget API instead",
+      "affectedAssertions": ["VAL-AUTOPILOT-033"]
+    }
+  ],
+  "blockers": [
+    {
+      "description": "Product Program content required to enable Run Research button - cannot trigger autopilot work without it",
+      "affectedAssertions": ["VAL-AUTOPILOT-033"],
+      "quickFixAttempted": "Explored UI extensively - Run Research and Add Idea buttons are disabled without Product Program setup"
+    },
+    {
+      "description": "Could not find 'pause reason' UI element in current implementation - feature may not be fully implemented",
+      "affectedAssertions": ["VAL-AUTOPILOT-033"],
+      "quickFixAttempted": "Checked Autopilot tab, Budget tab, Optimizer tab, and project pages - no visible pause state or pause reason"
+    }
+  ],
+  "summary": "Tested VAL-AUTOPILOT-033 (Budget caps pause future runs): 0/1 assertions fully verified. Company budget was set to $1.00 and dashboard correctly shows '0% of $1.00 budget'. Cost summary API returns 200. However, the test is blocked because Run Research button is disabled without a Product Program, preventing any autopilot work from being triggered to exceed the budget cap. The 'pause reason' UI element was not found in the current implementation."
+}
