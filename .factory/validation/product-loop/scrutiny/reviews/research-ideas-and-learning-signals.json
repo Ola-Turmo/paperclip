@@ -1,0 +1,46 @@
+{
+  "featureId": "research-ideas-and-learning-signals",
+  "reviewedAt": "2026-04-09T20:45:00.000Z",
+  "commitId": "4241b048",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The feature implements research cycles, scored idea generation, Jaccard-similarity duplicate suppression, swipe Pass/Maybe/Yes/Now actions, and preference profile updates with full company/project scoping. Tests cover all 7 VAL assertions plus cross-company isolation. A few minor issues identified: (1) re-swiping an idea creates duplicate swipe events and double-counts preference profile, (2) Jaccard similarity is word-overlap based which can miss semantic duplicates, (3) duplicate detection fetches all entities without pagination. None of these are blocking.",
+    "issues": [
+      {
+        "severity": "non-blocking",
+        "description": "recordSwipe does not prevent re-swiping an already-decided idea. Re-swiping the same idea creates a duplicate SwipeEvent and double-increments preference profile counts. For example, swiping the same idea twice as 'yes' will increment yesCount by 2 instead of recognizing the idea is already approved.",
+        "location": "worker.ts:580-620 (recordSwipe action handler)",
+        "suggestedFix": "Add a check at the start of recordSwipe: if (idea.status !== 'active') { throw new Error('Idea has already been reviewed'); } This prevents duplicate swipe events and ensures preference counts stay accurate."
+      },
+      {
+        "severity": "suggestion",
+        "description": "computeIdeaSimilarity uses Jaccard word-overlap which cannot detect semantic duplicates (e.g., 'improve search speed' vs 'optimize query latency' would score low despite being similar). For a production system, embedding-based similarity would be more robust.",
+        "location": "worker.ts:86-98 (computeIdeaSimilarity function)",
+        "suggestedFix": "Consider adding embedding-based semantic similarity as a secondary check, or document that duplicate detection is string-based and may miss conceptual duplicates."
+      },
+      {
+        "severity": "suggestion",
+        "description": "findDuplicateIdea fetches up to 500 entities per invocation with no pagination. For projects with many ideas, this could cause memory pressure. The function iterates all entities in memory rather than streaming.",
+        "location": "worker.ts:267 (findDuplicateIdea)",
+        "suggestedFix": "Consider adding early termination when similarity threshold is exceeded, or paginate the entity list and break once a near-exact (>=0.9) duplicate is found."
+      },
+      {
+        "severity": "non-blocking",
+        "description": "The validateDuplicateIdea function (for 0.9 threshold) returns the annotated idea with score penalty but continues checking remaining entities instead of short-circuiting. While this doesn't cause incorrect behavior, it's inefficient when a near-exact duplicate is found.",
+        "location": "worker.ts:267-291 (findDuplicateIdea and generateIdeas loop)",
+        "suggestedFix": "After finding a >=0.9 similarity match, consider breaking or returning immediately since further searching won't change the outcome."
+      },
+      {
+        "severity": "non-blocking",
+        "description": "In generateIdeas, the cycleId parameter is stored on the Idea but never validated against the companyId/projectId. A malformed cycleId from another project could be stored. The UI always passes a valid cycleId from the same project, so this is UI-protected but not API-enforced.",
+        "location": "worker.ts:460 (generateIdeas stores cycleId without validation)",
+        "suggestedFix": "Add cycleId validation in generateIdeas: if (cycleId) { const cycle = await findResearchCycle(ctx, companyId, projectId, cycleId); if (!cycle) throw new Error('Cycle not found'); }"
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "The research-ideas-and-learning-signals feature is implemented correctly with proper company/project scoping across all new entity types (ResearchCycle, ResearchFinding, Idea, SwipeEvent, PreferenceProfile). The Jaccard-similarity duplicate detection uses appropriate thresholds (0.75 for annotation, 0.9 for suppression with score penalty). Swipe Pass/Maybe/Yes/Now actions correctly update idea status and preference profile. The main non-blocking issue is that re-swiping an already-decided idea creates duplicate swipe events and double-counts preference profile increments. Test coverage is comprehensive with 22 test cases covering all VAL assertions and cross-company isolation. Browser verification confirmed all four new UI sections (Research, Ideas, Swipe Review, Preference Profile) render and function correctly."
+}

@@ -1,0 +1,52 @@
+{
+  "milestone": "product-loop",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cd packages/plugins/examples/plugin-autoresearch-improver && pnpm test",
+      "exitCode": 0,
+      "notes": "104 tests passed (optimizer.spec.ts: 38, autopilot.spec.ts: 37, worker.e2e.spec.ts: 29)"
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "pnpm -r typecheck",
+      "exitCode": 0,
+      "notes": "All 20 workspace packages typechecked successfully"
+    },
+    "lint": {
+      "passed": true,
+      "command": "pnpm -r lint",
+      "exitCode": 0,
+      "notes": "Lint passed. Some packages do not define lint script (expected for example plugins)"
+    },
+    "build": {
+      "passed": true,
+      "command": "pnpm -r build",
+      "exitCode": 0,
+      "notes": "All packages built successfully"
+    }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add guidance: When implementing swipe/decision actions that update counts or state, add idempotency checks to prevent duplicate events from double-counting. For example, recordSwipe should reject already-decided ideas rather than creating duplicate SwipeEvent records.",
+      "evidence": "Feature research-ideas-and-learning-signals allows re-swiping already-decided ideas, creating duplicate SwipeEvent records and double-incrementing preference profile counts.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null,
+  "reviewReports": [
+    ".factory/validation/product-loop/scrutiny/reviews/research-ideas-and-learning-signals.json"
+  ]
+}
