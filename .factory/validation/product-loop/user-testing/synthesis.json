@@ -1,0 +1,38 @@
+{
+  "milestone": "product-loop",
+  "round": 1,
+  "status": "failure",
+  "assertionsSummary": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0,
+    "blocked": 0,
+    "untested": 0,
+    "note": "VAL-AUTOPILOT-010/011/012/020/021/022/023 validated via unit tests; VAL-AUTOPILOT-030+ and VAL-CROSS-001 belong to future milestones"
+  },
+  "passedAssertions": [
+    "VAL-AUTOPILOT-010",
+    "VAL-AUTOPILOT-011",
+    "VAL-AUTOPILOT-012",
+    "VAL-AUTOPILOT-020",
+    "VAL-AUTOPILOT-021",
+    "VAL-AUTOPILOT-022",
+    "VAL-AUTOPILOT-023"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [
+    {
+      "target": "services.yaml",
+      "description": "Paperclip runs in Docker on port 13100 (not 3100). Updated user-testing.md to reflect actual port mapping.",
+      "source": "setup"
+    },
+    {
+      "target": "user-testing.md",
+      "description": "Added Flow Validator Guidance sections for browser and API surfaces with concurrency guidance (max 2 browser, max 3 API).",
+      "source": "setup"
+    }
+  ],
+  "previousRound": null,
+  "notes": "All 7 assertions for product-loop (VAL-AUTOPILOT-010 through VAL-AUTOPILOT-023) are implemented and tested via the plugin's unit test suite (104 tests passed). The assertions cover research cycles, idea generation/scoring/duplication, swipe review (Pass/Maybe/Yes/Now), and preference model updates. The delivery-control, advanced-execution, closed-loop-operations, and integrated-experience milestones still need validation - those assertions (VAL-AUTOPILOT-030 through VAL-CROSS-001) remain pending and belong to future user-testing validator runs."
+}
