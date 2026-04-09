@@ -18,6 +18,9 @@ import type {
   RunOutcome
 } from "../types.js";
 
+// Re-export autopilot components
+export { AutopilotProjectTab, AutopilotProjectSidebarLink } from "../autopilot/ui/index.js";
+
 type WorkspaceInfo = {
   id: string;
   name: string;
@@ -388,15 +391,26 @@ function RunFilterBar({
   searchQuery: string;
   onSearchChange: (q: string) => void;
 }) {
-  const counts = useMemo(() => ({
-    all: runs.length,
-    accepted: runs.filter((r) => r.outcome === "accepted").length,
-    pending_approval: runs.filter((r) => r.outcome === "pending_approval").length,
-    rejected: runs.filter((r) => r.outcome === "rejected").length,
-    invalid: runs.filter((r) => r.outcome === "invalid").length,
-    dry_run_candidate: runs.filter((r) => r.outcome === "dry_run_candidate").length,
-    pending: runs.filter((r) => r.approvalStatus === "pending").length
-  }), [runs]);
+  const counts = useMemo(() => {
+    const next = {
+      all: runs.length,
+      accepted: 0,
+      pending_approval: 0,
+      rejected: 0,
+      invalid: 0,
+      dry_run_candidate: 0,
+      pending: 0
+    };
+    for (const run of runs) {
+      if (run.outcome === "accepted") next.accepted += 1;
+      if (run.outcome === "pending_approval") next.pending_approval += 1;
+      if (run.outcome === "rejected") next.rejected += 1;
+      if (run.outcome === "invalid") next.invalid += 1;
+      if (run.outcome === "dry_run_candidate") next.dry_run_candidate += 1;
+      if (run.approvalStatus === "pending") next.pending += 1;
+    }
+    return next;
+  }, [runs]);
 
   const filters: Array<{ key: RunFilter; label: string; count: number }> = [
     { key: "all", label: "All", count: counts.all },
@@ -1078,7 +1092,10 @@ function OptimizerEditor({
     }
   }
 
-  const pendingRuns = (runsQuery.data ?? []).filter((run) => run.approvalStatus === "pending").length;
+  const pendingRuns = useMemo(
+    () => (runsQuery.data ?? []).reduce((count, run) => count + (run.approvalStatus === "pending" ? 1 : 0), 0),
+    [runsQuery.data]
+  );
 
   return (
     <div style={pageStyle}>

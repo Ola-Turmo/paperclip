@@ -445,7 +445,8 @@ export function AutopilotProjectTab({ context }: PluginDetailTabProps) {
   );
 }
 
-const AUTOPILOT_PLUGIN_KEY = "paperclip.autopilot";
+// Note: autopilot is merged into the main plugin, so we use the main plugin's ID
+const AUTOPILOT_PLUGIN_KEY = "paperclip.autoresearch-improver-example";
 const AUTOPILOT_TAB_SLOT_ID = "autopilot-project-tab";
 
 export function AutopilotProjectSidebarLink({ context }: PluginProjectSidebarItemProps) {
@@ -458,46 +459,15 @@ export function AutopilotProjectSidebarLink({ context }: PluginProjectSidebarIte
   const prefix = context.companyPrefix ? `/${context.companyPrefix}` : "";
   const tabValue = `plugin:${AUTOPILOT_PLUGIN_KEY}:${AUTOPILOT_TAB_SLOT_ID}`;
   const href = `${prefix}/projects/${projectRef}?tab=${encodeURIComponent(tabValue)}`;
-  const isActive = typeof window !== "undefined" && (() => {
-    const pathname = window.location.pathname.replace(/\/+$/, "");
-    const segments = pathname.split("/").filter(Boolean);
-    const projectsIndex = segments.indexOf("projects");
-    const activeProjectRef = projectsIndex >= 0 ? segments[projectsIndex + 1] ?? null : null;
-    const activeTab = new URLSearchParams(window.location.search).get("tab");
-    if (activeTab !== tabValue) return false;
-    if (!activeProjectRef) return false;
-    return activeProjectRef === projectId || activeProjectRef === projectRef;
-  })();
-
-  const handleClick = (event: React.MouseEvent<HTMLAnchorElement>) => {
-    if (
-      event.defaultPrevented
-      || event.button !== 0
-      || event.metaKey
-      || event.ctrlKey
-      || event.altKey
-      || event.shiftKey
-    ) {
-      return;
-    }
-
-    event.preventDefault();
-    window.history.pushState({}, "", href);
-    window.dispatchEvent(new PopStateEvent("popstate"));
-  };
 
   return (
     <a
       href={href}
-      onClick={handleClick}
-      aria-current={isActive ? "page" : undefined}
       style={{
         display: "block",
         padding: "4px 8px",
         fontSize: 13,
-        color: isActive ? "#0f172a" : "#64748b",
-        background: isActive ? "rgba(15, 23, 42, 0.08)" : "transparent",
-        fontWeight: isActive ? 500 : 400,
+        color: "#64748b",
         textDecoration: "none",
         transition: "color 0.15s, background 0.15s"
       }}

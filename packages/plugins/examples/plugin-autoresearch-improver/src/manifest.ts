@@ -203,6 +203,20 @@ const manifest: PaperclipPluginManifestV1 = {
         displayName: "Optimizer",
         exportName: "ProjectOptimizerSidebarLink",
         entityTypes: ["project"]
+      },
+      {
+        type: "detailTab",
+        id: "autopilot-project-tab",
+        displayName: "Autopilot",
+        exportName: "AutopilotProjectTab",
+        entityTypes: ["project"]
+      },
+      {
+        type: "projectSidebarItem",
+        id: "autopilot-project-link",
+        displayName: "Autopilot",
+        exportName: "AutopilotProjectSidebarLink",
+        entityTypes: ["project"]
       }
     ]
   }
