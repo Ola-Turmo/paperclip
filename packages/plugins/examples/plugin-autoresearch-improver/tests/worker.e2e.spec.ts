@@ -206,6 +206,7 @@ describe("autoresearch improver worker e2e", () => {
     expect(result.run.artifacts.unauthorizedChangedFiles).toContain("NOT_ALLOWED.txt");
     expect(await readFile(path.join(workspaceRoot, "README.md"), "utf8")).toBe("baseline\n");
   });
+
   it("supports repeated guardrail execution with all-pass aggregation", async () => {
     const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
 
@@ -778,6 +779,37 @@ describe("autoresearch improver worker e2e", () => {
     expect(result.run.outcome).toMatch(/^(accepted|rejected|invalid)$/);
     // Run completed without crash and produced a result artifact
     expect(result.run.outcome).toBeTruthy();
+  });
+
+  it("records binary artifacts without trying to inline them into the text patch", async () => {
+    const { harness, workspaceRoot, companyId, projectId, workspaceId } = await setupHarness();
+    cleanupPaths.push(workspaceRoot);
+
+    const optimizer = await harness.performAction("save-optimizer", {
+      companyId,
+      projectId,
+      workspaceId,
+      name: "Binary artifact test",
+      objective: "Create a binary artifact alongside an improved README",
+      mutablePaths: ".",
+      mutationCommand: "node -e \"const fs=require('node:fs');fs.writeFileSync('binary-output.bin', Buffer.from([0,1,2,3,4]));fs.writeFileSync('README.md','binary-safe\\n')\"",
+      scoreCommand: readmeScoreCommand,
+      scoreFormat: "json",
+      scoreKey: "primary",
+      sandboxStrategy: "git_worktree",
+      scorerIsolationMode: "separate_workspace",
+      applyMode: "automatic"
+    }) as { optimizerId: string };
+
+    const result = await harness.performAction("run-optimizer-cycle", {
+      projectId,
+      optimizerId: optimizer.optimizerId
+    }) as { run: { outcome: string; artifacts: { binaryFiles: string[]; changedFiles: string[]; patch: string } } };
+
+    expect(result.run.outcome).toBe("accepted");
+    expect(result.run.artifacts.binaryFiles).toContain("binary-output.bin");
+    expect(result.run.artifacts.changedFiles).toContain("binary-output.bin");
+    expect(result.run.artifacts.patch).toContain("Binary files changed (excluded from text diff): binary-output.bin");
   });
 
 

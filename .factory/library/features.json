@@ -1,0 +1,149 @@
+{
+  "features": [
+    {
+      "id": "autopilot-project-onboarding-and-program",
+      "description": "Add company-scoped Product Autopilot onboarding plus versioned Product Program authoring, settings persistence, and reload-safe revision history for each project.",
+      "skillName": "backend-worker",
+      "milestone": "core-platform",
+      "preconditions": [
+        "Paperclip project and company entities exist",
+        "Plugin state or entities can persist company-scoped settings and documents"
+      ],
+      "expectedBehavior": [
+        "Enables autopilot for a selected company/project pair",
+        "Persists repo/workspace/automation/budget settings and shows them again after reload",
+        "Creates and edits Product Program revisions without overwriting history",
+        "Preserves prior revisions and denies cross-company access"
+      ],
+      "verificationSteps": [
+        "Run targeted onboarding and Product Program tests for persistence, revisions, and cross-company denial",
+        "Manual: enable autopilot from the project surface and reload the page",
+        "Manual: edit the Product Program, create a new revision, and confirm revision history remains visible",
+        "Manual: confirm another company context cannot access the same project's onboarding or Product Program state"
+      ],
+      "fulfills": ["VAL-AUTOPILOT-001", "VAL-AUTOPILOT-002", "VAL-AUTOPILOT-003", "VAL-CROSS-002"],
+      "status": "pending"
+    },
+    {
+      "id": "research-ideas-and-learning-signals",
+      "description": "Implement research cycles, evidence-backed findings, scored idea generation, duplicate suppression, maybe-pool handling, swipe decisions, and preference-model updates for Product Autopilot projects.",
+      "skillName": "backend-worker",
+      "milestone": "product-loop",
+      "preconditions": [
+        "Autopilot onboarding and Product Program storage exist",
+        "Plugin jobs or routines can trigger research and idea generation"
+      ],
+      "expectedBehavior": [
+        "Runs research on demand and stores attributable reports/findings",
+        "Generates scored ideas with rationale and source references",
+        "Suppresses or annotates duplicate ideas across active and maybe-pooled ideas",
+        "Supports Pass, Maybe, Yes, and Now review actions",
+        "Updates the preference profile and idea ordering from swipe history"
+      ],
+      "verificationSteps": [
+        "Run research, idea-generation, and swipe-flow tests including duplicate-detection and preference-update cases",
+        "Manual: trigger research and inspect the resulting report in the browser",
+        "Manual: review generated ideas, exercise Pass/Maybe/Yes/Now, and verify downstream state changes",
+        "Manual: verify Maybe ideas surface through the intended resurfacing path without duplicate cards"
+      ],
+      "fulfills": ["VAL-AUTOPILOT-010", "VAL-AUTOPILOT-011", "VAL-AUTOPILOT-012", "VAL-AUTOPILOT-020", "VAL-AUTOPILOT-021", "VAL-AUTOPILOT-022", "VAL-AUTOPILOT-023"],
+      "status": "pending"
+    },
+    {
+      "id": "planning-automation-tiers-and-delivery-runs",
+      "description": "Implement planning artifacts, automation-tier enforcement, isolated delivery runs with leased workspaces/ports, project and company budget caps, and pause/resume controls for approved work.",
+      "skillName": "backend-worker",
+      "milestone": "delivery-control",
+      "preconditions": [
+        "Approved ideas can create downstream work",
+        "Workspace leasing and cost tracking primitives are available"
+      ],
+      "expectedBehavior": [
+        "Approved ideas produce planning artifacts with scope, dependencies, tests, and execution mode",
+        "Supervised, Semi-Auto, and Full Auto tiers enforce distinct approval/merge behavior",
+        "Delivery runs allocate isolated workspaces/worktrees and leased ports with visible metadata",
+        "Project and company-level caps pause future work with a visible reason",
+        "Operators can pause/resume either autopilot or a specific run without losing state"
+      ],
+      "verificationSteps": [
+        "Run delivery-run tests for planning, automation tiers, workspace leasing, budget pause behavior, and pause/resume state",
+        "Manual: create runs under each automation tier and inspect the resulting approval/merge state",
+        "Manual: verify workspace path, branch, and port metadata from the run UI",
+        "Manual: exceed a budget cap and confirm new work pauses with a visible reason"
+      ],
+      "fulfills": ["VAL-AUTOPILOT-030", "VAL-AUTOPILOT-031", "VAL-AUTOPILOT-032", "VAL-AUTOPILOT-033", "VAL-AUTOPILOT-034"],
+      "status": "pending"
+    },
+    {
+      "id": "convoy-checkpoint-and-merge-coordination",
+      "description": "Implement convoy decomposition, dependency-aware task execution, checkpoint/resume, merge coordination, product locks, and operator intervention controls for complex delivery runs.",
+      "skillName": "backend-worker",
+      "milestone": "advanced-execution",
+      "preconditions": [
+        "Delivery runs and planning artifacts already exist",
+        "Run state can persist checkpoints and dependency metadata"
+      ],
+      "expectedBehavior": [
+        "Complex ideas decompose into convoy tasks with explicit dependency order",
+        "Downstream tasks stay blocked until prerequisites pass",
+        "Checkpoint and resume restore the saved run state instead of restarting",
+        "Conflicting merges or run completions are blocked with a visible reason",
+        "Operators can add notes, request checkpoints, nudge runs, and inspect linked issue/comment context during active execution"
+      ],
+      "verificationSteps": [
+        "Run convoy orchestration tests for dependency blocking, checkpoint/resume, locks, and merge-coordination behavior",
+        "Manual: inspect the convoy graph before and after prerequisite completion",
+        "Manual: resume a checkpointed run and verify prior workspace metadata remains attached",
+        "Manual: attempt conflicting run completion or merge behavior and confirm it is blocked visibly"
+      ],
+      "fulfills": ["VAL-AUTOPILOT-035", "VAL-AUTOPILOT-036", "VAL-AUTOPILOT-037", "VAL-AUTOPILOT-038"],
+      "status": "pending"
+    },
+    {
+      "id": "knowledge-digests-release-health-and-rollback",
+      "description": "Implement learner summaries, reusable knowledge and skill reinjection, recurring digests and alerts, release-health monitoring, and rollback/revert handling after merged runs.",
+      "skillName": "backend-worker",
+      "milestone": "closed-loop-operations",
+      "preconditions": [
+        "Delivery runs can complete and record outcomes",
+        "Post-merge or release-health checks can be modeled in plugin state/jobs"
+      ],
+      "expectedBehavior": [
+        "Completed runs produce learner summaries and project-scoped reusable knowledge",
+        "Relevant learned procedures can be surfaced for future runs",
+        "Recurring or triggered digests exist for opportunities, budget alerts, and stuck-run escalation",
+        "Release-health failures surface alerts and trigger the configured rollback or revert path"
+      ],
+      "verificationSteps": [
+        "Run tests for learner-summary persistence, digest generation, and release-health failure handling",
+        "Manual: inspect knowledge surfaces after a completed run",
+        "Manual: trigger or inspect digests from the company/project surfaces",
+        "Manual: verify a release-health failure produces visible rollback or revert handling"
+      ],
+      "fulfills": ["VAL-AUTOPILOT-039", "VAL-AUTOPILOT-040", "VAL-AUTOPILOT-041"],
+      "status": "pending"
+    },
+    {
+      "id": "end-to-end-project-navigation-loop",
+      "description": "Wire the complete autopilot loop into Paperclip project and company navigation so operators can move through research, review, execution, knowledge, and recovery surfaces without leaving the project context.",
+      "skillName": "backend-worker",
+      "milestone": "integrated-experience",
+      "preconditions": [
+        "Core autopilot subflows and UI surfaces already exist",
+        "Project and company navigation surfaces can deep-link into plugin views"
+      ],
+      "expectedBehavior": [
+        "Users can reach autopilot surfaces from existing Paperclip project navigation",
+        "Users can move through research, swipe review, delivery work, knowledge, and recovery views from the same project context",
+        "Company boundaries remain enforced throughout navigation and direct API access"
+      ],
+      "verificationSteps": [
+        "Run browser end-to-end navigation checks across the full autopilot flow",
+        "Manual: start from the project page and traverse research, swipe, run, knowledge, and release-health surfaces",
+        "Manual: confirm the entire flow stays anchored to the current company and project context"
+      ],
+      "fulfills": ["VAL-CROSS-001"],
+      "status": "pending"
+    }
+  ]
+}

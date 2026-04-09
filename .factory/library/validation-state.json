@@ -1,0 +1,28 @@
+{
+  "assertions": {
+    "VAL-AUTOPILOT-001": { "status": "pending" },
+    "VAL-AUTOPILOT-002": { "status": "pending" },
+    "VAL-AUTOPILOT-003": { "status": "pending" },
+    "VAL-AUTOPILOT-010": { "status": "pending" },
+    "VAL-AUTOPILOT-011": { "status": "pending" },
+    "VAL-AUTOPILOT-012": { "status": "pending" },
+    "VAL-AUTOPILOT-020": { "status": "pending" },
+    "VAL-AUTOPILOT-021": { "status": "pending" },
+    "VAL-AUTOPILOT-022": { "status": "pending" },
+    "VAL-AUTOPILOT-023": { "status": "pending" },
+    "VAL-AUTOPILOT-030": { "status": "pending" },
+    "VAL-AUTOPILOT-031": { "status": "pending" },
+    "VAL-AUTOPILOT-032": { "status": "pending" },
+    "VAL-AUTOPILOT-033": { "status": "pending" },
+    "VAL-AUTOPILOT-034": { "status": "pending" },
+    "VAL-AUTOPILOT-035": { "status": "pending" },
+    "VAL-AUTOPILOT-036": { "status": "pending" },
+    "VAL-AUTOPILOT-037": { "status": "pending" },
+    "VAL-AUTOPILOT-038": { "status": "pending" },
+    "VAL-AUTOPILOT-039": { "status": "pending" },
+    "VAL-AUTOPILOT-040": { "status": "pending" },
+    "VAL-AUTOPILOT-041": { "status": "pending" },
+    "VAL-CROSS-001": { "status": "pending" },
+    "VAL-CROSS-002": { "status": "pending" }
+  }
+}

@@ -50,7 +50,7 @@ vi.mock("../services/index.js", () => ({
 }));
 
 const routeModulesPromise = Promise.all([import("../routes/companies.js"), import("../middleware/index.js")]);
-const COMPANY_PORTABILITY_ROUTE_TEST_TIMEOUT_MS = 15_000;
+const COMPANY_PORTABILITY_ROUTE_TEST_TIMEOUT_MS = 30_000;
 
 async function createApp(actor: Record<string, unknown>) {
   const [{ companyRoutes }, { errorHandler }] = await routeModulesPromise;

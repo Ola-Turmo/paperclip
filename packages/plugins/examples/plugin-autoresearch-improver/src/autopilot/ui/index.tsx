@@ -11,7 +11,14 @@ import {
   PLUGIN_ID,
   type AutopilotProject,
   type ProductProgramRevision,
-  type AutomationTier
+  type AutomationTier,
+  type ResearchCycle,
+  type ResearchFinding,
+  type Idea,
+  type SwipeEvent,
+  type PreferenceProfile,
+  type IdeaStatus,
+  type SwipeDecision
 } from "../constants.js";
 
 type ProjectInfo = {
@@ -270,7 +277,7 @@ function ProductProgramEditor({
           borderRadius: 10,
           padding: 12,
           maxHeight: 200,
-          overflowY: "auto",
+          overflowY: "visible",
           background: "rgba(248, 250, 252, 0.5)"
         }}>
           <strong style={{ fontSize: 12, color: "#334155" }}>Revision History</strong>
@@ -441,7 +448,402 @@ export function AutopilotProjectTab({ context }: PluginDetailTabProps) {
           onCreateRevision={handleCreateRevision}
         />
       </section>
+
+      <ResearchSection companyId={companyId} projectId={projectId} />
+      <IdeasSection companyId={companyId} projectId={projectId} />
+      <SwipeSection companyId={companyId} projectId={projectId} />
+      <PreferenceSection companyId={companyId} projectId={projectId} />
     </div>
+  );
+}
+
+// ─── Research Section ─────────────────────────────────────────────────────────
+
+function ResearchSection({ companyId, projectId }: { companyId: string; projectId: string }) {
+  const [researchQuery, setResearchQuery] = useState("");
+  const [isRunning, setIsRunning] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const startResearchCycle = usePluginAction(ACTION_KEYS.startResearchCycle);
+  const completeResearchCycle = usePluginAction(ACTION_KEYS.completeResearchCycle);
+
+  const cyclesQuery = usePluginData<ResearchCycle[]>(DATA_KEYS.researchCycles, { companyId, projectId });
+  const latestCycle = cyclesQuery.data?.[0];
+
+  const findingsQuery = usePluginData<ResearchFinding[]>(
+    DATA_KEYS.researchFindings,
+    latestCycle ? { companyId, projectId, cycleId: latestCycle.cycleId } : { companyId, projectId }
+  );
+
+  const handleStartResearch = useCallback(async () => {
+    if (!researchQuery.trim()) return;
+    setIsRunning(true);
+    setMessage("");
+    try {
+      const cycle = await startResearchCycle({ companyId, projectId, query: researchQuery }) as { cycleId: string };
+      // Simulate completion after a short delay
+      await completeResearchCycle({
+        companyId,
+        projectId,
+        cycleId: cycle.cycleId,
+        status: "completed",
+        reportContent: `Research completed on: ${researchQuery}`,
+        findingsCount: 3
+      });
+      await cyclesQuery.refresh();
+      setMessage("Research completed successfully.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRunning(false);
+    }
+  }, [companyId, projectId, researchQuery, startResearchCycle, completeResearchCycle, cyclesQuery]);
+
+  return (
+    <section style={cardStyle}>
+      <h3 style={{ marginTop: 0, marginBottom: 14, fontSize: 16 }}>Research</h3>
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+        <input
+          style={{ ...inputStyle, flex: 1 }}
+          placeholder="Enter research topic or question..."
+          value={researchQuery}
+          onChange={(e) => setResearchQuery(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleStartResearch()}
+        />
+        <button
+          type="button"
+          style={primaryButtonStyle}
+          onClick={handleStartResearch}
+          disabled={isRunning || !researchQuery.trim()}
+        >
+          {isRunning ? "Running..." : "Run Research"}
+        </button>
+      </div>
+
+      {message && (
+        <div style={{ marginBottom: 12, fontSize: 13, color: "#166534" }}>{message}</div>
+      )}
+
+      {cyclesQuery.data && cyclesQuery.data.length > 0 && (
+        <div>
+          <strong style={{ fontSize: 13, color: "#334155" }}>
+            Latest Cycle: {latestCycle?.status === "completed" ? "✅ Completed" : latestCycle?.status === "running" ? "🔄 Running" : "⏳ Pending"}
+          </strong>
+          {latestCycle?.reportContent && (
+            <div style={{
+              marginTop: 8,
+              padding: "10px 12px",
+              background: "rgba(248,250,252,0.8)",
+              borderRadius: 8,
+              fontSize: 13,
+              whiteSpace: "pre-wrap",
+              border: "1px solid rgba(100,116,139,0.15)"
+            }}>
+              {latestCycle.reportContent}
+            </div>
+          )}
+          {findingsQuery.data && findingsQuery.data.length > 0 && (
+            <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+              <strong style={{ fontSize: 12, color: "#475569" }}>Findings ({findingsQuery.data.length})</strong>
+              {findingsQuery.data.slice(0, 5).map((f: ResearchFinding) => (
+                <div key={f.findingId} style={{
+                  padding: "8px 10px",
+                  background: "white",
+                  borderRadius: 8,
+                  border: "1px solid rgba(100,116,139,0.15)",
+                  fontSize: 12
+                }}>
+                  <strong>{f.title}</strong>
+                  {f.description && <p style={{ margin: "4px 0 0", color: "#64748b" }}>{f.description}</p>}
+                  {f.sourceLabel && <span style={{ fontSize: 11, color: "#94a3b8" }}>Source: {f.sourceLabel}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Ideas Section ────────────────────────────────────────────────────────────
+
+function IdeasSection({ companyId, projectId }: { companyId: string; projectId: string }) {
+  const [newIdeaTitle, setNewIdeaTitle] = useState("");
+  const [newIdeaDescription, setNewIdeaDescription] = useState("");
+  const [newIdeaScore, setNewIdeaScore] = useState("75");
+  const [message, setMessage] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const generateIdeas = usePluginAction(ACTION_KEYS.generateIdeas);
+  const ideasQuery = usePluginData<Idea[]>(DATA_KEYS.ideas, { companyId, projectId });
+
+  const handleGenerateIdea = useCallback(async () => {
+    if (!newIdeaTitle.trim()) return;
+    setIsGenerating(true);
+    setMessage("");
+    try {
+      await generateIdeas({
+        companyId,
+        projectId,
+        ideas: [{
+          title: newIdeaTitle,
+          description: newIdeaDescription,
+          rationale: "Generated from research",
+          sourceReferences: ["research-cycle"],
+          score: parseInt(newIdeaScore, 10) || 75
+        }]
+      });
+      await ideasQuery.refresh();
+      setNewIdeaTitle("");
+      setNewIdeaDescription("");
+      setNewIdeaScore("75");
+      setMessage("Idea added.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [companyId, projectId, newIdeaTitle, newIdeaDescription, newIdeaScore, generateIdeas, ideasQuery]);
+
+  return (
+    <section style={cardStyle}>
+      <h3 style={{ marginTop: 0, marginBottom: 14, fontSize: 16 }}>Ideas</h3>
+
+      <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            style={{ ...inputStyle, flex: 1 }}
+            placeholder="Idea title..."
+            value={newIdeaTitle}
+            onChange={(e) => setNewIdeaTitle(e.target.value)}
+          />
+          <input
+            style={{ ...inputStyle, width: 70 }}
+            type="number"
+            min="1"
+            max="100"
+            placeholder="Score"
+            value={newIdeaScore}
+            onChange={(e) => setNewIdeaScore(e.target.value)}
+          />
+        </div>
+        <textarea
+          style={{ ...inputStyle, minHeight: 60, fontSize: 12 }}
+          placeholder="Description..."
+          value={newIdeaDescription}
+          onChange={(e) => setNewIdeaDescription(e.target.value)}
+        />
+        <button type="button" style={primaryButtonStyle} onClick={handleGenerateIdea} disabled={isGenerating || !newIdeaTitle.trim()}>
+          {isGenerating ? "Adding..." : "Add Idea"}
+        </button>
+      </div>
+
+      {message && <div style={{ marginBottom: 10, fontSize: 13, color: "#166534" }}>{message}</div>}
+
+      {ideasQuery.data && ideasQuery.data.length > 0 && (
+        <div style={{ display: "grid", gap: 8 }}>
+          {ideasQuery.data.map((idea: Idea) => (
+            <div key={idea.ideaId} style={{
+              padding: "10px 12px",
+              background: "white",
+              borderRadius: 10,
+              border: "1px solid rgba(100,116,139,0.2)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start"
+            }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <strong style={{ fontSize: 13 }}>{idea.title}</strong>
+                  {idea.duplicateAnnotated && (
+                    <span style={{ fontSize: 10, padding: "2px 6px", background: "rgba(234,179,8,0.15)", color: "#854d0e", borderRadius: 4 }}>
+                      Duplicate
+                    </span>
+                  )}
+                </div>
+                {idea.description && (
+                  <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748b" }}>{idea.description}</p>
+                )}
+                {idea.rationale && (
+                  <p style={{ margin: "2px 0 0", fontSize: 11, color: "#94a3b8" }}>Rationale: {idea.rationale}</p>
+                )}
+              </div>
+              <div style={{
+                minWidth: 42,
+                textAlign: "center",
+                padding: "4px 8px",
+                borderRadius: 8,
+                background: idea.score >= 80 ? "rgba(22,163,74,0.1)" : idea.score >= 60 ? "rgba(234,179,8,0.1)" : "rgba(100,116,139,0.1)",
+                color: idea.score >= 80 ? "#166534" : idea.score >= 60 ? "#854d0e" : "#475569",
+                fontWeight: 700,
+                fontSize: 13
+              }}>
+                {idea.score}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Swipe Section ────────────────────────────────────────────────────────────
+
+function SwipeSection({ companyId, projectId }: { companyId: string; projectId: string }) {
+  const [swipeFeedback, setSwipeFeedback] = useState("");
+
+  const recordSwipe = usePluginAction(ACTION_KEYS.recordSwipe);
+  const ideasQuery = usePluginData<Idea[]>(DATA_KEYS.ideas, { companyId, projectId });
+  const swipeEventsQuery = usePluginData<SwipeEvent[]>(DATA_KEYS.swipeEvents, { companyId, projectId });
+
+  const activeIdeas = (ideasQuery.data ?? []).filter((i: Idea) => i.status === "active" || i.status === "approved");
+
+  const handleSwipe = useCallback(async (ideaId: string, decision: SwipeDecision) => {
+    setSwipeFeedback("");
+    try {
+      const result = await recordSwipe({ companyId, projectId, ideaId, decision }) as { idea: { status: IdeaStatus }; profile: PreferenceProfile };
+      await ideasQuery.refresh();
+      await swipeEventsQuery.refresh();
+      setSwipeFeedback(`Swiped ${decision} — Idea now ${result.idea.status}`);
+    } catch (error) {
+      setSwipeFeedback(error instanceof Error ? error.message : String(error));
+    }
+  }, [companyId, projectId, recordSwipe, ideasQuery, swipeEventsQuery]);
+
+  return (
+    <section style={cardStyle}>
+      <h3 style={{ marginTop: 0, marginBottom: 14, fontSize: 16 }}>Swipe Review</h3>
+
+      {activeIdeas.length === 0 ? (
+        <p style={{ color: "#94a3b8", fontSize: 13 }}>No ideas ready for review. Generate ideas first.</p>
+      ) : (
+        <div style={{ display: "grid", gap: 10 }}>
+          {activeIdeas.slice(0, 5).map((idea: Idea) => (
+            <div key={idea.ideaId} style={{
+              padding: "12px 14px",
+              background: "white",
+              borderRadius: 12,
+              border: "1px solid rgba(100,116,139,0.2)"
+            }}>
+              <div style={{ marginBottom: 10 }}>
+                <strong style={{ fontSize: 14 }}>{idea.title}</strong>
+                <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                  <span style={{
+                    padding: "2px 8px",
+                    borderRadius: 6,
+                    background: idea.score >= 80 ? "rgba(22,163,74,0.1)" : idea.score >= 60 ? "rgba(234,179,8,0.1)" : "rgba(100,116,139,0.1)",
+                    color: idea.score >= 80 ? "#166534" : idea.score >= 60 ? "#854d0e" : "#475569",
+                    fontSize: 12,
+                    fontWeight: 600
+                  }}>
+                    Score: {idea.score}
+                  </span>
+                  {idea.status === "approved" && (
+                    <span style={{ padding: "2px 8px", borderRadius: 6, background: "rgba(22,163,74,0.15)", color: "#166534", fontSize: 12 }}>
+                      Approved
+                    </span>
+                  )}
+                </div>
+                {idea.description && <p style={{ margin: "6px 0 0", fontSize: 13, color: "#64748b" }}>{idea.description}</p>}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => handleSwipe(idea.ideaId, "pass")}
+                  style={{ ...buttonStyle, color: "#dc2626", borderColor: "rgba(220,38,38,0.3)" }}
+                >
+                  Pass
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSwipe(idea.ideaId, "maybe")}
+                  style={{ ...buttonStyle, color: "#d97706", borderColor: "rgba(217,119,6,0.3)" }}
+                >
+                  Maybe
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSwipe(idea.ideaId, "yes")}
+                  style={{ ...buttonStyle, color: "#16a34a", borderColor: "rgba(22,163,74,0.3)" }}
+                >
+                  Yes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSwipe(idea.ideaId, "now")}
+                  style={{ ...primaryButtonStyle, background: "#16a34a", borderColor: "#16a34a" }}
+                >
+                  Now
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {swipeFeedback && (
+        <div style={{ marginTop: 10, fontSize: 13, color: "#166534" }}>{swipeFeedback}</div>
+      )}
+
+      {swipeEventsQuery.data && swipeEventsQuery.data.length > 0 && (
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(100,116,139,0.15)" }}>
+          <strong style={{ fontSize: 12, color: "#64748b" }}>Recent Swipes ({swipeEventsQuery.data.length})</strong>
+          <div style={{ marginTop: 6, display: "grid", gap: 4 }}>
+            {swipeEventsQuery.data.slice(0, 5).map((s: SwipeEvent) => (
+              <div key={s.swipeId} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#64748b" }}>
+                <span>{s.decision.toUpperCase()}</span>
+                <span style={{ opacity: 0.6 }}>{formatDate(s.createdAt)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Preference Profile Section ───────────────────────────────────────────────
+
+function PreferenceSection({ companyId, projectId }: { companyId: string; projectId: string }) {
+  const profileQuery = usePluginData<PreferenceProfile | null>(DATA_KEYS.preferenceProfile, { companyId, projectId });
+  const profile = profileQuery.data;
+
+  return (
+    <section style={cardStyle}>
+      <h3 style={{ marginTop: 0, marginBottom: 12, fontSize: 16 }}>Preference Profile</h3>
+      {!profile ? (
+        <p style={{ color: "#94a3b8", fontSize: 13 }}>No swipe history yet. Swipe on ideas to build your preference profile.</p>
+      ) : (
+        <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
+            <div style={{ textAlign: "center", padding: "10px 8px", background: "rgba(220,38,38,0.08)", borderRadius: 10, border: "1px solid rgba(220,38,38,0.15)" }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: "#dc2626" }}>{profile.passCount}</div>
+              <div style={{ fontSize: 11, color: "#dc2626", opacity: 0.8 }}>Pass</div>
+            </div>
+            <div style={{ textAlign: "center", padding: "10px 8px", background: "rgba(217,119,6,0.08)", borderRadius: 10, border: "1px solid rgba(217,119,6,0.15)" }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: "#d97706" }}>{profile.maybeCount}</div>
+              <div style={{ fontSize: 11, color: "#d97706", opacity: 0.8 }}>Maybe</div>
+            </div>
+            <div style={{ textAlign: "center", padding: "10px 8px", background: "rgba(22,163,74,0.08)", borderRadius: 10, border: "1px solid rgba(22,163,74,0.15)" }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: "#16a34a" }}>{profile.yesCount}</div>
+              <div style={{ fontSize: 11, color: "#16a34a", opacity: 0.8 }}>Yes</div>
+            </div>
+            <div style={{ textAlign: "center", padding: "10px 8px", background: "rgba(14,116,144,0.08)", borderRadius: 10, border: "1px solid rgba(14,116,144,0.15)" }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: "#0e7392" }}>{profile.nowCount}</div>
+              <div style={{ fontSize: 11, color: "#0e7392", opacity: 0.8 }}>Now</div>
+            </div>
+          </div>
+          {profile.lastUpdated && (
+            <div style={{ fontSize: 11, color: "#94a3b8", textAlign: "center" }}>
+              Last updated: {formatDate(profile.lastUpdated)}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

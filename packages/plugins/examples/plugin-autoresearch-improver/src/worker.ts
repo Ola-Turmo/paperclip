@@ -42,6 +42,14 @@ import {
   normalizeRelativePath,
   summarizeOutput
 } from "./lib/optimizer.js";
+import {
+  ACTION_KEYS as AUTOPILOT_ACTION_KEYS,
+  DATA_KEYS as AUTOPILOT_DATA_KEYS,
+  ENTITY_TYPES as AUTOPILOT_ENTITY_TYPES,
+  type AutopilotProject,
+  type ProductProgramRevision,
+  type AutomationTier,
+} from "./autopilot/constants.js";
 import type {
   ApplyMode,
   CommandExecutionResult,
@@ -87,6 +95,158 @@ type ScorerContext = {
   workspacePath: string;
   cleanup: () => Promise<void>;
 };
+
+type GitDiffContext = {
+  git: GitWorkspaceContext;
+  sandboxRoot: string;
+};
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function isValidCompanyId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isValidProjectId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isValidAutopilotId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isAutomationTier(value: unknown): value is AutomationTier {
+  return value === "supervised" || value === "semiauto" || value === "fullauto";
+}
+
+function parseAutomationTier(value: unknown, fallback: AutomationTier = "supervised"): AutomationTier {
+  return isAutomationTier(value) ? value : fallback;
+}
+
+function parseNonNegativeInteger(value: unknown, fallback: number): number {
+  const parsed = typeof value === "number" && Number.isFinite(value) ? value : parseInt(String(value), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function asAutopilotProject(record: PluginEntityRecord): AutopilotProject {
+  return record.data as unknown as AutopilotProject;
+}
+
+function asProductProgramRevision(record: PluginEntityRecord): ProductProgramRevision {
+  return record.data as unknown as ProductProgramRevision;
+}
+
+async function findAutopilotProject(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+): Promise<PluginEntityRecord | null> {
+  const entities = await ctx.entities.list({
+    entityType: AUTOPILOT_ENTITY_TYPES.autopilotProject,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 10,
+    offset: 0,
+  });
+  return entities.find((e) => {
+    const data = e.data as unknown as AutopilotProject;
+    return data.companyId === companyId && data.projectId === projectId;
+  }) ?? null;
+}
+
+async function upsertAutopilotProject(
+  ctx: PluginContext,
+  autopilot: AutopilotProject,
+): Promise<PluginEntityRecord> {
+  return await ctx.entities.upsert({
+    entityType: AUTOPILOT_ENTITY_TYPES.autopilotProject,
+    scopeKind: "project",
+    scopeId: autopilot.projectId,
+    externalId: autopilot.autopilotId,
+    title: `Autopilot for project ${autopilot.projectId}`,
+    status: autopilot.enabled ? "active" : "inactive",
+    data: autopilot as unknown as Record<string, unknown>,
+  });
+}
+
+async function listAutopilotProjectEntities(
+  ctx: PluginContext,
+  projectId?: string,
+): Promise<PluginEntityRecord[]> {
+  return await ctx.entities.list({
+    entityType: AUTOPILOT_ENTITY_TYPES.autopilotProject,
+    scopeKind: projectId ? "project" : undefined,
+    scopeId: projectId,
+    limit: 200,
+    offset: 0,
+  });
+}
+
+async function findProductProgramRevision(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+  revisionId: string,
+): Promise<PluginEntityRecord | null> {
+  const entities = await ctx.entities.list({
+    entityType: AUTOPILOT_ENTITY_TYPES.productProgramRevision,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 100,
+    offset: 0,
+  });
+  return entities.find((e) => {
+    const data = e.data as unknown as ProductProgramRevision;
+    return data.companyId === companyId && data.revisionId === revisionId;
+  }) ?? null;
+}
+
+async function listProductProgramRevisionEntities(
+  ctx: PluginContext,
+  companyId: string,
+  projectId?: string,
+): Promise<PluginEntityRecord[]> {
+  const entities = await ctx.entities.list({
+    entityType: AUTOPILOT_ENTITY_TYPES.productProgramRevision,
+    scopeKind: projectId ? "project" : undefined,
+    scopeId: projectId,
+    limit: 500,
+    offset: 0,
+  });
+  return entities.filter((e) => {
+    const data = e.data as unknown as ProductProgramRevision;
+    return data.companyId === companyId;
+  });
+}
+
+async function upsertProductProgramRevision(
+  ctx: PluginContext,
+  revision: ProductProgramRevision,
+): Promise<PluginEntityRecord> {
+  return await ctx.entities.upsert({
+    entityType: AUTOPILOT_ENTITY_TYPES.productProgramRevision,
+    scopeKind: "project",
+    scopeId: revision.projectId,
+    externalId: revision.revisionId,
+    title: `Program revision v${revision.version}`,
+    status: "active",
+    data: revision as unknown as Record<string, unknown>,
+  });
+}
+
+async function getLatestProductProgramRevision(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+): Promise<ProductProgramRevision | null> {
+  const entities = await listProductProgramRevisionEntities(ctx, companyId, projectId);
+  if (entities.length === 0) return null;
+  return entities
+    .map(asProductProgramRevision)
+    .sort((a, b) => b.version - a.version)[0] ?? null;
+}
 
 const optimizerTemplates: OptimizerTemplate[] = [
   {
@@ -259,10 +419,6 @@ const optimizerTemplates: OptimizerTemplate[] = [
   }
 ];
 
-function nowIso(): string {
-  return new Date().toISOString();
-}
-
 function isScoreAggregator(value: unknown): value is ScoreAggregator {
   return value === "median" || value === "mean" || value === "max" || value === "min";
 }
@@ -330,18 +486,46 @@ function pathIsAllowed(relativePath: string, mutablePaths: string[]): boolean {
   });
 }
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  }));
+
+  return results;
+}
+
+async function readFileHead(filePath: string, maxBytes = 512): Promise<Buffer> {
+  const file = await fs.open(filePath, "r");
+  const buffer = Buffer.alloc(maxBytes);
+  try {
+    const { bytesRead } = await file.read(buffer, 0, maxBytes, 0);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    await file.close();
+  }
+}
+
 /**
  * Detect whether a file is binary by checking for null bytes in the first 512 bytes.
  * Files with null bytes are almost certainly binary (images, PDFs, compiled binaries, etc.).
  */
 async function isBinaryFile(filePath: string): Promise<boolean> {
   try {
-    const buffer = Buffer.alloc(512);
-    const { bytesRead } = await fs.open(filePath, "r").then((fd) =>
-      fd.read(buffer, 0, 512, 0).then(({ bytesRead: br }) => fd.close().then(() => ({ bytesRead: br })))
-    ).catch(() => ({ bytesRead: 0 }));
-    if (bytesRead === 0) return false;
-    return buffer.subarray(0, bytesRead).some((byte) => byte === 0);
+    const head = await readFileHead(filePath);
+    return head.some((byte) => byte === 0);
   } catch {
     return false;
   }
@@ -366,7 +550,7 @@ async function listFilesRecursively(rootDir: string, baseDir = rootDir): Promise
     }
   }
 
-  return files.sort();
+  return files;
 }
 
 async function filesDiffer(leftPath: string, rightPath: string): Promise<boolean> {
@@ -389,20 +573,12 @@ async function filesDiffer(leftPath: string, rightPath: string): Promise<boolean
   // indicator of binary content). If either file looks binary, fall back to
   // a size-only comparison since full byte comparison of large files is
   // expensive and not useful for text-oriented diff artifacts.
-  const [leftFile, rightFile] = await Promise.all([fs.open(leftPath, "r"), fs.open(rightPath, "r")]);
-  const leftHead = Buffer.alloc(512);
-  const rightHead = Buffer.alloc(512);
-  try {
-    await Promise.all([
-      leftFile.read(leftHead, 0, leftHead.length, 0),
-      rightFile.read(rightHead, 0, rightHead.length, 0)
-    ]);
-  } finally {
-    await Promise.all([leftFile.close(), rightFile.close()]);
-  }
-
-  const leftBinary = leftHead.some((byte: number) => byte === 0);
-  const rightBinary = rightHead.some((byte: number) => byte === 0);
+  const [leftHead, rightHead] = await Promise.all([
+    readFileHead(leftPath),
+    readFileHead(rightPath)
+  ]);
+  const leftBinary = leftHead.some((byte) => byte === 0);
+  const rightBinary = rightHead.some((byte) => byte === 0);
   if (leftBinary || rightBinary) {
     // For binary files, trust the size check already done above.
     return leftStat.size !== rightStat.size;
@@ -417,7 +593,8 @@ async function createDiffArtifact(
   baselineRoot: string,
   candidateRoot: string,
   mutablePaths: string[],
-  maxPatchChars: number
+  maxPatchChars: number,
+  gitDiffContext?: GitDiffContext
 ): Promise<RunDiffArtifact> {
   const baselineExists = await pathExists(baselineRoot);
   const candidateExists = await pathExists(candidateRoot);
@@ -425,37 +602,32 @@ async function createDiffArtifact(
     return emptyDiffArtifact();
   }
 
-  const [baselineFiles, candidateFiles] = await Promise.all([
-    listFilesRecursively(baselineRoot),
-    listFilesRecursively(candidateRoot)
-  ]);
-  const union = [...new Set([...baselineFiles, ...candidateFiles])].sort();
-  const changedFiles: string[] = [];
+  const changedFiles = gitDiffContext
+    ? await listGitChangedWorkspaceFiles(gitDiffContext.git, gitDiffContext.sandboxRoot)
+    : await listChangedFilesByFilesystem(baselineRoot, candidateRoot);
 
-  for (const relativePath of union) {
-    const changed = await filesDiffer(
-      path.join(baselineRoot, relativePath),
-      path.join(candidateRoot, relativePath)
-    );
-    if (changed) changedFiles.push(relativePath);
-  }
-
-  const allowedChangedFiles = changedFiles.filter((entry) => pathIsAllowed(entry, mutablePaths));
-  const unauthorizedChangedFiles = changedFiles.filter((entry) => !pathIsAllowed(entry, mutablePaths));
-
-  // Detect binary files: skip them from the text patch but record them.
-  const binaryFiles: string[] = [];
-  const textFiles: string[] = [];
-
-  for (const relativePath of allowedChangedFiles) {
-    const candidatePath = path.join(candidateRoot, relativePath);
-    const binary = await isBinaryFile(candidatePath);
-    if (binary) {
-      binaryFiles.push(relativePath);
+  const allowedChangedFiles: string[] = [];
+  const unauthorizedChangedFiles: string[] = [];
+  for (const entry of changedFiles) {
+    if (pathIsAllowed(entry, mutablePaths)) {
+      allowedChangedFiles.push(entry);
     } else {
-      textFiles.push(relativePath);
+      unauthorizedChangedFiles.push(entry);
     }
   }
+
+  // Detect binary files in parallel so diff artifact generation does not
+  // serialize per-file probes across larger candidate workspaces.
+  const binaryClassification = await mapWithConcurrency(allowedChangedFiles, 8, async (relativePath) => ({
+    relativePath,
+    binary: await isBinaryFile(path.join(candidateRoot, relativePath))
+  }));
+  const binaryFiles = binaryClassification
+    .filter((entry) => entry.binary)
+    .map((entry) => entry.relativePath);
+  const textFiles = binaryClassification
+    .filter((entry) => !entry.binary)
+    .map((entry) => entry.relativePath);
 
   let patch = "";
   let additions = 0;
@@ -506,6 +678,49 @@ async function createDiffArtifact(
       deletions
     }
   };
+}
+
+async function listChangedFilesByFilesystem(
+  baselineRoot: string,
+  candidateRoot: string
+): Promise<string[]> {
+  const [baselineFiles, candidateFiles] = await Promise.all([
+    listFilesRecursively(baselineRoot),
+    listFilesRecursively(candidateRoot)
+  ]);
+  const union = [...new Set([...baselineFiles, ...candidateFiles])].sort();
+
+  return (await mapWithConcurrency(union, 8, async (relativePath) => {
+    const changed = await filesDiffer(
+      path.join(baselineRoot, relativePath),
+      path.join(candidateRoot, relativePath)
+    );
+    return changed ? relativePath : null;
+  })).filter((entry): entry is string => entry != null);
+}
+
+async function listGitChangedWorkspaceFiles(
+  git: GitWorkspaceContext,
+  sandboxRoot: string
+): Promise<string[]> {
+  const workspaceScope = git.workspaceRelativePath === "." ? "." : git.workspaceRelativePath;
+  const trackedArgs = ["diff", "--name-only"];
+  if (git.workspaceRelativePath !== ".") {
+    trackedArgs.push("--relative=" + git.workspaceRelativePath);
+  }
+  trackedArgs.push("HEAD", "--", workspaceScope);
+
+  const untrackedArgs = ["ls-files", "--others", "--exclude-standard", "--", workspaceScope];
+  const [tracked, untracked] = await Promise.all([
+    runGit(sandboxRoot, trackedArgs),
+    runGit(sandboxRoot, untrackedArgs)
+  ]);
+
+  return [...new Set(
+    [...tracked.stdout.split(/\r?\n/), ...untracked.stdout.split(/\r?\n/)]
+      .map((entry) => entry.trim().replace(/\\/g, "/"))
+      .filter(Boolean)
+  )].sort();
 }
 
 async function copyAllowedPath(sourceRoot: string, destinationRoot: string, relativePath: string): Promise<void> {
@@ -1640,7 +1855,10 @@ async function runOptimizerCycle(
       workspacePath,
       mutationSandbox.workspacePath,
       optimizer.mutablePaths,
-      config.maxOutputChars * 4
+      config.maxOutputChars * 4,
+      mutationSandbox.strategy === "git_worktree" && mutationSandbox.git
+        ? { git: mutationSandbox.git, sandboxRoot: mutationSandbox.sandboxRoot }
+        : undefined
     );
 
     const comparison = (optimizer.scoreImprovementPolicy && optimizer.scoreImprovementPolicy !== "threshold")
@@ -2187,9 +2405,209 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
       };
     });
   });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.autopilotProject, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    const projectId = typeof params.projectId === "string" ? params.projectId : "";
+    if (!companyId || !projectId) return null;
+    const entity = await findAutopilotProject(ctx, companyId, projectId);
+    return entity ? asAutopilotProject(entity) : null;
+  });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.autopilotProjects, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    if (!companyId) return [];
+    const entities = await listAutopilotProjectEntities(ctx);
+    return entities
+      .map(asAutopilotProject)
+      .filter((entry) => entry.companyId === companyId);
+  });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.productProgramRevision, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    const projectId = typeof params.projectId === "string" ? params.projectId : "";
+    const revisionId = typeof params.revisionId === "string" ? params.revisionId : "";
+    if (!companyId || !projectId || !revisionId) return null;
+    const entity = await findProductProgramRevision(ctx, companyId, projectId, revisionId);
+    if (!entity) return null;
+    const revision = asProductProgramRevision(entity);
+    if (revision.companyId !== companyId) return null;
+    return revision;
+  });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.productProgramRevisions, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    const projectId = typeof params.projectId === "string" ? params.projectId : "";
+    if (!companyId || !projectId) return [];
+    const entities = await listProductProgramRevisionEntities(ctx, companyId, projectId);
+    return entities
+      .map(asProductProgramRevision)
+      .filter((entry) => entry.companyId === companyId)
+      .sort((a, b) => b.version - a.version);
+  });
 }
 
 async function registerActionHandlers(ctx: PluginContext): Promise<void> {
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.saveAutopilotProject, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    if (!companyId || !projectId) {
+      throw new Error("companyId and projectId are required");
+    }
+
+    const existing = await findAutopilotProject(ctx, companyId, projectId);
+    const existingData = existing ? asAutopilotProject(existing) : null;
+
+    const autopilotId =
+      existingData?.autopilotId ??
+      (typeof params.autopilotId === "string" && params.autopilotId ? params.autopilotId : randomUUID());
+    const automationTier = parseAutomationTier(params.automationTier, existingData?.automationTier ?? "supervised");
+    const budgetMinutes = parseNonNegativeInteger(params.budgetMinutes, existingData?.budgetMinutes ?? 60);
+
+    const autopilot: AutopilotProject = {
+      autopilotId,
+      companyId,
+      projectId,
+      enabled: params.enabled === true || (existingData?.enabled ?? false),
+      automationTier,
+      budgetMinutes,
+      repoUrl: typeof params.repoUrl === "string" ? params.repoUrl : existingData?.repoUrl,
+      workspaceId: typeof params.workspaceId === "string" ? params.workspaceId : existingData?.workspaceId,
+      agentId: typeof params.agentId === "string" ? params.agentId : existingData?.agentId,
+      paused: params.paused === true || (existingData?.paused ?? false),
+      pauseReason: typeof params.pauseReason === "string" ? params.pauseReason : existingData?.pauseReason,
+      createdAt: existingData?.createdAt ?? nowIso(),
+      updatedAt: nowIso(),
+    };
+
+    await upsertAutopilotProject(ctx, autopilot);
+    return autopilot;
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.enableAutopilot, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    if (!companyId || !projectId) {
+      throw new Error("companyId and projectId are required");
+    }
+
+    const automationTier = parseAutomationTier(params.automationTier, "supervised");
+    const budgetMinutes = parseNonNegativeInteger(params.budgetMinutes, 60);
+
+    const autopilot: AutopilotProject = {
+      autopilotId: randomUUID(),
+      companyId,
+      projectId,
+      enabled: true,
+      automationTier,
+      budgetMinutes,
+      repoUrl: typeof params.repoUrl === "string" ? params.repoUrl : undefined,
+      workspaceId: typeof params.workspaceId === "string" ? params.workspaceId : undefined,
+      agentId: typeof params.agentId === "string" ? params.agentId : undefined,
+      paused: false,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    };
+
+    await upsertAutopilotProject(ctx, autopilot);
+    return autopilot;
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.disableAutopilot, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    if (!companyId || !projectId) {
+      throw new Error("companyId and projectId are required");
+    }
+
+    const existing = await findAutopilotProject(ctx, companyId, projectId);
+    if (!existing) {
+      return { ok: true, message: "No autopilot project found" };
+    }
+
+    const autopilot = asAutopilotProject(existing);
+    autopilot.enabled = false;
+    autopilot.updatedAt = nowIso();
+
+    await upsertAutopilotProject(ctx, autopilot);
+    return { ok: true };
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.saveProductProgramRevision, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    if (!companyId || !projectId) {
+      throw new Error("companyId and projectId are required");
+    }
+
+    const content = typeof params.content === "string" ? params.content : "";
+    if (!content.trim()) {
+      throw new Error("Program content cannot be empty");
+    }
+
+    const revisionId =
+      typeof params.revisionId === "string" && params.revisionId ? params.revisionId : null;
+
+    let revision: ProductProgramRevision;
+
+    if (revisionId) {
+      const existing = await findProductProgramRevision(ctx, companyId, projectId, revisionId);
+      if (!existing) {
+        throw new Error("Revision not found: " + revisionId);
+      }
+      const existingData = asProductProgramRevision(existing);
+      if (existingData.companyId !== companyId) {
+        throw new Error("Revision not found");
+      }
+      revision = {
+        ...existingData,
+        content,
+        updatedAt: nowIso(),
+      };
+    } else {
+      const latest = await getLatestProductProgramRevision(ctx, companyId, projectId);
+      revision = {
+        revisionId: randomUUID(),
+        companyId,
+        projectId,
+        content,
+        version: latest ? latest.version + 1 : 1,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      };
+    }
+
+    await upsertProductProgramRevision(ctx, revision);
+    return revision;
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.createProductProgramRevision, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    if (!companyId || !projectId) {
+      throw new Error("companyId and projectId are required");
+    }
+
+    const content = typeof params.content === "string" ? params.content : "";
+    if (!content.trim()) {
+      throw new Error("Program content cannot be empty");
+    }
+
+    const latest = await getLatestProductProgramRevision(ctx, companyId, projectId);
+    const revision: ProductProgramRevision = {
+      revisionId: randomUUID(),
+      companyId,
+      projectId,
+      content,
+      version: latest ? latest.version + 1 : 1,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    };
+
+    await upsertProductProgramRevision(ctx, revision);
+    return revision;
+  });
+
   ctx.actions.register(ACTION_KEYS.saveOptimizer, async (params) => {
     const existing = typeof params.optimizerId === "string" && typeof params.projectId === "string"
       ? await findOptimizer(ctx, params.projectId, params.optimizerId)

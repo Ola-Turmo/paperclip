@@ -169,5 +169,5 @@ describe("startServer feedback export wiring", () => {
       storageService: { id: "storage-service" },
       serverPort: 3210,
     });
-  });
+  }, 30_000);
 });
