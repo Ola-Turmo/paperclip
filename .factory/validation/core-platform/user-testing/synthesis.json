@@ -1,0 +1,21 @@
+{
+  "milestone": "core-platform",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-AUTOPILOT-001",
+    "VAL-AUTOPILOT-002",
+    "VAL-AUTOPILOT-003",
+    "VAL-CROSS-002"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}
