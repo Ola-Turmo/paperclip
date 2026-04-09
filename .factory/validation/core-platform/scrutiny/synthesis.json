@@ -1,0 +1,91 @@
+{
+  "milestone": "core-platform",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "pnpm test:run",
+      "exitCode": 0,
+      "details": "171 test files, 855 tests passed, 62 skipped"
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "pnpm -r typecheck",
+      "exitCode": 0,
+      "details": "All 20 workspace projects passed typecheck"
+    },
+    "lint": {
+      "passed": true,
+      "command": "pnpm -r lint",
+      "exitCode": 0,
+      "details": "No lint script defined in packages - considered pass"
+    }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "skill:backend-worker",
+      "suggestion": "The backend-worker skill mandates browser verification (agent-browser) for UI-visible features. However, the autopilot-project-onboarding-and-program feature has UI components (AutopilotSettings form, ProductProgramEditor) but no browser verification was performed. The skill feedback incorrectly reports followedProcedure=true despite the missing browser step. Consider: (1) Adding a validation step that checks for browser verification evidence before accepting followedProcedure=true, or (2) Clarifying that TDD unit tests are sufficient for UI components that are already covered by unit tests.",
+      "evidence": "Feature autopilot-project-onboarding-and-program has UI-visible settings and editor components but transcript skeleton shows no agent-browser calls. handoff.verification.interactiveChecks is empty.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null,
+  "reviewReports": [
+    {
+      "featureId": "autopilot-project-onboarding-and-program",
+      "status": "pass",
+      "issues": [
+        {
+          "file": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts",
+          "line": 66,
+          "severity": "non-blocking",
+          "category": "correctness",
+          "description": "listAutopilotProjectEntities does NOT filter by companyId at the entity layer, only by scopeId. Client-side filter compensates.",
+          "suggestedFix": "Consider adding companyId filter to listAutopilotProjectEntities for consistency with the product-program-revision approach."
+        },
+        {
+          "file": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts",
+          "line": 85,
+          "severity": "non-blocking",
+          "category": "correctness",
+          "description": "findProductProgramRevision uses server-side limit:100 then in-memory filter. Could miss revisions for high-volume projects.",
+          "suggestedFix": "Consider cursor-based pagination or removing artificial limit."
+        },
+        {
+          "file": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/ui/index.tsx",
+          "line": 263,
+          "severity": "suggestion",
+          "category": "maintainability",
+          "description": "AutopilotProjectSidebarLink registered in manifest but does not provide navigation.",
+          "suggestedFix": "Implement proper navigation to Autopilot tab or remove sidebar slot registration."
+        },
+        {
+          "file": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts",
+          "line": 203,
+          "severity": "suggestion",
+          "category": "api-design",
+          "description": "saveAutopilotProject doesn't validate companyId/projectId remain unchanged after merge.",
+          "suggestedFix": "Add invariant checks that companyId and projectId cannot be changed on existing autopilot project."
+        },
+        {
+          "file": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts",
+          "line": 246,
+          "severity": "non-blocking",
+          "category": "correctness",
+          "description": "saveProductProgramRevision doesn't validate projectId beyond companyId check.",
+          "suggestedFix": "Add projectId validation to ensure revision belongs to the project being modified."
+        }
+      ]
+    }
+  ]
+}
