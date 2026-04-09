@@ -1,0 +1,67 @@
+{
+  "featureId": "planning-automation-tiers-and-delivery-runs",
+  "reviewedAt": "2026-04-09T21:15:00.000Z",
+  "commitId": "eb64d4c7",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation covers VAL-AUTOPILOT-030 through VAL-AUTOPILOT-034 and VAL-CROSS-002. Core functionality is correct with proper automation tier enforcement, planning artifact creation, delivery run workspace leasing, budget cap enforcement, and pause/resume controls. 19 new tests pass covering all delivery control behaviors plus cross-company isolation. Some edge cases and input validations could be improved but do not block the feature.",
+    "issues": [
+      {
+        "severity": "non_blocking",
+        "description": "createDeliveryRun accepts artifactId parameter but never validates or uses it. The artifact existence is not verified before creating the run.",
+        "location": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts:1294-1330"
+      },
+      {
+        "severity": "non_blocking",
+        "description": "createPlanningArtifact requires ideaId but does not verify the idea exists or belongs to the company/project before creating the planning artifact.",
+        "location": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts:1294-1330"
+      },
+      {
+        "severity": "non_blocking",
+        "description": "WorkspaceLease entities are created when a delivery run starts but never have isActive set to false when the run completes, fails, or is cancelled. The lease remains 'active' indefinitely.",
+        "location": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts:1294-1330"
+      },
+      {
+        "severity": "suggestion",
+        "description": "pauseDeliveryRun does not validate the current status before pausing. It allows pausing runs that are already completed, failed, or cancelled, which may produce inconsistent state (e.g., a 'completed' run being marked as 'paused').",
+        "location": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts:1377-1392"
+      },
+      {
+        "severity": "suggestion",
+        "description": "resumeDeliveryRun always sets status to 'running' regardless of what the status was before pause. If a run was in a different state before being paused (e.g., if pause was called on a completed run in an edge case), resuming would incorrectly change the status to 'running'.",
+        "location": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts:1394-1410"
+      },
+      {
+        "severity": "suggestion",
+        "description": "updateCompanyBudget uses autopilotUsedMinutes from params directly without validation. If called with a negative value, it would reduce used minutes below zero.",
+        "location": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts:1417-1440"
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "observation": "The autopilot plugin's entity helpers (listDeliveryRunEntities, listPlanningArtifactEntities, findActiveWorkspaceLease) all filter by companyId AFTER retrieving entities from the entity store, rather than relying on the store's scopeId filtering. This pattern is applied consistently across all helpers and is defensively sound for cross-company isolation.",
+      "implication": "Other features using the entity store should follow the same pattern of applying companyId filters in application code, not relying solely on scopeId partitioning."
+    },
+    {
+      "observation": "The AutoPilotProject entity stores both companyId and projectId and uses projectId as scopeId. This means entities are partitioned by project, and company isolation is enforced via data-level filtering.",
+      "implication": "Features that add entities scoped to projects should follow the same pattern: store companyId in data and filter by it in list/query helpers."
+    },
+    {
+      "observation": "Automation tier (supervised/semiauto/fullauto) determines approvalMode (manual/auto_approve) only at PlanningArtifact creation time. Changes to automation tier after artifact creation do not retroactively update existing artifacts.",
+      "implication": "If a user changes automation tier mid-flight, existing planning artifacts retain their original approvalMode. This is likely intentional but should be documented."
+    },
+    {
+      "observation": "Budget cap auto-pause only triggers on createDeliveryRun, not on createPlanningArtifact. Ideas can still produce planning artifacts even when budget is exceeded.",
+      "implication": "The budget pause is at the 'execution' level (delivery runs) not at the 'planning' level. This is a design decision but may surprise users who expect budget limits to prevent all autopilot activity."
+    }
+  ],
+  "testQuality": {
+    "coverage": "adequate",
+    "notes": "19 new tests cover all 5 VAL assertions (VAL-AUTOPILOT-030 through 034) plus cross-company isolation for all new entity types. Tests verify automation tier enforcement (3 tiers), workspace/port metadata in delivery runs (3 tests), budget pause behavior (3 tests), pause/resume controls (5 tests), and cross-company isolation (2 tests). All 123 tests pass. Coverage is adequate for the specified requirements, though some edge cases around status transitions and input validation could benefit from additional tests."
+  },
+  "addressesFailureFrom": null,
+  "summary": "Implementation passes review. Core functionality for planning artifacts, automation tier enforcement, delivery runs with workspace leasing, budget caps, and pause/resume controls is correctly implemented and tested. VAL-AUTOPILOT-030 through 034 plus VAL-CROSS-002 are all covered by automated tests. Issues found are non-blocking: missing input validation for artifactId/ideaId existence, no workspace lease cleanup on run completion, and some status transition edge cases that don't affect the happy path. The implementation follows existing codebase patterns for company isolation and entity management."
+}

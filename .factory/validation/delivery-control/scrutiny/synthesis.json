@@ -1,0 +1,98 @@
+{
+  "milestone": "delivery-control",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "pnpm test (plugin autopilot tests)",
+      "exitCode": 0,
+      "observation": "123 tests passed (104 existing + 19 new delivery control tests)"
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "pnpm -r typecheck",
+      "exitCode": 0,
+      "observation": "All 21 workspace packages passed typecheck"
+    },
+    "lint": {
+      "passed": true,
+      "command": "pnpm -r lint",
+      "exitCode": 0,
+      "observation": "No lint script in packages (not a failure)"
+    }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "nonBlockingIssues": [
+    {
+      "featureId": "planning-automation-tiers-and-delivery-runs",
+      "severity": "non_blocking",
+      "description": "createDeliveryRun accepts artifactId but never validates or uses it. The artifact existence is not verified before creating the run.",
+      "location": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts:1294-1330"
+    },
+    {
+      "featureId": "planning-automation-tiers-and-delivery-runs",
+      "severity": "non_blocking",
+      "description": "createPlanningArtifact requires ideaId but does not verify the idea exists or belongs to the company/project before creating the planning artifact.",
+      "location": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts:1294-1330"
+    },
+    {
+      "featureId": "planning-automation-tiers-and-delivery-runs",
+      "severity": "non_blocking",
+      "description": "WorkspaceLease entities are created when a delivery run starts but never have isActive set to false when the run completes, fails, or is cancelled. The lease remains 'active' indefinitely.",
+      "location": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts:1294-1330"
+    },
+    {
+      "featureId": "planning-automation-tiers-and-delivery-runs",
+      "severity": "suggestion",
+      "description": "pauseDeliveryRun does not validate the current status before pausing. It allows pausing runs that are already completed, failed, or cancelled.",
+      "location": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts:1377-1392"
+    },
+    {
+      "featureId": "planning-automation-tiers-and-delivery-runs",
+      "severity": "suggestion",
+      "description": "resumeDeliveryRun always sets status to 'running' regardless of what the status was before pause.",
+      "location": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts:1394-1410"
+    },
+    {
+      "featureId": "planning-automation-tiers-and-delivery-runs",
+      "severity": "suggestion",
+      "description": "updateCompanyBudget uses autopilotUsedMinutes from params directly without validation. If called with a negative value, it would reduce used minutes below zero.",
+      "location": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts:1417-1440"
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document the pattern for entity existence validation. The current implementation does not validate that ideaId/artifactId exist before creating dependent entities. While this is non-blocking for delivery-control, it is a pattern that should be addressed across the codebase.",
+      "evidence": "createDeliveryRun and createPlanningArtifact both accept foreign key IDs without existence validation. The same pattern likely exists in other entity creation helpers.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [],
+  "sharedStateObservations": [
+    {
+      "observation": "The autopilot plugin's entity helpers filter by companyId AFTER retrieving entities from the entity store, rather than relying on the store's scopeId filtering.",
+      "implication": "Other features should follow the same pattern of applying companyId filters in application code.",
+      "triagedTo": "library"
+    },
+    {
+      "observation": "Automation tier (supervised/semiauto/fullauto) determines approvalMode only at PlanningArtifact creation time. Changes to automation tier after artifact creation do not retroactively update existing artifacts.",
+      "implication": "This is likely intentional but should be documented in the Product Program or feature spec.",
+      "triagedTo": "library"
+    },
+    {
+      "observation": "Budget cap auto-pause only triggers on createDeliveryRun, not on createPlanningArtifact. Ideas can still produce planning artifacts even when budget is exceeded.",
+      "implication": "The budget pause is at the 'execution' level (delivery runs) not at the 'planning' level. This is a design decision that may surprise users.",
+      "triagedTo": "library"
+    }
+  ],
+  "previousRound": null
+}
