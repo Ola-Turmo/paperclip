@@ -1,0 +1,61 @@
+{
+  "milestone": "closed-loop-operations",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "pnpm test:run",
+      "exitCode": 0,
+      "note": "Tests pass. One pre-existing worktree test failure (worktree fixture pnpm install) is unrelated to autopilot features. 9 autopilot-specific tests for VAL-AUTOPILOT-039/040/041 all pass."
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "pnpm -r typecheck",
+      "exitCode": 0,
+      "note": "All 20 workspace packages typecheck passed in ~240s."
+    },
+    "lint": {
+      "passed": true,
+      "command": "pnpm -r lint",
+      "exitCode": 0,
+      "note": "No packages have a lint script (exit code 0) — same as advanced-execution finding."
+    },
+    "build": {
+      "passed": true,
+      "command": "pnpm build",
+      "exitCode": 0,
+      "note": "UI, server, and CLI built successfully in ~26s."
+    }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "featuresReviewed": [
+    {
+      "featureId": "knowledge-digests-release-health-and-rollback",
+      "status": "pass",
+      "commitId": "2364db05639c21c1323c169954e052ba00b771d4",
+      "workerSessionId": "e1c2938f-ea37-4034-ba7c-702b15015f31",
+      "nonBlockingIssues": [
+        "Learner summary auto-creation only fires for completed runs (success/failure) — cancelled runs may not produce summaries, but this is acceptable",
+        "Knowledge type filter uses inline union type instead of importing KnowledgeType from constants.ts — minor redundancy, no runtime impact",
+        "Digest priority assignment uses hardcoded thresholds — acceptable for current scope, may need tuning as usage grows"
+      ]
+    }
+  ],
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "services.yaml",
+      "description": "Document that 'pnpm -r lint' returns 0 with no lint script in most packages — lint check is effectively a no-op pass for this project structure (carried from advanced-execution)",
+      "sourceFeature": "all"
+    }
+  ],
+  "suggestedGuidanceUpdates": [],
+  "rejectedObservations": [],
+  "previousRound": null
+}

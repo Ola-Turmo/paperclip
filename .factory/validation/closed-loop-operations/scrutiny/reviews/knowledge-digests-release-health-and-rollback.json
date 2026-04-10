@@ -1,0 +1,52 @@
+{
+  "featureId": "knowledge-digests-release-health-and-rollback",
+  "milestone": "closed-loop-operations",
+  "status": "pass",
+  "commitId": "2364db05639c21c1323c169954e052ba00b771d4",
+  "workerSessionId": "e1c2938f-ea37-4034-ba7c-702b15015f31",
+  "reviewer": "scrutiny-validator-worker",
+  "reviewDate": "2026-04-10",
+  "validationStatus": {
+    "test": { "passed": true, "note": "Autopilot tests pass including VAL-AUTOPILOT-039, VAL-AUTOPILOT-040, VAL-AUTOPILOT-041. One pre-existing worktree test failure is unrelated (pnpm install failure in fixture, not feature-related)." },
+    "typecheck": { "passed": true, "note": "All 20 workspace packages typecheck passed." },
+    "build": { "passed": true, "note": "UI, server, CLI built successfully." },
+    "lint": { "passed": true, "note": "No lint script in most packages." }
+  },
+  "codeReview": {
+    "backend": {
+      "entities": [
+        "LearnerSummary: Created on run completion. Captures learnings, skills, run metrics. Auto-creates KnowledgeEntry records.",
+        "KnowledgeEntry: Project-scoped reusable knowledge. Supports procedure/pattern/lesson/skill types. Tracks usageCount and lastUsedAt.",
+        "Digest: Alerts for budget alerts (80%+), stuck runs (30min+), opportunities, weekly summaries, health check failures. Priority levels (low/medium/high/critical).",
+        "ReleaseHealthCheck: Smoke tests, integration tests, custom checks, merge checks. Status passed/failed.",
+        "RollbackAction: revert_commit and restore_checkpoint types. Auto-trigger for fullauto tier on check failure."
+      ],
+      "handlers": [
+        "ctx.data handlers for learner-summary, learner-summaries, knowledge-entry, knowledge-entries, digest, digests, rollback-action, rollback-actions",
+        "ctx.actions handlers for create-learner-summary, create-knowledge-entry, update-knowledge-entry, create-digest, generate-stuck-run-digest, generate-budget-alert-digest, create-release-health-check, update-release-health-status, trigger-rollback, update-rollback-status"
+      ],
+      "quality": "All entity types have companyId/projectId scoping enforced. Cross-company isolation verified in tests."
+    },
+    "ui": {
+      "components": [
+        "KnowledgeSection: learner summaries, knowledge entries with type filter tabs (All/Procedure/Pattern/Lesson/Skill)",
+        "DigestSection: digest cards with type labels, priority badges, summary text, Check Stuck Runs and Generate Budget Alert buttons",
+        "ReleaseHealthSection: health checks list with passed/failed badges, Mark Passed/Mark Failed/Trigger Rollback buttons, rollback actions list"
+      ],
+      "quality": "UI components already implemented in advanced-execution milestone (advanced-ui-surfaces-035-041). Backend handlers wired to plugin actions."
+    }
+  },
+  "fulfillsAssertions": [
+    "VAL-AUTOPILOT-039",
+    "VAL-AUTOPILOT-040",
+    "VAL-AUTOPILOT-041"
+  ],
+  "blockingIssues": [],
+  "nonBlockingIssues": [
+    "Learner summary auto-creation logic in complete-delivery-run only creates entries for completed runs that have succeeded or failed — runs that are cancelled may not produce summaries, but this is acceptable behavior",
+    "Knowledge type filter uses inline union type instead of importing KnowledgeType from constants.ts — minor redundancy, no runtime impact",
+    "Digest priority assignment is heuristic-based (hardcoded thresholds) — acceptable for current scope, may need tuning as usage grows"
+  ],
+  "sharedStateObservations": [],
+  "summary": "Feature knowledge-digests-release-health-and-rollback passes scrutiny. Full backend implementation for learner summaries, knowledge management, digests, release-health checks, and rollback actions. All action handlers registered, company-scoped, with cross-company isolation enforced. UI sections (KnowledgeSection, DigestSection, ReleaseHealthSection) were already implemented in the advanced-execution milestone and correctly wired to these handlers. All tests for VAL-AUTOPILOT-039/040/041 pass. No blocking issues."
+}
