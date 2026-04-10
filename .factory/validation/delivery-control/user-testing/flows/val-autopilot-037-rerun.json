@@ -1,0 +1,66 @@
+{
+  "groupId": "val-autopilot-037-rerun",
+  "round": 11,
+  "testedAt": "2026-04-10T14:45:00.000Z",
+  "isolation": {
+    "paperclipUrl": "http://localhost:3100",
+    "browserSession": "b8bbbe8093f6",
+    "project": "Autopilot Browser Verification Project",
+    "evidenceDir": "/root/work/paperclip/.factory/validation/delivery-control/user-testing/evidence/"
+  },
+  "toolsUsed": ["agent-browser", "curl"],
+  "assertions": [
+    {
+      "id": "VAL-AUTOPILOT-037",
+      "title": "Merge coordination prevents conflicting run completion",
+      "status": "blocked",
+      "steps": [
+        { "action": "Navigate to Autopilot tab of test project", "expected": "Delivery Runs section with merge coordination UI", "observed": "Delivery Runs section visible with 4 runs (all pending, isolated workspaces). No merge conflict indicators, product lock badges, or blocking reasons visible." },
+        { "action": "Verify UI code for merge coordination exists in dist/ui/index.js", "expected": "usePluginData(product-locks), hasMergeConflict, product lock badges", "observed": "CONFIRMED: usePluginData(DATA_KEYS2.productLocks) at line 568; activeMergeConflicts computed at line 577; hasMergeConflict badge at line 668; Product Lock badge at line 693" },
+        { "action": "Verify backend worker.js has product lock action handlers", "expected": "ctx.actions.register for acquire-product-lock, release-product-lock, check-merge-conflict", "observed": "NOT FOUND in worker.js. Action keys defined (lines 7483-7485) but no ctx.actions.register calls for these keys. grep confirms 0 occurrences of upsertProductLock, acquireProductLock, listProductLockEntities in worker.js" },
+        { "action": "Verify backend worker.js has product lock data handlers", "expected": "ctx.data.register for product-lock, product-locks", "observed": "NOT FOUND. No ctx.data.register for productLock or productLocks in worker.js" },
+        { "action": "Call acquire-product-lock via API bridge", "expected": "Product lock created or error", "observed": "WORKER_ERROR: No action handler registered for key 'acquire-product-lock'" },
+        { "action": "Call product-locks via data bridge", "expected": "Product locks list or empty array", "observed": "WORKER_ERROR: No data handler registered for key 'product-locks'" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "VAL-AUTOPILOT-037-rerun-annotated.png",
+          "VAL-AUTOPILOT-037-autopilot-tab-rerun.png"
+        ],
+        "pageText": "VAL-AUTOPILOT-037-rerun-page-text.txt",
+        "apiResponses": {
+          "acquire-product-lock": "WORKER_ERROR: No action handler registered for key 'acquire-product-lock'",
+          "check-stuck-runs": "WORKER_ERROR: No action handler registered for key 'check-stuck-runs'",
+          "product-locks-data": "WORKER_ERROR: No data handler registered for key 'product-locks'"
+        },
+        "codeAnalysis": {
+          "ui_code_exists": "dist/ui/index.js contains usePluginData(product-locks), activeMergeConflicts, hasMergeConflict badge, Product Lock badge",
+          "worker_action_handlers_missing": "dist/worker.js does not contain upsertProductLock, listProductLockEntities, ctx.actions.register for acquire-product-lock/release-product-lock/check-merge-conflict",
+          "worker_data_handlers_missing": "dist/worker.js does not contain ctx.data.register for product-lock or product-locks",
+          "source_has_impl": "src/autopilot/helpers.ts has upsertProductLock (line 741), findProductLock (line 747), listProductLockEntities (line 775). src/autopilot/worker.ts has ctx.actions.register for acquireProductLock (line 2718), releaseProductLock, checkMergeConflict",
+          "not_wired": "src/worker.ts (main entry point) does not import upsertProductLock/listProductLockEntities from autopilot/helpers.ts and does not register these handlers"
+        }
+      },
+      "issues": [
+        {
+          "severity": "blocking",
+          "description": "Product lock backend not wired into main worker.ts: autopilot/helpers.ts has the implementations but worker.ts entry point doesn't import them and doesn't register the data/action handlers",
+          "impact": "Cannot create product locks to test merge conflict UI. API returns 'No action handler registered' for acquire-product-lock. UI queries product-locks data and gets empty results (no handler)."
+        }
+      ]
+    }
+  ],
+  "frictions": [
+    {
+      "description": "Could not verify UI response to product locks because backend action handlers are missing. This is a backend integration gap, not a UI issue. The UI code is correct but disconnected from backend.",
+      "resolved": false
+    }
+  ],
+  "blockers": [
+    {
+      "assertion": "VAL-AUTOPILOT-037",
+      "reason": "Cannot validate merge coordination UI because backend product lock handlers are not registered in worker.js. Source has the implementations but they're not wired into the main worker entry point. Requires: (1) import product lock helpers into worker.ts, (2) register product-locks data handler, (3) register acquire-product-lock, release-product-lock, check-merge-conflict action handlers, (4) rebuild plugin."
+    }
+  ],
+  "summary": "Round 11 re-validation of VAL-AUTOPILOT-037 after commit b5b44aad (merge coordination UI indicators). The UI code IS deployed and visible in dist/ui/index.js with correct merge conflict and product lock badge rendering. However, the backend worker.js is MISSING all product lock data and action handlers. Source analysis reveals: src/autopilot/helpers.ts has upsertProductLock/listProductLockEntities and src/autopilot/worker.ts has the action registrations, but these were never imported or registered in the main src/worker.ts entry point. Cannot create product locks to test UI response — API returns 'No action handler registered'. VAL-AUTOPILOT-037 remains FAILED (blocked by missing backend integration)."
+}

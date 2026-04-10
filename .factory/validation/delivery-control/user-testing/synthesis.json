@@ -1,14 +1,12 @@
 {
   "milestone": "delivery-control",
-  "round": 10,
+  "round": 11,
   "status": "failure",
   "assertionsSummary": {
     "total": 24,
     "passed": 23,
     "failed": 1,
-    "blocked": 0,
-    "improved": 6,
-    "regressed": 0
+    "blocked": 0
   },
   "passedAssertions": [
     "VAL-AUTOPILOT-001",
@@ -38,58 +36,27 @@
   "failedAssertions": [
     {
       "id": "VAL-AUTOPILOT-037",
-      "reason": "Merge coordination UI (conflict indicators, merge lock status, merge blocking reasons) not yet built in Autopilot tab. Delivery Runs section shows only 'Status: pending' without any merge-related status. Backend features exist (acquire-product-lock, release-product-lock, check-merge-conflict) but no UI surface shows merge conflict indicators, merge lock status, or merge blocking reasons."
+      "reason": "Backend product lock handlers not wired into main worker.ts entry point. The UI code (dist/ui/index.js) correctly queries product-locks via usePluginData and would display merge conflict indicators when locks exist, but the worker.js (dist/worker.js) is missing all product lock data and action handlers. Source files src/autopilot/helpers.ts and src/autopilot/worker.ts contain implementations (upsertProductLock, listProductLockEntities, acquireProductLock handler) but these are NOT imported or registered in the main worker.ts entry point. Specifically missing: (1) ctx.data.register for 'product-locks' data key, (2) ctx.actions.register for acquire-product-lock, (3) ctx.actions.register for release-product-lock, (4) ctx.actions.register for check-merge-conflict. Cannot test UI behavior without functional backend."
     }
   ],
   "blockedAssertions": [],
-  "systemicBlockers": [],
-  "improvementsFromRound9": [
+  "systemicBlockers": [
     {
-      "assertion": "VAL-AUTOPILOT-035",
-      "change": "BLOCKED → PASSED",
-      "reason": "ConvoyTasksSection UI component is now present in Autopilot tab with 'Convoy Tasks' heading and 'Decompose into Convoy Tasks' button"
-    },
-    {
-      "assertion": "VAL-AUTOPILOT-036",
-      "change": "BLOCKED → PASSED",
-      "reason": "CheckpointResumeControls UI component is now present with Create Checkpoint and Decompose into Convoy Tasks buttons"
-    },
-    {
-      "assertion": "VAL-AUTOPILOT-038",
-      "change": "BLOCKED → PASSED",
-      "reason": "OperatorInterventionControls UI component is now present with all 4 intervention buttons (Add Note, Request Checkpoint, Nudge Run, Inspect Linked Issue)"
-    },
-    {
-      "assertion": "VAL-AUTOPILOT-039",
-      "change": "BLOCKED → PASSED",
-      "reason": "KnowledgeSection UI component is now present with empty state and type filters"
-    },
-    {
-      "assertion": "VAL-AUTOPILOT-040",
-      "change": "BLOCKED → PASSED",
-      "reason": "DigestSection UI component is now present with Check Stuck Runs and Generate Budget Alert buttons"
-    },
-    {
-      "assertion": "VAL-AUTOPILOT-041",
-      "change": "BLOCKED → PASSED",
-      "reason": "ReleaseHealthSection UI component is now present with Create Health Check button and health check list"
+      "description": "Product lock backend not integrated into main plugin worker. src/autopilot/helpers.ts has upsertProductLock, findProductLock, listProductLockEntities. src/autopilot/worker.ts has ctx.actions.register for acquireProductLock, releaseProductLock, checkMergeConflict. But worker.ts (entry point) does not import these functions or register these handlers.",
+      "affectedAssertions": ["VAL-AUTOPILOT-037"],
+      "requiredFix": "Add to src/worker.ts imports from './autopilot/helpers.js': asProductLock, upsertProductLock, findProductLock, listProductLockEntities, findActiveProductLock, findProductLockForTarget. Add to src/worker.ts: (1) ctx.data.register for 'product-lock' and 'product-locks' data keys using upsertProductLock/listProductLockEntities/findProductLock, (2) ctx.actions.register for acquire-product-lock using the logic from autopilot/worker.ts, (3) ctx.actions.register for release-product-lock, (4) ctx.actions.register for check-merge-conflict. Then rebuild plugin with: cd packages/plugins/examples/plugin-autoresearch-improver && node ./esbuild.config.mjs"
     }
   ],
-  "regressionsFromRound9": [],
   "appliedUpdates": [],
   "frictions": [
     {
-      "description": "Add Note and Inspect Linked Issue buttons appear disabled when no active run is present - expected behavior but not clearly indicated in UI",
+      "description": "Product lock data key returns empty results because no data handler registered - this is a backend gap not a UI issue. The UI correctly shows nothing when no locks exist.",
       "resolved": false,
-      "resolution": "UI behavior appears reasonable - intervention controls likely disabled when no active run is present. Consider adding tooltip or helper text explaining disabled state.",
-      "affectedAssertions": ["VAL-AUTOPILOT-038"]
+      "affectedAssertions": ["VAL-AUTOPILOT-037"]
     }
   ],
-  "toolsUsed": ["agent-browser"],
-  "flowReports": [
-    "val-autopilot-035-038-round10.json",
-    "val-autopilot-039-041-round10.json"
-  ],
-  "previousRound": ".factory/validation/delivery-control/user-testing/synthesis.json (round 9)",
-  "progressFromPriorRounds": "Round 9 had 17 passed, 0 failed, 7 blocked. This round (10) shows major improvement: 23 passed (+6), 1 failed (VAL-AUTOPILOT-037, merge coordination UI), 0 blocked. 6 assertions improved from blocked to passed: VAL-AUTOPILOT-035, 036, 038, 039, 040, 041. Only VAL-AUTOPILOT-037 remains failed due to missing merge coordination UI surface."
+  "toolsUsed": ["agent-browser", "curl"],
+  "flowReports": ["val-autopilot-037-rerun.json"],
+  "previousRound": ".factory/validation/delivery-control/user-testing/synthesis.json (round 10)",
+  "progressFromPriorRounds": "Round 10 had 23 passed, 1 failed (VAL-AUTOPILOT-037, reported as missing UI). This round (11) investigated root cause: the UI code IS present in dist/ui/index.js with correct merge conflict/badge rendering logic, but the backend worker.js lacks the product lock data and action handlers. The autopilot sub-module (src/autopilot/worker.ts) has the implementations but they were never wired into the main worker.ts entry point. This is an integration gap, not a missing feature gap."
 }
