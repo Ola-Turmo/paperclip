@@ -36,7 +36,19 @@ import {
   type ProductLock,
   type OperatorIntervention,
   type InterventionType,
-  type LockType
+  type LockType,
+  type LearnerSummary,
+  type KnowledgeEntry,
+  type Digest,
+  type DigestType,
+  type DigestStatus,
+  type ReleaseHealthCheck,
+  type HealthCheckStatus,
+  type HealthCheckType,
+  type RollbackAction,
+  type RollbackStatus,
+  type RollbackType,
+  type KnowledgeType
 } from "./constants.js";
 
 function nowIso(): string {
@@ -131,6 +143,26 @@ function asProductLock(record: PluginEntityRecord): ProductLock {
 
 function asOperatorIntervention(record: PluginEntityRecord): OperatorIntervention {
   return record.data as unknown as OperatorIntervention;
+}
+
+function asLearnerSummary(record: PluginEntityRecord): LearnerSummary {
+  return record.data as unknown as LearnerSummary;
+}
+
+function asKnowledgeEntry(record: PluginEntityRecord): KnowledgeEntry {
+  return record.data as unknown as KnowledgeEntry;
+}
+
+function asDigest(record: PluginEntityRecord): Digest {
+  return record.data as unknown as Digest;
+}
+
+function asReleaseHealthCheck(record: PluginEntityRecord): ReleaseHealthCheck {
+  return record.data as unknown as ReleaseHealthCheck;
+}
+
+function asRollbackAction(record: PluginEntityRecord): RollbackAction {
+  return record.data as unknown as RollbackAction;
 }
 
 function isValidSwipeDecision(value: unknown): value is SwipeDecision {
@@ -748,6 +780,285 @@ async function upsertOperatorIntervention(
   });
 }
 
+// ─── LearnerSummary Helpers ────────────────────────────────────────────────────
+
+async function upsertLearnerSummary(
+  ctx: PluginContext,
+  summary: LearnerSummary
+): Promise<PluginEntityRecord> {
+  return await ctx.entities.upsert({
+    entityType: ENTITY_TYPES.learnerSummary,
+    scopeKind: "project",
+    scopeId: summary.projectId,
+    externalId: summary.summaryId,
+    title: summary.title.slice(0, 80),
+    status: "active",
+    data: summary as unknown as Record<string, unknown>
+  });
+}
+
+async function findLearnerSummary(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+  summaryId: string
+): Promise<PluginEntityRecord | null> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.learnerSummary,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 100,
+    offset: 0
+  });
+  return entities.find((e) => {
+    const data = e.data as unknown as LearnerSummary;
+    return data.companyId === companyId && data.summaryId === summaryId;
+  }) ?? null;
+}
+
+async function listLearnerSummaryEntities(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+  runId?: string
+): Promise<PluginEntityRecord[]> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.learnerSummary,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 500,
+    offset: 0
+  });
+  return entities.filter((e) => {
+    const data = e.data as unknown as LearnerSummary;
+    if (data.companyId !== companyId) return false;
+    if (runId && data.runId !== runId) return false;
+    return true;
+  });
+}
+
+// ─── KnowledgeEntry Helpers ────────────────────────────────────────────────────
+
+async function upsertKnowledgeEntry(
+  ctx: PluginContext,
+  entry: KnowledgeEntry
+): Promise<PluginEntityRecord> {
+  return await ctx.entities.upsert({
+    entityType: ENTITY_TYPES.knowledgeEntry,
+    scopeKind: "project",
+    scopeId: entry.projectId,
+    externalId: entry.entryId,
+    title: entry.title.slice(0, 80),
+    status: "active",
+    data: entry as unknown as Record<string, unknown>
+  });
+}
+
+async function findKnowledgeEntry(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+  entryId: string
+): Promise<PluginEntityRecord | null> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.knowledgeEntry,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 100,
+    offset: 0
+  });
+  return entities.find((e) => {
+    const data = e.data as unknown as KnowledgeEntry;
+    return data.companyId === companyId && data.entryId === entryId;
+  }) ?? null;
+}
+
+async function listKnowledgeEntryEntities(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string
+): Promise<PluginEntityRecord[]> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.knowledgeEntry,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 500,
+    offset: 0
+  });
+  return entities.filter((e) => {
+    const data = e.data as unknown as KnowledgeEntry;
+    return data.companyId === companyId;
+  });
+}
+
+// ─── Digest Helpers ────────────────────────────────────────────────────────────
+
+async function upsertDigest(
+  ctx: PluginContext,
+  digest: Digest
+): Promise<PluginEntityRecord> {
+  return await ctx.entities.upsert({
+    entityType: ENTITY_TYPES.digest,
+    scopeKind: "project",
+    scopeId: digest.projectId,
+    externalId: digest.digestId,
+    title: digest.title.slice(0, 80),
+    status: digest.status === "dismissed" ? "inactive" : "active",
+    data: digest as unknown as Record<string, unknown>
+  });
+}
+
+async function findDigest(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+  digestId: string
+): Promise<PluginEntityRecord | null> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.digest,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 100,
+    offset: 0
+  });
+  return entities.find((e) => {
+    const data = e.data as unknown as Digest;
+    return data.companyId === companyId && data.digestId === digestId;
+  }) ?? null;
+}
+
+async function listDigestEntities(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string
+): Promise<PluginEntityRecord[]> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.digest,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 500,
+    offset: 0
+  });
+  return entities.filter((e) => {
+    const data = e.data as unknown as Digest;
+    return data.companyId === companyId;
+  });
+}
+
+// ─── ReleaseHealthCheck Helpers ───────────────────────────────────────────────
+
+async function upsertReleaseHealthCheck(
+  ctx: PluginContext,
+  check: ReleaseHealthCheck
+): Promise<PluginEntityRecord> {
+  return await ctx.entities.upsert({
+    entityType: ENTITY_TYPES.releaseHealth,
+    scopeKind: "project",
+    scopeId: check.projectId,
+    externalId: check.checkId,
+    title: check.name.slice(0, 80),
+    status: check.status === "passed" || check.status === "skipped" ? "inactive" : "active",
+    data: check as unknown as Record<string, unknown>
+  });
+}
+
+async function findReleaseHealthCheck(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+  checkId: string
+): Promise<PluginEntityRecord | null> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.releaseHealth,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 100,
+    offset: 0
+  });
+  return entities.find((e) => {
+    const data = e.data as unknown as ReleaseHealthCheck;
+    return data.companyId === companyId && data.checkId === checkId;
+  }) ?? null;
+}
+
+async function listReleaseHealthCheckEntities(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+  runId?: string
+): Promise<PluginEntityRecord[]> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.releaseHealth,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 500,
+    offset: 0
+  });
+  return entities.filter((e) => {
+    const data = e.data as unknown as ReleaseHealthCheck;
+    if (data.companyId !== companyId) return false;
+    if (runId && data.runId !== runId) return false;
+    return true;
+  });
+}
+
+// ─── RollbackAction Helpers ────────────────────────────────────────────────────
+
+async function upsertRollbackAction(
+  ctx: PluginContext,
+  rollback: RollbackAction
+): Promise<PluginEntityRecord> {
+  return await ctx.entities.upsert({
+    entityType: ENTITY_TYPES.rollbackAction,
+    scopeKind: "project",
+    scopeId: rollback.projectId,
+    externalId: rollback.rollbackId,
+    title: `${rollback.rollbackType} for run ${rollback.runId.slice(0, 8)}`,
+    status: rollback.status === "completed" || rollback.status === "skipped" ? "inactive" : "active",
+    data: rollback as unknown as Record<string, unknown>
+  });
+}
+
+async function findRollbackAction(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+  rollbackId: string
+): Promise<PluginEntityRecord | null> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.rollbackAction,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 100,
+    offset: 0
+  });
+  return entities.find((e) => {
+    const data = e.data as unknown as RollbackAction;
+    return data.companyId === companyId && data.rollbackId === rollbackId;
+  }) ?? null;
+}
+
+async function listRollbackActionEntities(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+  runId?: string
+): Promise<PluginEntityRecord[]> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.rollbackAction,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 500,
+    offset: 0
+  });
+  return entities.filter((e) => {
+    const data = e.data as unknown as RollbackAction;
+    if (data.companyId !== companyId) return false;
+    if (runId && data.runId !== runId) return false;
+    return true;
+  });
+}
+
 // --- Order ideas by score (desc) and status priority ---
 const STATUS_PRIORITY: Record<IdeaStatus, number> = {
   active: 0,
@@ -1207,6 +1518,129 @@ const plugin: PaperclipPlugin = definePlugin({
         })
         .map(asOperatorIntervention)
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    });
+
+    // ─── Learner Summary Data Handlers ────────────────────────────────────────
+
+    ctx.data.register(DATA_KEYS.learnerSummary, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const summaryId = typeof params.summaryId === "string" ? params.summaryId : "";
+      if (!companyId || !projectId || !summaryId) return null;
+      const entity = await findLearnerSummary(ctx, companyId, projectId, summaryId);
+      if (!entity) return null;
+      const summary = asLearnerSummary(entity);
+      if (summary.companyId !== companyId) return null;
+      return summary;
+    });
+
+    ctx.data.register(DATA_KEYS.learnerSummaries, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : undefined;
+      if (!companyId || !projectId) return [];
+      const entities = await listLearnerSummaryEntities(ctx, companyId, projectId, runId);
+      return entities.map(asLearnerSummary).sort((a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    });
+
+    // ─── Knowledge Entry Data Handlers ─────────────────────────────────────────
+
+    ctx.data.register(DATA_KEYS.knowledgeEntry, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const entryId = typeof params.entryId === "string" ? params.entryId : "";
+      if (!companyId || !projectId || !entryId) return null;
+      const entity = await findKnowledgeEntry(ctx, companyId, projectId, entryId);
+      if (!entity) return null;
+      const entry = asKnowledgeEntry(entity);
+      if (entry.companyId !== companyId) return null;
+      return entry;
+    });
+
+    ctx.data.register(DATA_KEYS.knowledgeEntries, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      if (!companyId || !projectId) return [];
+      const entities = await listKnowledgeEntryEntities(ctx, companyId, projectId);
+      return entities.map(asKnowledgeEntry).sort((a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    });
+
+    // ─── Digest Data Handlers ─────────────────────────────────────────────────
+
+    ctx.data.register(DATA_KEYS.digest, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const digestId = typeof params.digestId === "string" ? params.digestId : "";
+      if (!companyId || !projectId || !digestId) return null;
+      const entity = await findDigest(ctx, companyId, projectId, digestId);
+      if (!entity) return null;
+      const digest = asDigest(entity);
+      if (digest.companyId !== companyId) return null;
+      return digest;
+    });
+
+    ctx.data.register(DATA_KEYS.digests, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      if (!companyId || !projectId) return [];
+      const entities = await listDigestEntities(ctx, companyId, projectId);
+      return entities.map(asDigest).sort((a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    });
+
+    // ─── Release Health Check Data Handlers ────────────────────────────────────
+
+    ctx.data.register(DATA_KEYS.releaseHealth, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const checkId = typeof params.checkId === "string" ? params.checkId : "";
+      if (!companyId || !projectId || !checkId) return null;
+      const entity = await findReleaseHealthCheck(ctx, companyId, projectId, checkId);
+      if (!entity) return null;
+      const check = asReleaseHealthCheck(entity);
+      if (check.companyId !== companyId) return null;
+      return check;
+    });
+
+    ctx.data.register(DATA_KEYS.releaseHealthChecks, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : undefined;
+      if (!companyId || !projectId) return [];
+      const entities = await listReleaseHealthCheckEntities(ctx, companyId, projectId, runId);
+      return entities.map(asReleaseHealthCheck).sort((a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    });
+
+    // ─── Rollback Action Data Handlers ────────────────────────────────────────
+
+    ctx.data.register(DATA_KEYS.rollbackAction, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const rollbackId = typeof params.rollbackId === "string" ? params.rollbackId : "";
+      if (!companyId || !projectId || !rollbackId) return null;
+      const entity = await findRollbackAction(ctx, companyId, projectId, rollbackId);
+      if (!entity) return null;
+      const rollback = asRollbackAction(entity);
+      if (rollback.companyId !== companyId) return null;
+      return rollback;
+    });
+
+    ctx.data.register(DATA_KEYS.rollbackActions, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : undefined;
+      if (!companyId || !projectId) return [];
+      const entities = await listRollbackActionEntities(ctx, companyId, projectId, runId);
+      return entities.map(asRollbackAction).sort((a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
     });
 
     // Register action handlers
@@ -1833,6 +2267,128 @@ const plugin: PaperclipPlugin = definePlugin({
       return { run, lease };
     });
 
+    ctx.actions.register(ACTION_KEYS.completeDeliveryRun, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      if (!companyId || !projectId || !runId) {
+        throw new Error("companyId, projectId, and runId are required");
+      }
+
+      const entity = await findDeliveryRun(ctx, companyId, projectId, runId);
+      if (!entity) {
+        throw new Error("Delivery run not found");
+      }
+
+      const run = asDeliveryRun(entity);
+      const finalStatus: RunStatus = params.status === "failed" ? "failed" :
+                                      params.status === "cancelled" ? "cancelled" : "completed";
+
+      run.status = finalStatus;
+      run.completedAt = nowIso();
+      run.updatedAt = nowIso();
+
+      // Release the workspace lease
+      const leaseEntity = await findActiveWorkspaceLease(ctx, companyId, projectId, runId);
+      if (leaseEntity) {
+        leaseEntity.isActive = false;
+        leaseEntity.releasedAt = nowIso();
+        await upsertWorkspaceLease(ctx, leaseEntity);
+      }
+
+      await upsertDeliveryRun(ctx, run);
+
+      // Auto-create learner summary for completed runs - inline to avoid ctx.actions.call
+      const summaryId = randomUUID();
+      const summary: LearnerSummary = {
+        summaryId,
+        companyId,
+        projectId,
+        runId,
+        ideaId: run.ideaId,
+        title: `Summary for run ${runId.slice(0, 8)}`,
+        summaryText: typeof params.summaryText === "string" ? params.summaryText : `Run ${finalStatus} at ${run.completedAt}`,
+        keyLearnings: Array.isArray(params.keyLearnings) ? params.keyLearnings : [],
+        skillsReinjected: Array.isArray(params.skillsReinjected) ? params.skillsReinjected : [],
+        metrics: {
+          duration: typeof params.duration === "number" ? params.duration : undefined,
+          commits: typeof params.commits === "number" ? params.commits : undefined,
+          testsAdded: typeof params.testsAdded === "number" ? params.testsAdded : undefined,
+          testsPassed: typeof params.testsPassed === "number" ? params.testsPassed : undefined,
+          filesChanged: typeof params.filesChanged === "number" ? params.filesChanged : undefined
+        },
+        createdAt: nowIso()
+      };
+      await upsertLearnerSummary(ctx, summary);
+
+      // Auto-create knowledge entries from the summary
+      const createdKnowledgeEntries: KnowledgeEntry[] = [];
+      if (summary.keyLearnings.length > 0 || summary.skillsReinjected.length > 0) {
+        if (summary.keyLearnings.length > 0) {
+          const learningEntry: KnowledgeEntry = {
+            entryId: randomUUID(),
+            companyId,
+            projectId,
+            knowledgeType: "lesson",
+            title: `Lessons from run ${runId.slice(0, 8)}`,
+            content: summary.keyLearnings.join("\n"),
+            sourceRunId: runId,
+            sourceSummaryId: summary.summaryId,
+            usageCount: 0,
+            tags: ["learned", "automated"],
+            createdAt: nowIso(),
+            updatedAt: nowIso()
+          };
+          await upsertKnowledgeEntry(ctx, learningEntry);
+          createdKnowledgeEntries.push(learningEntry);
+        }
+        for (const skill of summary.skillsReinjected) {
+          const skillEntry: KnowledgeEntry = {
+            entryId: randomUUID(),
+            companyId,
+            projectId,
+            knowledgeType: "skill",
+            title: `Skill: ${skill}`,
+            content: `Reusable skill captured from run ${runId.slice(0, 8)}: ${skill}`,
+            sourceRunId: runId,
+            sourceSummaryId: summary.summaryId,
+            reinjectionCommand: `Use skill: ${skill}`,
+            usageCount: 0,
+            tags: ["skill", "reinjected"],
+            createdAt: nowIso(),
+            updatedAt: nowIso()
+          };
+          await upsertKnowledgeEntry(ctx, skillEntry);
+          createdKnowledgeEntries.push(skillEntry);
+        }
+      }
+
+      // If the run failed, create a release health check failure digest
+      const failureReason = typeof params.failureReason === "string" ? params.failureReason : null;
+      if (finalStatus === "failed") {
+        const digest: Digest = {
+          digestId: randomUUID(),
+          companyId,
+          projectId,
+          digestType: "health_check_failed",
+          title: `Run ${runId.slice(0, 8)} failed`,
+          summary: `Delivery run failed${failureReason ? `: ${failureReason}` : ""}`,
+          details: failureReason ? [failureReason] : [],
+          priority: "high",
+          status: "pending",
+          deliveredAt: null,
+          readAt: null,
+          dismissedAt: null,
+          relatedRunId: runId,
+          createdAt: nowIso()
+        };
+        await upsertDigest(ctx, digest);
+        return { run, learnerSummary: summary, knowledgeEntries: createdKnowledgeEntries, digest };
+      }
+
+      return { run, learnerSummary: summary, knowledgeEntries: createdKnowledgeEntries };
+    });
+
     ctx.actions.register(ACTION_KEYS.pauseAutopilot, async (params) => {
       const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
       const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
@@ -2339,6 +2895,502 @@ const plugin: PaperclipPlugin = definePlugin({
 
       await upsertOperatorIntervention(ctx, intervention);
       return intervention;
+    });
+
+    // ─── Learner Summary Actions ───────────────────────────────────────────────
+
+    ctx.actions.register(ACTION_KEYS.createLearnerSummary, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      const ideaId = typeof params.ideaId === "string" ? params.ideaId : "";
+      if (!companyId || !projectId || !runId) {
+        throw new Error("companyId, projectId, and runId are required");
+      }
+
+      const summary: LearnerSummary = {
+        summaryId: randomUUID(),
+        companyId,
+        projectId,
+        runId,
+        ideaId,
+        title: typeof params.title === "string" ? params.title : "Run Summary",
+        summaryText: typeof params.summaryText === "string" ? params.summaryText : "",
+        keyLearnings: Array.isArray(params.keyLearnings) ? params.keyLearnings : [],
+        skillsReinjected: Array.isArray(params.skillsReinjected) ? params.skillsReinjected : [],
+        metrics: {
+          duration: typeof params.duration === "number" ? params.duration : undefined,
+          commits: typeof params.commits === "number" ? params.commits : undefined,
+          testsAdded: typeof params.testsAdded === "number" ? params.testsAdded : undefined,
+          testsPassed: typeof params.testsPassed === "number" ? params.testsPassed : undefined,
+          filesChanged: typeof params.filesChanged === "number" ? params.filesChanged : undefined
+        },
+        createdAt: nowIso()
+      };
+
+      await upsertLearnerSummary(ctx, summary);
+
+      // Auto-create knowledge entries from the summary
+      const createdKnowledgeEntries: KnowledgeEntry[] = [];
+      if (summary.keyLearnings.length > 0 || summary.skillsReinjected.length > 0) {
+        // Create a knowledge entry from key learnings
+        if (summary.keyLearnings.length > 0) {
+          const learningEntry: KnowledgeEntry = {
+            entryId: randomUUID(),
+            companyId,
+            projectId,
+            knowledgeType: "lesson",
+            title: `Lessons from run ${runId.slice(0, 8)}`,
+            content: summary.keyLearnings.join("\n"),
+            sourceRunId: runId,
+            sourceSummaryId: summary.summaryId,
+            usageCount: 0,
+            tags: ["learned", "automated"],
+            createdAt: nowIso(),
+            updatedAt: nowIso()
+          };
+          await upsertKnowledgeEntry(ctx, learningEntry);
+          createdKnowledgeEntries.push(learningEntry);
+        }
+
+        // Create knowledge entries from skills
+        for (const skill of summary.skillsReinjected) {
+          const skillEntry: KnowledgeEntry = {
+            entryId: randomUUID(),
+            companyId,
+            projectId,
+            knowledgeType: "skill",
+            title: `Skill: ${skill}`,
+            content: `Reusable skill captured from run ${runId.slice(0, 8)}: ${skill}`,
+            sourceRunId: runId,
+            sourceSummaryId: summary.summaryId,
+            reinjectionCommand: `Use skill: ${skill}`,
+            usageCount: 0,
+            tags: ["skill", "reinjected"],
+            createdAt: nowIso(),
+            updatedAt: nowIso()
+          };
+          await upsertKnowledgeEntry(ctx, skillEntry);
+          createdKnowledgeEntries.push(skillEntry);
+        }
+      }
+
+      return { summary, knowledgeEntries: createdKnowledgeEntries };
+    });
+
+    // ─── Knowledge Entry Actions ───────────────────────────────────────────────
+
+    ctx.actions.register(ACTION_KEYS.createKnowledgeEntry, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      if (!companyId || !projectId) {
+        throw new Error("companyId and projectId are required");
+      }
+
+      const knowledgeType: KnowledgeType = ["procedure", "pattern", "lesson", "skill"].includes(String(params.knowledgeType))
+        ? (params.knowledgeType as KnowledgeType)
+        : "lesson";
+
+      const entry: KnowledgeEntry = {
+        entryId: randomUUID(),
+        companyId,
+        projectId,
+        knowledgeType,
+        title: typeof params.title === "string" ? params.title : "Knowledge Entry",
+        content: typeof params.content === "string" ? params.content : "",
+        reinjectionCommand: typeof params.reinjectionCommand === "string" ? params.reinjectionCommand : undefined,
+        sourceRunId: typeof params.sourceRunId === "string" ? params.sourceRunId : undefined,
+        sourceSummaryId: typeof params.sourceSummaryId === "string" ? params.sourceSummaryId : undefined,
+        usageCount: 0,
+        tags: Array.isArray(params.tags) ? params.tags : [],
+        createdAt: nowIso(),
+        updatedAt: nowIso()
+      };
+
+      await upsertKnowledgeEntry(ctx, entry);
+      return entry;
+    });
+
+    ctx.actions.register(ACTION_KEYS.getKnowledgeForRun, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      if (!companyId || !projectId) {
+        throw new Error("companyId and projectId are required");
+      }
+
+      const entities = await listKnowledgeEntryEntities(ctx, companyId, projectId);
+      const entries = entities.map(asKnowledgeEntry);
+
+      // Sort by usage count (desc) and last used date to surface most relevant knowledge
+      return entries
+        .filter((e) => !e.usedInRunId) // Not already used in a run
+        .sort((a, b) => {
+          // Prioritize by usage count, then by recency
+          if (b.usageCount !== a.usageCount) return b.usageCount - a.usageCount;
+          const aTime = a.lastUsedAt ? new Date(a.lastUsedAt).getTime() : 0;
+          const bTime = b.lastUsedAt ? new Date(b.lastUsedAt).getTime() : 0;
+          return bTime - aTime;
+        })
+        .slice(0, 10); // Return top 10 most relevant entries
+    });
+
+    ctx.actions.register(ACTION_KEYS.markKnowledgeAsUsed, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const entryId = typeof params.entryId === "string" ? params.entryId : "";
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      if (!companyId || !projectId || !entryId) {
+        throw new Error("companyId, projectId, and entryId are required");
+      }
+
+      const entity = await findKnowledgeEntry(ctx, companyId, projectId, entryId);
+      if (!entity) {
+        throw new Error("Knowledge entry not found");
+      }
+
+      const entry = asKnowledgeEntry(entity);
+      entry.usedInRunId = runId || undefined;
+      entry.lastUsedAt = nowIso();
+      entry.usageCount = (entry.usageCount || 0) + 1;
+      entry.updatedAt = nowIso();
+
+      await upsertKnowledgeEntry(ctx, entry);
+      return entry;
+    });
+
+    // ─── Digest Actions ────────────────────────────────────────────────────────
+
+    ctx.actions.register(ACTION_KEYS.createDigest, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      if (!companyId || !projectId) {
+        throw new Error("companyId and projectId are required");
+      }
+
+      const digestType: DigestType = ["budget_alert", "stuck_run", "opportunity", "weekly_summary", "health_check_failed"].includes(String(params.digestType))
+        ? (params.digestType as DigestType)
+        : "opportunity";
+
+      const priority: "low" | "medium" | "high" | "critical" =
+        ["low", "medium", "high", "critical"].includes(String(params.priority))
+          ? (params.priority as "low" | "medium" | "high" | "critical")
+          : "medium";
+
+      const digest: Digest = {
+        digestId: randomUUID(),
+        companyId,
+        projectId,
+        digestType,
+        title: typeof params.title === "string" ? params.title : "Digest",
+        summary: typeof params.summary === "string" ? params.summary : "",
+        details: Array.isArray(params.details) ? params.details : [],
+        priority,
+        status: "pending",
+        deliveredAt: null,
+        readAt: null,
+        dismissedAt: null,
+        relatedRunId: typeof params.relatedRunId === "string" ? params.relatedRunId : undefined,
+        relatedBudgetId: typeof params.relatedBudgetId === "string" ? params.relatedBudgetId : undefined,
+        createdAt: nowIso()
+      };
+
+      await upsertDigest(ctx, digest);
+      return digest;
+    });
+
+    ctx.actions.register(ACTION_KEYS.generateStuckRunDigest, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      if (!companyId || !projectId) {
+        throw new Error("companyId and projectId are required");
+      }
+
+      // Find stuck runs (running for too long)
+      const runEntities = await listDeliveryRunEntities(ctx, companyId, projectId);
+      const now = Date.now();
+      const STUCK_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+      const stuckRuns = runEntities
+        .map(asDeliveryRun)
+        .filter((run) => {
+          if (run.status !== "running" && run.status !== "paused") return false;
+          const createdAt = new Date(run.createdAt).getTime();
+          return now - createdAt > STUCK_THRESHOLD_MS;
+        });
+
+      if (stuckRuns.length === 0) {
+        return { digest: null, stuckRunsCount: 0 };
+      }
+
+      const digest: Digest = {
+        digestId: randomUUID(),
+        companyId,
+        projectId,
+        digestType: "stuck_run",
+        title: `Alert: ${stuckRuns.length} stuck run${stuckRuns.length > 1 ? "s" : ""} detected`,
+        summary: `${stuckRuns.length} delivery run${stuckRuns.length > 1 ? "s have" : " has"} been running for over 30 minutes without completion.`,
+        details: stuckRuns.map((run) => `Run ${run.runId.slice(0, 8)} on branch "${run.branchName}" - status: ${run.status}`),
+        priority: "high",
+        status: "pending",
+        deliveredAt: null,
+        readAt: null,
+        dismissedAt: null,
+        createdAt: nowIso()
+      };
+
+      await upsertDigest(ctx, digest);
+      return { digest, stuckRunsCount: stuckRuns.length };
+    });
+
+    ctx.actions.register(ACTION_KEYS.generateBudgetAlertDigest, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      if (!companyId || !projectId) {
+        throw new Error("companyId and projectId are required");
+      }
+
+      // Check company budget
+      const budget = await findCompanyBudget(ctx, companyId);
+      if (!budget) {
+        return { digest: null, budgetStatus: "no_budget" };
+      }
+
+      const utilizationPercent = budget.autopilotBudgetMinutes > 0
+        ? Math.round((budget.autopilotUsedMinutes / budget.autopilotBudgetMinutes) * 100)
+        : 0;
+
+      // Only create digest if over 80% utilized
+      if (utilizationPercent < 80) {
+        return { digest: null, budgetStatus: "ok", utilizationPercent };
+      }
+
+      const priority: "low" | "medium" | "high" | "critical" =
+        utilizationPercent >= 100 ? "critical" :
+        utilizationPercent >= 90 ? "high" : "medium";
+
+      const digest: Digest = {
+        digestId: randomUUID(),
+        companyId,
+        projectId,
+        digestType: "budget_alert",
+        title: `Budget alert: ${utilizationPercent}% autopilot budget utilized`,
+        summary: `Autopilot budget is at ${utilizationPercent}% (${budget.autopilotUsedMinutes}/${budget.autopilotBudgetMinutes} minutes).${utilizationPercent >= 100 ? " Budget is exhausted!" : ""}`,
+        details: [
+          `Total budget: ${budget.totalBudgetMinutes} minutes`,
+          `Autopilot budget: ${budget.autopilotBudgetMinutes} minutes`,
+          `Autopilot used: ${budget.autopilotUsedMinutes} minutes`,
+          `Utilization: ${utilizationPercent}%`
+        ],
+        priority,
+        status: "pending",
+        deliveredAt: null,
+        readAt: null,
+        dismissedAt: null,
+        relatedBudgetId: budget.budgetId,
+        createdAt: nowIso()
+      };
+
+      await upsertDigest(ctx, digest);
+      return { digest, budgetStatus: budget.paused ? "exhausted" : "warning", utilizationPercent };
+    });
+
+    // ─── Release Health Actions ───────────────────────────────────────────────
+
+    ctx.actions.register(ACTION_KEYS.createReleaseHealthCheck, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      if (!companyId || !projectId || !runId) {
+        throw new Error("companyId, projectId, and runId are required");
+      }
+
+      const checkType: HealthCheckType = ["smoke_test", "integration_test", "custom_check", "merge_check"].includes(String(params.checkType))
+        ? (params.checkType as HealthCheckType)
+        : "smoke_test";
+
+      const check: ReleaseHealthCheck = {
+        checkId: randomUUID(),
+        companyId,
+        projectId,
+        runId,
+        checkType,
+        name: typeof params.name === "string" ? params.name : `${checkType} check`,
+        status: "pending",
+        createdAt: nowIso()
+      };
+
+      await upsertReleaseHealthCheck(ctx, check);
+      return check;
+    });
+
+    ctx.actions.register(ACTION_KEYS.updateReleaseHealthStatus, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const checkId = typeof params.checkId === "string" ? params.checkId : "";
+      if (!companyId || !projectId || !checkId) {
+        throw new Error("companyId, projectId, and checkId are required");
+      }
+
+      const entity = await findReleaseHealthCheck(ctx, companyId, projectId, checkId);
+      if (!entity) {
+        throw new Error("Release health check not found");
+      }
+
+      const check = asReleaseHealthCheck(entity);
+      const newStatus: HealthCheckStatus = ["pending", "running", "passed", "failed", "skipped"].includes(String(params.status))
+        ? (params.status as HealthCheckStatus)
+        : check.status;
+
+      check.status = newStatus;
+      if (typeof params.errorMessage === "string") {
+        check.errorMessage = params.errorMessage;
+        check.failedAt = nowIso();
+      }
+      if (newStatus === "passed") {
+        check.passedAt = nowIso();
+      }
+
+      await upsertReleaseHealthCheck(ctx, check);
+
+      // If the check failed, create a digest and potentially trigger rollback
+      let digest: Digest | null = null;
+      let rollback: RollbackAction | null = null;
+      if (newStatus === "failed") {
+        // Create a failure digest
+        digest = {
+          digestId: randomUUID(),
+          companyId,
+          projectId,
+          digestType: "health_check_failed",
+          title: `Release health check failed: ${check.name}`,
+          summary: `Health check "${check.name}" failed for run ${check.runId.slice(0, 8)}.${check.errorMessage ? ` Error: ${check.errorMessage}` : ""}`,
+          details: [
+            `Check type: ${check.checkType}`,
+            `Check name: ${check.name}`,
+            `Run ID: ${check.runId}`,
+            check.errorMessage ? `Error: ${check.errorMessage}` : ""
+          ].filter(Boolean),
+          priority: "critical",
+          status: "pending",
+          deliveredAt: null,
+          readAt: null,
+          dismissedAt: null,
+          relatedRunId: check.runId,
+          createdAt: nowIso()
+        };
+        await upsertDigest(ctx, digest);
+
+        // Auto-trigger rollback if configured for the project
+        const autopilotEntity = await findAutopilotProject(ctx, companyId, projectId);
+        if (autopilotEntity) {
+          const autopilot = asAutopilotProject(autopilotEntity);
+          // For fullauto tier, auto-rollback on failure
+          if (autopilot.automationTier === "fullauto") {
+            rollback = await triggerRollback(ctx, companyId, projectId, check.runId, check.checkId);
+          }
+        }
+      }
+
+      return { check, digest, rollback };
+    });
+
+    ctx.actions.register(ACTION_KEYS.checkStuckRuns, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      if (!companyId || !projectId) {
+        throw new Error("companyId and projectId are required");
+      }
+
+      // Inline stuck run detection logic
+      const runEntities = await listDeliveryRunEntities(ctx, companyId, projectId);
+      const now = Date.now();
+      const STUCK_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+      const stuckRuns = runEntities
+        .map(asDeliveryRun)
+        .filter((run) => {
+          if (run.status !== "running" && run.status !== "paused") return false;
+          const createdAt = new Date(run.createdAt).getTime();
+          return now - createdAt > STUCK_THRESHOLD_MS;
+        });
+
+      return { stuckRunsCount: stuckRuns.length };
+    });
+
+    // ─── Rollback Actions ──────────────────────────────────────────────────────
+
+    async function triggerRollback(
+      ctx: PluginContext,
+      companyId: string,
+      projectId: string,
+      runId: string,
+      checkId: string
+    ): Promise<RollbackAction> {
+      // Find the run to get the branch/commit info
+      const runEntity = await findDeliveryRun(ctx, companyId, projectId, runId);
+      if (!runEntity) {
+        throw new Error("Delivery run not found");
+      }
+      const run = asDeliveryRun(runEntity);
+
+      // Find the checkpoint for this run (most recent one)
+      const checkpointEntities = await ctx.entities.list({
+        entityType: ENTITY_TYPES.checkpoint,
+        scopeKind: "project",
+        scopeId: projectId,
+        limit: 100,
+        offset: 0
+      });
+      const runCheckpoints = checkpointEntities
+        .map(asCheckpoint)
+        .filter((cp) => cp.runId === runId && cp.companyId === companyId)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      const latestCheckpoint = runCheckpoints.length > 0 ? runCheckpoints[0] : null;
+
+      // Determine rollback type based on what we can restore
+      const rollbackType: RollbackType = latestCheckpoint ? "restore_checkpoint" : "revert_commit";
+
+      const rollback: RollbackAction = {
+        rollbackId: randomUUID(),
+        companyId,
+        projectId,
+        runId,
+        checkId,
+        rollbackType,
+        status: "pending",
+        targetCommitSha: latestCheckpoint?.workspaceSnapshot.commitSha ?? run.commitSha ?? undefined,
+        checkpointId: latestCheckpoint?.checkpointId ?? undefined,
+        createdAt: nowIso()
+      };
+
+      await upsertRollbackAction(ctx, rollback);
+      return rollback;
+    }
+
+    ctx.actions.register(ACTION_KEYS.triggerRollback, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      const checkId = typeof params.checkId === "string" ? params.checkId : "";
+      if (!companyId || !projectId || !runId || !checkId) {
+        throw new Error("companyId, projectId, runId, and checkId are required");
+      }
+
+      const rollback = await triggerRollback(ctx, companyId, projectId, runId, checkId);
+
+      // Update rollback status to in_progress
+      rollback.status = "in_progress";
+      await upsertRollbackAction(ctx, rollback);
+
+      // Update the delivery run status to indicate rollback
+      const runEntity = await findDeliveryRun(ctx, companyId, projectId, runId);
+      if (runEntity) {
+        const run = asDeliveryRun(runEntity);
+        run.status = "failed";
+        run.updatedAt = nowIso();
+        await upsertDeliveryRun(ctx, run);
+      }
+
+      return rollback;
     });
 
     ctx.logger.info("Autopilot plugin ready", { pluginId: PLUGIN_ID });

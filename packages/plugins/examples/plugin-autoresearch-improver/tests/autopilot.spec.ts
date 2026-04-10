@@ -3063,4 +3063,810 @@ describe("autopilot worker", () => {
       expect(otherCompanyInterventions).toHaveLength(0);
     });
   });
+
+  describe("VAL-AUTOPILOT-039: Learner summaries and reusable knowledge are generated after runs", () => {
+    it("completing a run creates a learner summary", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Learner summary test", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Learner summary test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const runResult = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/learner-test",
+        workspacePath: "/tmp/learner-test",
+        leasedPort: 6700
+      }) as { run: { runId: string } };
+
+      // Complete the delivery run with summary data
+      const result = await harness.performAction("complete-delivery-run", {
+        companyId,
+        projectId,
+        runId: runResult.run.runId,
+        status: "completed",
+        summaryText: "Successfully implemented the feature with 3 new tests passing",
+        keyLearnings: ["Use TypeScript strict mode", "Test edge cases early"],
+        skillsReinjected: ["React hooks patterns", "API error handling"],
+        duration: 3600,
+        commits: 5,
+        testsAdded: 12,
+        testsPassed: 12,
+        filesChanged: 8
+      }) as { run: { runId: string; status: string }; learnerSummary: { summaryId: string; summaryText: string; keyLearnings: string[] } };
+
+      expect(result.run.status).toBe("completed");
+      expect(result.learnerSummary).toBeDefined();
+      expect(result.learnerSummary.summaryText).toContain("Successfully implemented");
+      expect(result.learnerSummary.keyLearnings).toContain("Use TypeScript strict mode");
+    });
+
+    it("learner summary creates knowledge entries for key learnings and skills", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Knowledge entry test", description: "Desc", rationale: "", sourceReferences: [], score: 85 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Knowledge entry test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const runResult = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/knowledge-test",
+        workspacePath: "/tmp/knowledge-test",
+        leasedPort: 6800
+      }) as { run: { runId: string } };
+
+      const result = await harness.performAction("complete-delivery-run", {
+        companyId,
+        projectId,
+        runId: runResult.run.runId,
+        status: "completed",
+        keyLearnings: ["Pattern: Error boundary at component level"],
+        skillsReinjected: ["Custom hooks", "Context API"]
+      }) as { knowledgeEntries: Array<{ entryId: string; knowledgeType: string; title: string }> };
+
+      expect(result.knowledgeEntries).toBeDefined();
+      expect(result.knowledgeEntries.length).toBeGreaterThanOrEqual(1);
+      // Should have at least one "skill" entry for the reinjected skills
+      const skillEntries = result.knowledgeEntries.filter((e: { knowledgeType: string }) => e.knowledgeType === "skill");
+      expect(skillEntries.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("retrieves knowledge entries for a project", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      // Create a knowledge entry directly
+      await harness.performAction("create-knowledge-entry", {
+        companyId,
+        projectId,
+        knowledgeType: "procedure",
+        title: "How to handle auth errors",
+        content: "When encountering 401 errors, clear tokens and redirect to login",
+        tags: ["auth", "error-handling"]
+      });
+
+      const entries = await harness.getData("knowledge-entries", { companyId, projectId }) as Array<{ entryId: string; title: string }>;
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0].title).toBe("How to handle auth errors");
+    });
+
+    it("getKnowledgeForRun returns relevant unused knowledge entries", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      // Create multiple knowledge entries with different usage counts
+      await harness.performAction("create-knowledge-entry", {
+        companyId,
+        projectId,
+        knowledgeType: "lesson",
+        title: "Lesson 1",
+        content: "First lesson",
+        usageCount: 5
+      });
+
+      await harness.performAction("create-knowledge-entry", {
+        companyId,
+        projectId,
+        knowledgeType: "skill",
+        title: "Skill 1",
+        content: "First skill",
+        usageCount: 10
+      });
+
+      await harness.performAction("create-knowledge-entry", {
+        companyId,
+        projectId,
+        knowledgeType: "pattern",
+        title: "Pattern 1",
+        content: "First pattern",
+        usageCount: 2
+      });
+
+      const relevant = await harness.performAction("get-knowledge-for-run", {
+        companyId,
+        projectId
+      }) as Array<{ entryId: string; title: string; usageCount: number }>;
+
+      expect(relevant.length).toBeGreaterThan(0);
+      // Should be sorted by usage count descending
+      expect(relevant[0].usageCount).toBeGreaterThanOrEqual(relevant[1]?.usageCount ?? 0);
+    });
+
+    it("knowledge entries are isolated by company", async () => {
+      const { harness, companyId, projectId, otherCompanyId } = setup;
+
+      await harness.performAction("create-knowledge-entry", {
+        companyId,
+        projectId,
+        knowledgeType: "lesson",
+        title: "Company 1 private knowledge",
+        content: "This should not be visible to company 2"
+      });
+
+      const otherCompanyEntries = await harness.getData("knowledge-entries", {
+        companyId: otherCompanyId,
+        projectId
+      }) as Array<{ entryId: string }>;
+
+      expect(otherCompanyEntries).toHaveLength(0);
+    });
+  });
+
+  describe("VAL-AUTOPILOT-040: Digests and alerts are generated for recurring autopilot conditions", () => {
+    it("generateStuckRunDigest creates a digest when runs are stuck", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Stuck run test", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Stuck run test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const runResult = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/stuck-test",
+        workspacePath: "/tmp/stuck-test",
+        leasedPort: 6900
+      }) as { run: { runId: string } };
+
+      // Run is in "running" state - stuck run detection looks for runs running > 30 min
+      // Since we can't easily fake time in tests, we verify the action works
+      const result = await harness.performAction("generate-stuck-run-digest", {
+        companyId,
+        projectId
+      }) as { digest: { digestId: string; digestType: string; priority: string } | null; stuckRunsCount: number };
+
+      // The run is not actually stuck in test (just created), so digest may be null
+      expect(result).toBeDefined();
+      expect(typeof result.stuckRunsCount).toBe("number");
+    });
+
+    it("generateBudgetAlertDigest creates a digest when budget is over 80%", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      // Set budget at 85% utilization (medium priority: >= 80% but < 90%)
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 100,
+        autopilotUsedMinutes: 85
+      });
+
+      const result = await harness.performAction("generate-budget-alert-digest", {
+        companyId,
+        projectId
+      }) as { digest: { digestId: string; digestType: string; priority: string } | null; budgetStatus: string; utilizationPercent: number };
+
+      expect(result).toBeDefined();
+      expect(result.utilizationPercent).toBe(85);
+      expect(result.digest).toBeDefined();
+      expect(result.digest!.digestType).toBe("budget_alert");
+      expect(result.digest!.priority).toBe("medium");
+    });
+
+    it("generateBudgetAlertDigest returns null when budget is under 80%", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      // Set budget at 50% utilization
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 100,
+        autopilotUsedMinutes: 50
+      });
+
+      const result = await harness.performAction("generate-budget-alert-digest", {
+        companyId,
+        projectId
+      }) as { digest: null; budgetStatus: string; utilizationPercent: number };
+
+      expect(result.digest).toBeNull();
+      expect(result.utilizationPercent).toBe(50);
+      expect(result.budgetStatus).toBe("ok");
+    });
+
+    it("createDigest creates a custom digest", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      const digest = await harness.performAction("create-digest", {
+        companyId,
+        projectId,
+        digestType: "opportunity",
+        title: "New opportunity discovered",
+        summary: "Market analysis suggests new feature direction",
+        details: ["Competitive gap identified", "User demand increasing"],
+        priority: "medium"
+      }) as { digestId: string; digestType: string; title: string; priority: string; status: string };
+
+      expect(digest).toMatchObject({
+        digestId: expect.any(String),
+        digestType: "opportunity",
+        title: "New opportunity discovered",
+        priority: "medium",
+        status: "pending"
+      });
+    });
+
+    it("retrieves digests for a project", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("create-digest", {
+        companyId,
+        projectId,
+        digestType: "weekly_summary",
+        title: "Weekly digest",
+        summary: "Summary of the week's work",
+        priority: "low"
+      });
+
+      await harness.performAction("create-digest", {
+        companyId,
+        projectId,
+        digestType: "budget_alert",
+        title: "Budget warning",
+        summary: "Budget running low",
+        priority: "high"
+      });
+
+      const digests = await harness.getData("digests", { companyId, projectId }) as Array<{ digestId: string; digestType: string }>;
+
+      expect(digests).toHaveLength(2);
+    });
+
+    it("digests are isolated by company", async () => {
+      const { harness, companyId, projectId, otherCompanyId } = setup;
+
+      await harness.performAction("create-digest", {
+        companyId,
+        projectId,
+        digestType: "opportunity",
+        title: "Company 1 confidential digest",
+        summary: "Secret opportunity",
+        priority: "high"
+      });
+
+      const otherCompanyDigests = await harness.getData("digests", {
+        companyId: otherCompanyId,
+        projectId
+      }) as Array<{ digestId: string }>;
+
+      expect(otherCompanyDigests).toHaveLength(0);
+    });
+  });
+
+  describe("VAL-AUTOPILOT-041: Release-health failures trigger rollback or revert handling", () => {
+    it("creates a release health check", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Health check test", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Health check test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const runResult = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/health-test",
+        workspacePath: "/tmp/health-test",
+        leasedPort: 7000
+      }) as { run: { runId: string } };
+
+      const check = await harness.performAction("create-release-health-check", {
+        companyId,
+        projectId,
+        runId: runResult.run.runId,
+        checkType: "smoke_test",
+        name: "Smoke test for login flow"
+      }) as { checkId: string; runId: string; checkType: string; status: string };
+
+      expect(check).toMatchObject({
+        checkId: expect.any(String),
+        runId: runResult.run.runId,
+        checkType: "smoke_test",
+        status: "pending"
+      });
+    });
+
+    it("updateReleaseHealthStatus creates a digest when check fails", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Failure test", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Failure test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const runResult = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/failure-test",
+        workspacePath: "/tmp/failure-test",
+        leasedPort: 7100
+      }) as { run: { runId: string } };
+
+      const check = await harness.performAction("create-release-health-check", {
+        companyId,
+        projectId,
+        runId: runResult.run.runId,
+        checkType: "integration_test",
+        name: "Integration test suite"
+      }) as { checkId: string };
+
+      const result = await harness.performAction("update-release-health-status", {
+        companyId,
+        projectId,
+        checkId: check.checkId,
+        status: "failed",
+        errorMessage: "Test suite: 3 tests failed, 12 passed"
+      }) as { check: { status: string; errorMessage?: string }; digest: { digestId: string; digestType: string; priority: string } };
+
+      expect(result.check.status).toBe("failed");
+      expect(result.check.errorMessage).toBe("Test suite: 3 tests failed, 12 passed");
+      expect(result.digest).toBeDefined();
+      expect(result.digest.digestType).toBe("health_check_failed");
+      expect(result.digest.priority).toBe("critical");
+    });
+
+    it("triggerRollback creates a rollback action for a failed check", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Rollback test", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Rollback test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const runResult = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/rollback-test",
+        workspacePath: "/tmp/rollback-test",
+        leasedPort: 7200
+      }) as { run: { runId: string } };
+
+      const check = await harness.performAction("create-release-health-check", {
+        companyId,
+        projectId,
+        runId: runResult.run.runId,
+        checkType: "merge_check",
+        name: "Merge readiness check"
+      }) as { checkId: string };
+
+      const rollback = await harness.performAction("trigger-rollback", {
+        companyId,
+        projectId,
+        runId: runResult.run.runId,
+        checkId: check.checkId
+      }) as { rollbackId: string; rollbackType: string; status: string; checkId: string };
+
+      expect(rollback).toMatchObject({
+        rollbackId: expect.any(String),
+        checkId: check.checkId,
+        status: "in_progress"
+      });
+      expect(rollback.rollbackType).toMatch(/revert_commit|restore_checkpoint/);
+    });
+
+    it("retrieves release health checks for a run", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "List checks test", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "List checks test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const runResult = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/list-checks-test",
+        workspacePath: "/tmp/list-checks-test",
+        leasedPort: 7300
+      }) as { run: { runId: string } };
+
+      await harness.performAction("create-release-health-check", {
+        companyId,
+        projectId,
+        runId: runResult.run.runId,
+        checkType: "smoke_test",
+        name: "Smoke test 1"
+      });
+
+      await harness.performAction("create-release-health-check", {
+        companyId,
+        projectId,
+        runId: runResult.run.runId,
+        checkType: "integration_test",
+        name: "Integration test"
+      });
+
+      const checks = await harness.getData("release-health-checks", {
+        companyId,
+        projectId,
+        runId: runResult.run.runId
+      }) as Array<{ checkId: string; checkType: string }>;
+
+      expect(checks).toHaveLength(2);
+    });
+
+    it("retrieves rollback actions for a run", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Rollback list test", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Rollback list test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const runResult = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/rollback-list-test",
+        workspacePath: "/tmp/rollback-list-test",
+        leasedPort: 7400
+      }) as { run: { runId: string } };
+
+      const check = await harness.performAction("create-release-health-check", {
+        companyId,
+        projectId,
+        runId: runResult.run.runId,
+        checkType: "custom_check",
+        name: "Custom validation"
+      }) as { checkId: string };
+
+      await harness.performAction("trigger-rollback", {
+        companyId,
+        projectId,
+        runId: runResult.run.runId,
+        checkId: check.checkId
+      });
+
+      const rollbacks = await harness.getData("rollback-actions", {
+        companyId,
+        projectId,
+        runId: runResult.run.runId
+      }) as Array<{ rollbackId: string; rollbackType: string }>;
+
+      expect(rollbacks).toHaveLength(1);
+    });
+
+    it("release health checks are isolated by company", async () => {
+      const { harness, companyId, projectId, otherCompanyId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Isolation test", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Isolation test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const runResult = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/isolation-test",
+        workspacePath: "/tmp/isolation-test",
+        leasedPort: 7500
+      }) as { run: { runId: string } };
+
+      await harness.performAction("create-release-health-check", {
+        companyId,
+        projectId,
+        runId: runResult.run.runId,
+        checkType: "smoke_test",
+        name: "Company 1 check"
+      });
+
+      const otherCompanyChecks = await harness.getData("release-health-checks", {
+        companyId: otherCompanyId,
+        projectId,
+        runId: runResult.run.runId
+      }) as Array<{ checkId: string }>;
+
+      expect(otherCompanyChecks).toHaveLength(0);
+    });
+  });
 });

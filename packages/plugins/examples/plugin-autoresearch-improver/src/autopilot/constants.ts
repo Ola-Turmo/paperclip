@@ -15,7 +15,12 @@ export const ENTITY_TYPES = {
   convoyTask: "convoy-task",
   checkpoint: "checkpoint",
   productLock: "product-lock",
-  operatorIntervention: "operator-intervention"
+  operatorIntervention: "operator-intervention",
+  learnerSummary: "learner-summary",
+  knowledgeEntry: "knowledge-entry",
+  digest: "digest",
+  releaseHealth: "release-health",
+  rollbackAction: "rollback-action"
 } as const;
 
 export const DATA_KEYS = {
@@ -49,7 +54,17 @@ export const DATA_KEYS = {
   productLock: "product-lock",
   productLocks: "product-locks",
   operatorIntervention: "operator-intervention",
-  operatorInterventions: "operator-interventions"
+  operatorInterventions: "operator-interventions",
+  learnerSummary: "learner-summary",
+  learnerSummaries: "learner-summaries",
+  knowledgeEntry: "knowledge-entry",
+  knowledgeEntries: "knowledge-entries",
+  digest: "digest",
+  digests: "digests",
+  releaseHealth: "release-health",
+  releaseHealthChecks: "release-health-checks",
+  rollbackAction: "rollback-action",
+  rollbackActions: "rollback-actions"
 } as const;
 
 export const ACTION_KEYS = {
@@ -66,6 +81,7 @@ export const ACTION_KEYS = {
   updatePreferenceProfile: "update-preference-profile",
   createPlanningArtifact: "create-planning-artifact",
   createDeliveryRun: "create-delivery-run",
+  completeDeliveryRun: "complete-delivery-run",
   pauseAutopilot: "pause-autopilot",
   resumeAutopilot: "resume-autopilot",
   pauseDeliveryRun: "pause-delivery-run",
@@ -82,7 +98,18 @@ export const ACTION_KEYS = {
   addOperatorNote: "add-operator-note",
   requestCheckpoint: "request-checkpoint",
   nudgeRun: "nudge-run",
-  inspectLinkedIssue: "inspect-linked-issue"
+  inspectLinkedIssue: "inspect-linked-issue",
+  createLearnerSummary: "create-learner-summary",
+  createKnowledgeEntry: "create-knowledge-entry",
+  getKnowledgeForRun: "get-knowledge-for-run",
+  markKnowledgeAsUsed: "mark-knowledge-as-used",
+  createDigest: "create-digest",
+  generateStuckRunDigest: "generate-stuck-run-digest",
+  generateBudgetAlertDigest: "generate-budget-alert-digest",
+  createReleaseHealthCheck: "create-release-health-check",
+  updateReleaseHealthStatus: "update-release-health-status",
+  triggerRollback: "trigger-rollback",
+  checkStuckRuns: "check-stuck-runs"
 } as const;
 
 export const JOB_KEYS = {} as const;
@@ -311,5 +338,111 @@ export interface OperatorIntervention {
   linkedIssueUrl?: string;
   linkedIssueTitle?: string;
   linkedIssueComments?: string[];
+  createdAt: string;
+}
+
+// ─── Learner Summary ────────────────────────────────────────────────────────────
+
+export interface LearnerSummary {
+  summaryId: string;
+  companyId: string;
+  projectId: string;
+  runId: string;
+  ideaId: string;
+  title: string;
+  summaryText: string;
+  keyLearnings: string[];
+  skillsReinjected: string[];
+  metrics: {
+    duration?: number;
+    commits?: number;
+    testsAdded?: number;
+    testsPassed?: number;
+    filesChanged?: number;
+  };
+  createdAt: string;
+}
+
+// ─── Knowledge Entry ───────────────────────────────────────────────────────────
+
+export type KnowledgeType = "procedure" | "pattern" | "lesson" | "skill";
+
+export interface KnowledgeEntry {
+  entryId: string;
+  companyId: string;
+  projectId: string;
+  knowledgeType: KnowledgeType;
+  title: string;
+  content: string;
+  reinjectionCommand?: string;
+  sourceRunId?: string;
+  sourceSummaryId?: string;
+  usedInRunId?: string;
+  lastUsedAt?: string;
+  usageCount: number;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Digest ───────────────────────────────────────────────────────────────────
+
+export type DigestType = "budget_alert" | "stuck_run" | "opportunity" | "weekly_summary" | "health_check_failed";
+export type DigestStatus = "pending" | "delivered" | "read" | "dismissed";
+
+export interface Digest {
+  digestId: string;
+  companyId: string;
+  projectId: string;
+  digestType: DigestType;
+  title: string;
+  summary: string;
+  details: string[];
+  priority: "low" | "medium" | "high" | "critical";
+  status: DigestStatus;
+  deliveredAt: string | null;
+  readAt: string | null;
+  dismissedAt: string | null;
+  relatedRunId?: string;
+  relatedBudgetId?: string;
+  createdAt: string;
+}
+
+// ─── Release Health ────────────────────────────────────────────────────────────
+
+export type HealthCheckStatus = "pending" | "running" | "passed" | "failed" | "skipped";
+export type HealthCheckType = "smoke_test" | "integration_test" | "custom_check" | "merge_check";
+
+export interface ReleaseHealthCheck {
+  checkId: string;
+  companyId: string;
+  projectId: string;
+  runId: string;
+  checkType: HealthCheckType;
+  name: string;
+  status: HealthCheckStatus;
+  errorMessage?: string;
+  failedAt?: string;
+  passedAt?: string;
+  createdAt: string;
+}
+
+// ─── Rollback Action ───────────────────────────────────────────────────────────
+
+export type RollbackStatus = "pending" | "in_progress" | "completed" | "failed" | "skipped";
+export type RollbackType = "revert_commit" | "restore_checkpoint" | "full_rollback";
+
+export interface RollbackAction {
+  rollbackId: string;
+  companyId: string;
+  projectId: string;
+  runId: string;
+  checkId: string;
+  rollbackType: RollbackType;
+  status: RollbackStatus;
+  targetCommitSha?: string;
+  checkpointId?: string;
+  errorMessage?: string;
+  completedAt?: string;
   createdAt: string;
 }
