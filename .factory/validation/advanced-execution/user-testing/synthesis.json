@@ -1,0 +1,23 @@
+{
+  "milestone": "advanced-execution",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "blocked": 0,
+    "notTested": 0
+  },
+  "passedAssertions": [
+    "VAL-AUTOPILOT-035",
+    "VAL-AUTOPILOT-036",
+    "VAL-AUTOPILOT-037",
+    "VAL-AUTOPILOT-038"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "notes": "All 4 assertions for advanced-execution milestone (VAL-AUTOPILOT-035, 036, 037, 038) were already validated as PASSED in prior user-testing rounds against the delivery-control milestone. No pending assertions were found. No new flow validators needed. The advanced-execution implementation features (convoy-checkpoint-and-merge-coordination, advanced-ui-surfaces-035-041, merge-coordination-ui-fix, product-lock-backend-wiring) all completed successfully and their scrutiny validator also passed (commit f1ac84cd). Paperclip dev server confirmed running on port 3100.",
+  "previousRound": null
+}
