@@ -95,6 +95,8 @@ function AutopilotSettings({
   const pauseAutopilot = usePluginAction(ACTION_KEYS.pauseAutopilot);
   const resumeAutopilot = usePluginAction(ACTION_KEYS.resumeAutopilot);
   const budgetQuery = usePluginData<CompanyBudget | null>(DATA_KEYS.companyBudget, { companyId });
+  const resolvedCompanyId = autopilot?.companyId || companyId;
+  const resolvedProjectId = autopilot?.projectId || "";
 
   useEffect(() => {
     if (autopilot) {
@@ -239,11 +241,20 @@ function AutopilotSettings({
 
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         {autopilot?.paused ? (
-          <button type="button" style={buttonStyle} onClick={async () => { await resumeAutopilot({ companyId, projectId: autopilot.projectId }); }}>
+          <button
+            type="button"
+            style={buttonStyle}
+            disabled={!resolvedCompanyId || !resolvedProjectId}
+            onClick={async () => {
+              console.log("[AutopilotSettings] handleResume", { companyId: resolvedCompanyId, projectId: resolvedProjectId, autopilot });
+              if (!resolvedCompanyId || !resolvedProjectId) return;
+              await resumeAutopilot({ companyId: resolvedCompanyId, projectId: resolvedProjectId });
+            }}
+          >
             Resume Autopilot
           </button>
         ) : (
-          <button type="button" style={buttonStyle} onClick={async () => { await pauseAutopilot({ companyId, projectId: autopilot?.projectId ?? "" }); }} disabled={!autopilot?.projectId}>
+          <button type="button" style={buttonStyle} onClick={async () => { await pauseAutopilot({ companyId: resolvedCompanyId, projectId: resolvedProjectId }); }} disabled={!resolvedCompanyId || !resolvedProjectId}>
             Pause Autopilot
           </button>
         )}
@@ -268,8 +279,6 @@ function ProductProgramEditor({
   const [content, setContent] = useState(revision?.content ?? "");
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
-  const pauseAutopilot = usePluginAction(ACTION_KEYS.pauseAutopilot);
-  const resumeAutopilot = usePluginAction(ACTION_KEYS.resumeAutopilot);
   const budgetQuery = usePluginData<CompanyBudget | null>(DATA_KEYS.companyBudget, { companyId });
   const [showHistory, setShowHistory] = useState(false);
 
@@ -696,6 +705,8 @@ function IdeasSection({ companyId, projectId }: { companyId: string; projectId: 
   const [newIdeaTitle, setNewIdeaTitle] = useState("");
   const [newIdeaDescription, setNewIdeaDescription] = useState("");
   const [newIdeaScore, setNewIdeaScore] = useState("75");
+  const [newIdeaRationale, setNewIdeaRationale] = useState("Generated from research");
+  const [newIdeaSources, setNewIdeaSources] = useState("research-cycle");
   const [message, setMessage] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -713,8 +724,11 @@ function IdeasSection({ companyId, projectId }: { companyId: string; projectId: 
         ideas: [{
           title: newIdeaTitle,
           description: newIdeaDescription,
-          rationale: "Generated from research",
-          sourceReferences: ["research-cycle"],
+          rationale: newIdeaRationale,
+          sourceReferences: newIdeaSources
+            .split(",")
+            .map((source) => source.trim())
+            .filter(Boolean),
           score: parseInt(newIdeaScore, 10) || 75
         }]
       });
@@ -722,13 +736,15 @@ function IdeasSection({ companyId, projectId }: { companyId: string; projectId: 
       setNewIdeaTitle("");
       setNewIdeaDescription("");
       setNewIdeaScore("75");
+      setNewIdeaRationale("Generated from research");
+      setNewIdeaSources("research-cycle");
       setMessage("Idea added.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setIsGenerating(false);
     }
-  }, [companyId, projectId, newIdeaTitle, newIdeaDescription, newIdeaScore, generateIdeas, ideasQuery]);
+  }, [companyId, projectId, newIdeaTitle, newIdeaDescription, newIdeaScore, newIdeaRationale, newIdeaSources, generateIdeas, ideasQuery]);
 
   return (
     <section style={cardStyle}>
@@ -758,6 +774,20 @@ function IdeasSection({ companyId, projectId }: { companyId: string; projectId: 
           value={newIdeaDescription}
           onChange={(e) => setNewIdeaDescription(e.target.value)}
         />
+        <div style={{ display: "grid", gap: 8 }}>
+          <input
+            style={inputStyle}
+            placeholder="Rationale..."
+            value={newIdeaRationale}
+            onChange={(e) => setNewIdeaRationale(e.target.value)}
+          />
+          <input
+            style={inputStyle}
+            placeholder="Sources (comma-separated)..."
+            value={newIdeaSources}
+            onChange={(e) => setNewIdeaSources(e.target.value)}
+          />
+        </div>
         <button type="button" style={primaryButtonStyle} onClick={handleGenerateIdea} disabled={isGenerating || !newIdeaTitle.trim()}>
           {isGenerating ? "Adding..." : "Add Idea"}
         </button>

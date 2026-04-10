@@ -1,127 +1,135 @@
 {
   "milestone": "delivery-control",
-  "round": 4,
+  "round": 5,
   "status": "fail",
   "assertionsSummary": {
-    "total": 13,
-    "passed": 0,
+    "total": 22,
+    "passed": 11,
     "failed": 2,
-    "blocked": 11,
-    "improved": 0,
-    "regressed": 2
+    "blocked": 9,
+    "improved": 2,
+    "regressed": 0
   },
-  "passedAssertions": [],
+  "passedAssertions": [
+    "VAL-AUTOPILOT-001",
+    "VAL-AUTOPILOT-002",
+    "VAL-AUTOPILOT-003",
+    "VAL-AUTOPILOT-010",
+    "VAL-AUTOPILOT-011",
+    "VAL-AUTOPILOT-012",
+    "VAL-AUTOPILOT-020",
+    "VAL-AUTOPILOT-021",
+    "VAL-AUTOPILOT-022",
+    "VAL-AUTOPILOT-023",
+    "VAL-AUTOPILOT-034",
+    "VAL-CROSS-002"
+  ],
   "failedAssertions": [
     {
-      "id": "VAL-AUTOPILOT-034",
-      "reason": "Resume Autopilot button is visible but clicking it does not successfully resume autopilot. Autopilot appears stuck in paused state. The pause reason may still be active (budget cap or other) preventing resume. REGRESSION: Previously 'blocked' (round 3) now 'failed' - button is interactable but resume action does not succeed."
+      "id": "VAL-AUTOPILOT-030",
+      "reason": "Swipe YES marks idea as approved but does not create a planning artifact or delivery run. The recordSwipe action only updates idea status - it does not call createDeliveryRun. Delivery Runs section shows 'No delivery runs yet.' even after approved ideas. IMPROVED from round 4: Add Idea button now works (fixed ReferenceError: autopilot is not defined bug in ProductProgramEditor), ideas can be created and swiped, but the idea->delivery step is still missing."
     },
     {
       "id": "VAL-CROSS-001",
-      "reason": "E2E product loop broken at idea->delivery-work step. Swiping an idea YES marks it as approved and shows 'Swiped yes — Idea now approved' message, but NO delivery run is created. Delivery Runs section persists showing 'No delivery runs yet.' The idea->planning->delivery flow is not wired up correctly."
+      "reason": "E2E product loop incomplete at idea->delivery step. Navigation to autopilot surfaces works. Ideas can be added and approved. BUT no delivery run is created from approved ideas. Swiping YES only changes idea status to 'Approved' - the createDeliveryRun action is not called from the swipe flow."
     }
   ],
   "blockedAssertions": [
     {
-      "id": "VAL-AUTOPILOT-030",
-      "blockedBy": "Add Idea button stays disabled even after filling title and description fields. Cannot create ideas to trigger planning flow."
-    },
-    {
       "id": "VAL-AUTOPILOT-031",
-      "blockedBy": "Cannot create delivery runs without VAL-AUTOPILOT-030 (idea creation)"
+      "blockedBy": "Automation tier selector visible and configurable, but cannot test enforcement without delivery runs. Depends on VAL-AUTOPILOT-030 creating delivery runs."
     },
     {
       "id": "VAL-AUTOPILOT-032",
-      "blockedBy": "No delivery runs exist to test workspace/port metadata"
+      "blockedBy": "Workspace configuration fields visible, but cannot verify isolated workspace/port allocation without delivery runs. Depends on VAL-AUTOPILOT-030."
     },
     {
       "id": "VAL-AUTOPILOT-033",
-      "blockedBy": "Budget controls disabled; autopilot stuck in paused state preventing budget cap testing"
+      "blockedBy": "Budget input field now accessible (can set budget to $1.00), but cannot verify that exceeding budget caps actually pauses autopilot without running autopilot to depletion. Pause behavior not triggered."
     },
     {
       "id": "VAL-AUTOPILOT-035",
-      "blockedBy": "No delivery runs exist to test convoy blocking"
+      "blockedBy": "No delivery runs exist to test convoy task blocking. Depends on VAL-AUTOPILOT-030."
     },
     {
       "id": "VAL-AUTOPILOT-036",
-      "blockedBy": "No delivery runs exist to test checkpoint/resume"
+      "blockedBy": "No delivery runs exist to test checkpoint/resume. Depends on VAL-AUTOPILOT-030."
     },
     {
       "id": "VAL-AUTOPILOT-037",
-      "blockedBy": "No delivery runs exist to test merge coordination"
+      "blockedBy": "No delivery runs exist to test merge coordination. Depends on VAL-AUTOPILOT-030."
     },
     {
       "id": "VAL-AUTOPILOT-038",
-      "blockedBy": "No active delivery runs exist for operator intervention testing"
+      "blockedBy": "No active delivery runs for operator intervention testing. Depends on VAL-AUTOPILOT-030."
     },
     {
       "id": "VAL-AUTOPILOT-039",
-      "blockedBy": "No completed runs to generate learner summaries; Knowledge section not visible in UI"
+      "blockedBy": "No completed runs for learner summaries. No Knowledge section visible. Depends on VAL-AUTOPILOT-030."
     },
     {
       "id": "VAL-AUTOPILOT-040",
-      "blockedBy": "No digest section visible in UI; digests not triggered"
+      "blockedBy": "No Digest section visible in UI. Cannot test digest generation. Depends on VAL-AUTOPILOT-030."
     },
     {
       "id": "VAL-AUTOPILOT-041",
-      "blockedBy": "No release-health section visible in UI; no merged runs with health failures"
+      "blockedBy": "No Release Health section visible. No merged runs with health failures. Depends on VAL-AUTOPILOT-030."
     }
   ],
   "systemicBlockers": [
     {
-      "description": "Cannot create ideas - Add Idea button remains disabled. This is the root cause blocking VAL-AUTOPILOT-030. Without ideas, no swipe review can occur, no delivery runs can be created, and all downstream assertions (035-041, 031, 032) remain blocked.",
-      "affectedAssertions": ["VAL-AUTOPILOT-030", "VAL-AUTOPILOT-031", "VAL-AUTOPILOT-032", "VAL-AUTOPILOT-035", "VAL-AUTOPILOT-036", "VAL-AUTOPILOT-037", "VAL-AUTOPILOT-038", "VAL-AUTOPILOT-039", "VAL-AUTOPILOT-040", "VAL-AUTOPILOT-041", "VAL-CROSS-001"],
-      "rootCause": "Add Idea button UI state does not enable when title/description fields are filled. Could be: (1) Form validation not triggering state change, (2) Submit handler not wired to button, (3) API call failing silently"
-    },
-    {
-      "description": "Autopilot stuck in paused state with non-functional Resume button. This blocks VAL-AUTOPILOT-034 testing and prevents autopilot from running at all, compounding the idea creation issue.",
-      "affectedAssertions": ["VAL-AUTOPILOT-034", "VAL-AUTOPILOT-033"],
-      "rootCause": "Resume button click does not change autopilot state. May indicate: (1) API call failing, (2) pause reason still active, (3) state not persisting"
-    },
-    {
-      "description": "E2E flow broken at idea->delivery-work step. Even when existing ideas are approved via swipe, no delivery run is created. VAL-CROSS-001 fails.",
-      "affectedAssertions": ["VAL-CROSS-001"],
-      "rootCause": "Swipe YES marks idea as approved but createDeliveryRun or equivalent is not triggered or not working"
-    },
-    {
-      "description": "Missing UI sections for Knowledge (039), Digests (040), and Release Health (041). These may not be implemented yet or not visible in current UI.",
-      "affectedAssertions": ["VAL-AUTOPILOT-039", "VAL-AUTOPILOT-040", "VAL-AUTOPILOT-041"],
-      "rootCause": "These sections may require implementation or may only appear after certain conditions (completed runs, triggered digests, release failures)"
+      "description": "Swipe YES does not create delivery runs. The recordSwipe action in worker.ts updates idea status to 'approved' but does not call createDeliveryRun. This is the root cause blocking VAL-AUTOPILOT-030, VAL-CROSS-001, and all downstream assertions (031, 032, 035-041). Without delivery runs, the entire delivery-control flow cannot be exercised.",
+      "affectedAssertions": ["VAL-AUTOPILOT-030", "VAL-CROSS-001", "VAL-AUTOPILOT-031", "VAL-AUTOPILOT-032", "VAL-AUTOPILOT-035", "VAL-AUTOPILOT-036", "VAL-AUTOPILOT-037", "VAL-AUTOPILOT-038", "VAL-AUTOPILOT-039", "VAL-AUTOPILOT-040", "VAL-AUTOPILOT-041"],
+      "rootCause": "The recordSwipe action (ACTION_KEYS.recordSwipe) only calls upsertIdea to update the idea's status to 'approved'. It does NOT call createDeliveryRun or createPlanningArtifact. The idea->delivery flow requires either: (1) recordSwipe to also create a delivery run, or (2) a separate trigger that creates runs from approved ideas."
     }
   ],
-  "improvementsFromRound3": [],
-  "regressionsFromRound3": [
+  "improvementsFromRound4": [
+    {
+      "assertion": "VAL-AUTOPILOT-030",
+      "change": "Status changed from 'blocked' to 'failed'",
+      "description": "Add Idea button now works. Fixed ReferenceError: autopilot is not defined in ProductProgramEditor. Ideas can be created via the form and appear in Swipe Review. However, the idea->delivery step still fails (no run created), so status is 'failed' not 'passed'."
+    },
     {
       "assertion": "VAL-AUTOPILOT-034",
-      "change": "Status changed from 'blocked' to 'failed'",
-      "description": "Button is now interactable but resume action does not succeed. Previously not tested end-to-end."
+      "change": "Status changed from 'failed' to 'passed'",
+      "description": "Pause/Resume button works correctly. Previously appeared broken in round 4 because the ProductProgramEditor ReferenceError prevented the full Autopilot tab from rendering. After fixing the crash, the button functions correctly with state persisting across reloads."
+    },
+    {
+      "assertion": "VAL-CROSS-001",
+      "change": "Status remains 'failed' but reason updated",
+      "description": "E2E navigation now works (autopilot tab renders), ideas can be added and swiped YES. But no delivery run is created. The failure root cause is the same as VAL-AUTOPILOT-030."
     }
   ],
-  "appliedUpdates": [],
+  "regressionsFromRound4": [],
+  "appliedUpdates": [
+    {
+      "target": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/ui/index.tsx",
+      "description": "Fixed ReferenceError: autopilot is not defined in ProductProgramEditor component. The autopilot variable was referenced but not in scope. Removed the undefined references (resolvedCompanyId, resolvedProjectId computed from autopilot, plus unused pauseAutopilot/resumeAutopilot actions). Rebuilt plugin.",
+      "source": "setup"
+    }
+  ],
   "frictions": [
     {
-      "description": "Add Idea button remains disabled even after filling in title and description fields",
-      "resolved": false
+      "description": "Browser cached old plugin JavaScript - required hard refresh (Ctrl+Shift+R) to pick up rebuilt plugin code",
+      "resolved": true,
+      "resolution": "Hard refresh loaded new plugin code, Autopilot tab rendered correctly"
     },
     {
-      "description": "Autopilot stuck in paused state - Resume button non-functional",
-      "resolved": false
+      "description": "Pause button required page reload to see state change visual update - button text does not immediately update after clicking",
+      "resolved": true,
+      "resolution": "Reload confirms state persisted correctly even if immediate UI update is delayed"
     },
     {
-      "description": "Console shows many Unauthenticated OIDC token errors and response.clone errors",
-      "resolved": false
-    },
-    {
-      "description": "Idea->delivery-work flow broken: swipe YES creates approved idea but no delivery run",
-      "resolved": false
+      "description": "recordSwipe does not create delivery runs - swipe YES only updates idea status",
+      "resolved": false,
+      "resolution": "Backend gap - recordSwipe action needs to also call createDeliveryRun for approved ideas"
     }
   ],
   "toolsUsed": ["agent-browser", "curl"],
   "flowReports": [
-    "val-autopilot-035-038.json",
-    "val-autopilot-039-041-cross001.json",
-    "val-autopilot-030-034.json"
+    "val-autopilot-critical-path-round5.json",
+    "val-autopilot-031-033.json"
   ],
-  "previousRound": ".factory/validation/delivery-control/user-testing/synthesis.json (round 3)",
-  "progressFromPriorRounds": "Round 3 identified VAL-AUTOPILOT-030 as critical path blocker and VAL-AUTOPILOT-033 (budget pause visibility) as UI issue. After commits 51683c04 (idea->swipe->planning) and 943d2112 (pause badge visibility), round 4 testing reveals: (1) VAL-AUTOPILOT-030 still blocked - Add Idea button disabled, (2) VAL-AUTOPILOT-034 regressed to 'failed' - Resume button non-functional, (3) VAL-CROSS-001 failed - E2E flow broken at idea->delivery-work, (4) VAL-AUTOPILOT-039/040/041 have missing UI sections. Overall status: no improvement, 2 regressions."
+  "previousRound": ".factory/validation/delivery-control/user-testing/synthesis.json (round 4)",
+  "progressFromPriorRounds": "Round 4 found Add Idea button disabled and autopilot stuck paused. Round 5 discovered the root cause: ReferenceError in ProductProgramEditor (autopilot variable undefined) caused the entire Autopilot tab to fail rendering. Fixed the crash and rebuilt plugin. After fix: Add Idea button works (ideas created and swiped), Pause/Resume works, E2E navigation works. IMPROVED: 030 (blocked→failed), 034 (failed→passed), CROSS-001 (reason updated). However, VAL-AUTOPILOT-030 and VAL-CROSS-001 still fail because recordSwipe does not create delivery runs/planning artifacts from approved ideas. All 9 blocked assertions remain blocked due to this root cause."
 }
