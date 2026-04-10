@@ -29,7 +29,8 @@ import {
   type KnowledgeEntry,
   type Digest,
   type ReleaseHealthCheck,
-  type RollbackAction
+  type RollbackAction,
+  type ProductLock
 } from "../constants.js";
 
 type ProjectInfo = {
@@ -541,7 +542,9 @@ export function AutopilotProjectTab({ context }: PluginDetailTabProps) {
 
 function DeliveryRunSection({ companyId, projectId }: { companyId: string; projectId: string }) {
   const runsQuery = usePluginData<DeliveryRun[]>(DATA_KEYS.deliveryRuns, { companyId, projectId });
+  const locksQuery = usePluginData<ProductLock[]>(DATA_KEYS.productLocks, { companyId, projectId });
   const runs = runsQuery.data ?? [];
+  const locks = locksQuery.data ?? [];
   const [expandedRunId, setExpandedRunId] = useState<string | null>(runs[0]?.runId ?? null);
 
   useEffect(() => {
@@ -549,6 +552,65 @@ function DeliveryRunSection({ companyId, projectId }: { companyId: string; proje
       setExpandedRunId(runs[0]?.runId ?? null);
     }
   }, [runs, expandedRunId]);
+
+  // Determine merge conflicts: runs whose branches overlap with active product locks
+  const activeMergeConflicts = useMemo(() => {
+    const conflictMap: Record<string, { conflictingRunId: string; branchName: string; blockReason: string }[]> = {};
+    const activeLocks = locks.filter((l) => l.isActive && l.lockType === "product_lock");
+    for (const lock of activeLocks) {
+      // Find runs targeting the same branch or path
+      const conflictingRuns = runs.filter(
+        (r) => r.runId !== lock.runId && r.branchName === lock.targetBranch
+      );
+      if (conflictingRuns.length > 0) {
+        for (const r of conflictingRuns) {
+          if (!conflictMap[r.runId]) conflictMap[r.runId] = [];
+          conflictMap[r.runId].push({
+            conflictingRunId: lock.runId,
+            branchName: lock.targetBranch,
+            blockReason: lock.blockReason ?? `Branch "${lock.targetBranch}" is locked by another run`
+          });
+        }
+      }
+    }
+    return conflictMap;
+  }, [runs, locks]);
+
+  // Check for competing runs (runs targeting branches that differ but may still conflict)
+  const competingRunWarnings = useMemo(() => {
+    const warnMap: Record<string, { competingRunId: string; branchName: string; reason: string }[]> = {};
+    // If two runs exist and share similar branch prefix patterns, flag as competing
+    for (let i = 0; i < runs.length; i++) {
+      for (let j = i + 1; j < runs.length; j++) {
+        const runA = runs[i];
+        const runB = runs[j];
+        // Both active and targeting branches with common base or same target
+        if (
+          (runA.status === "running" || runA.status === "paused") &&
+          (runB.status === "running" || runB.status === "paused") &&
+          runA.branchName !== runB.branchName
+        ) {
+          const baseA = runA.branchName.split("/")[0];
+          const baseB = runB.branchName.split("/")[0];
+          if (baseA === baseB) {
+            if (!warnMap[runA.runId]) warnMap[runA.runId] = [];
+            warnMap[runA.runId].push({
+              competingRunId: runB.runId,
+              branchName: runB.branchName,
+              reason: `Competing branch "${runB.branchName}" (same base as "${runA.branchName}")`
+            });
+            if (!warnMap[runB.runId]) warnMap[runB.runId] = [];
+            warnMap[runB.runId].push({
+              competingRunId: runA.runId,
+              branchName: runA.branchName,
+              reason: `Competing branch "${runA.branchName}" (same base as "${runB.branchName}")`
+            });
+          }
+        }
+      }
+    }
+    return warnMap;
+  }, [runs]);
 
   return (
     <section style={cardStyle}>
@@ -560,6 +622,13 @@ function DeliveryRunSection({ companyId, projectId }: { companyId: string; proje
         <div style={{ display: "grid", gap: 10 }}>
           {runs.map((run) => {
             const isExpanded = expandedRunId === run.runId;
+            const runConflicts = activeMergeConflicts[run.runId] ?? [];
+            const runCompetingWarnings = competingRunWarnings[run.runId] ?? [];
+            const hasMergeConflict = runConflicts.length > 0;
+            const hasCompetingWarning = runCompetingWarnings.length > 0;
+            const runLock = locks.find((l) => l.runId === run.runId && l.isActive);
+            const hasActiveLock = !!runLock;
+
             return (
               <button
                 key={run.runId}
@@ -569,9 +638,17 @@ function DeliveryRunSection({ companyId, projectId }: { companyId: string; proje
                   ...buttonStyle,
                   textAlign: "left",
                   padding: 12,
-                  background: "white"
+                  background: "white",
+                  borderColor: hasMergeConflict
+                    ? "rgba(239,68,68,0.4)"
+                    : hasCompetingWarning
+                    ? "rgba(249,115,22,0.35)"
+                    : hasActiveLock
+                    ? "rgba(234,179,8,0.3)"
+                    : "rgba(100,116,139,0.22)"
                 }}
               >
+                {/* Header row */}
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
                   <div style={{ minWidth: 0 }}>
                     <strong style={{ fontSize: 13 }}>Run {run.runId.slice(0, 8)}</strong>
@@ -579,11 +656,52 @@ function DeliveryRunSection({ companyId, projectId }: { companyId: string; proje
                       Workspace: {run.workspacePath}
                     </div>
                   </div>
-                  <div style={{ textAlign: "right", fontSize: 12, color: "#334155" }}>
+                  <div style={{ textAlign: "right", fontSize: 12, color: "#334155", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
                     <div>Status: {run.status}</div>
                     <div>Port: {run.leasedPort ?? "—"}</div>
+                    {/* Merge conflict badge */}
+                    {hasMergeConflict && (
+                      <span style={{
+                        padding: "2px 8px",
+                        borderRadius: 6,
+                        background: "rgba(239,68,68,0.12)",
+                        color: "#dc2626",
+                        fontWeight: 700,
+                        fontSize: 10
+                      }}>
+                        ⚠ Merge Conflict
+                      </span>
+                    )}
+                    {/* Competing branch warning badge */}
+                    {hasCompetingWarning && !hasMergeConflict && (
+                      <span style={{
+                        padding: "2px 8px",
+                        borderRadius: 6,
+                        background: "rgba(249,115,22,0.12)",
+                        color: "#c2410c",
+                        fontWeight: 700,
+                        fontSize: 10
+                      }}>
+                        ⚡ Competing Runs
+                      </span>
+                    )}
+                    {/* Product lock badge */}
+                    {hasActiveLock && (
+                      <span style={{
+                        padding: "2px 8px",
+                        borderRadius: 6,
+                        background: "rgba(234,179,8,0.12)",
+                        color: "#92400e",
+                        fontWeight: 700,
+                        fontSize: 10
+                      }}>
+                        🔒 {runLock.lockType === "product_lock" ? "Product Lock" : "Merge Lock"}
+                      </span>
+                    )}
                   </div>
                 </div>
+
+                {/* Expanded details */}
                 {isExpanded && (
                   <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(100,116,139,0.15)", fontSize: 12, color: "#475569", display: "grid", gap: 4 }}>
                     <div><strong>Branch:</strong> {run.branchName}</div>
@@ -593,6 +711,48 @@ function DeliveryRunSection({ companyId, projectId }: { companyId: string; proje
                     {run.pauseReason && <div><strong>Pause reason:</strong> {run.pauseReason}</div>}
                     <div><strong>Commit:</strong> {run.commitSha ?? "—"}</div>
                     <div><strong>Completed:</strong> {run.completedAt ? formatDate(run.completedAt) : "—"}</div>
+
+                    {/* Merge conflict details */}
+                    {runConflicts.length > 0 && (
+                      <div style={{ marginTop: 8, padding: "8px 10px", background: "rgba(239,68,68,0.06)", borderRadius: 8, border: "1px solid rgba(239,68,68,0.2)" }}>
+                        <div style={{ fontWeight: 700, color: "#dc2626", marginBottom: 4 }}>⚠ Merge Blocked</div>
+                        {runConflicts.map((conflict, idx) => (
+                          <div key={idx} style={{ color: "#991b1b", fontSize: 11, marginTop: 2 }}>
+                            → Competes with run {conflict.conflictingRunId.slice(0, 8)} on branch <code>{conflict.branchName}</code>
+                            {conflict.blockReason && <span> — {conflict.blockReason}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Competing run warnings details */}
+                    {runCompetingWarnings.length > 0 && !hasMergeConflict && (
+                      <div style={{ marginTop: 8, padding: "8px 10px", background: "rgba(249,115,22,0.06)", borderRadius: 8, border: "1px solid rgba(249,115,22,0.2)" }}>
+                        <div style={{ fontWeight: 700, color: "#c2410c", marginBottom: 4 }}>⚡ Competing Branch Warning</div>
+                        {runCompetingWarnings.map((warning, idx) => (
+                          <div key={idx} style={{ color: "#9a3412", fontSize: 11, marginTop: 2 }}>
+                            → {warning.reason}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Product lock details */}
+                    {hasActiveLock && runLock && (
+                      <div style={{ marginTop: 8, padding: "8px 10px", background: "rgba(234,179,8,0.06)", borderRadius: 8, border: "1px solid rgba(234,179,8,0.2)" }}>
+                        <div style={{ fontWeight: 700, color: "#92400e", marginBottom: 4 }}>🔒 Product Lock Active</div>
+                        <div style={{ color: "#78350f", fontSize: 11 }}>
+                          <div>Lock ID: {runLock.lockId.slice(0, 8)}</div>
+                          <div>Target: <code>{runLock.targetPath}</code></div>
+                          <div>Acquired: {formatDate(runLock.acquiredAt)}</div>
+                          {runLock.blockReason && (
+                            <div style={{ marginTop: 2 }}>
+                              <strong>Block reason:</strong> {runLock.blockReason}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </button>
