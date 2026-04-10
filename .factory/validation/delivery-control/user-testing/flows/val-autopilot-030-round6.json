@@ -1,0 +1,64 @@
+{
+  "groupId": "val-autopilot-030-round6",
+  "testedAt": "2026-04-10T10:32:00.000Z",
+  "isolation": {
+    "paperclipUrl": "http://localhost:3100",
+    "companyId": "efe86897-afa7-4583-9a50-99bf210a7288",
+    "projectId": "7994d81f-b805-4e3c-925d-ae71f8b4c668",
+    "projectName": "Onboarding",
+    "plugin": "paperclip.autoresearch-improver-example"
+  },
+  "toolsUsed": ["agent-browser"],
+  "assertions": [
+    {
+      "id": "VAL-AUTOPILOT-030",
+      "title": "Planning flow is created for approved ideas (idea→swipe→delivery run)",
+      "status": "pass",
+      "steps": [
+        { "action": "Navigate to Onboarding project Autopilot tab", "expected": "Autopilot UI loads with Ideas, Swipe Review, and Delivery Runs sections", "observed": "Autopilot UI renders correctly with all sections visible: Settings, Product Program, Research, Ideas form, Swipe Review with multiple ideas, and Delivery Runs section" },
+        { "action": "Fill in Ideas section form and add new idea", "expected": "Idea appears in the ideas list and Swipe Review section", "observed": "Created idea 'Test Idea Round 6 - Verify Delivery Run Creation' with score 8. After adding, idea appears in Swipe Review section." },
+        { "action": "Click 'Yes' button on an idea in Swipe Review", "expected": "Idea is approved AND a delivery run is created", "observed": "Clicked YES on the new idea. 'Swiped yes — Idea now approved' message appeared. Idea status changed to 'Approved'. Recent Swipes shows YES at 10:31:03 AM. Preference Profile updated to 4 Yes." },
+        { "action": "Check Delivery Runs section for new run", "expected": "Delivery run appears after idea approval", "observed": "After reload, Delivery Runs section shows 4 runs total: Run 7fc51321 (full details), Run 258c1825, Run e3fdb8d1, Run 2907bdd8 (newly created). Each run shows: Workspace, Status: pending, Branch: autopilot-run-XXXX, Idea ID, Artifact ID, Paused: No." }
+      ],
+      "evidence": {
+        "screenshots": [
+          "delivery-control/round6/01-initial-page.png",
+          "delivery-control/round6/02-autopilot-tab.png",
+          "delivery-control/round6/03-after-add-idea.png",
+          "delivery-control/round6/04-after-swipe-yes.png",
+          "delivery-control/round6/05-delivery-runs-visible.png",
+          "delivery-control/round6/06-delivery-runs-after-fix.png"
+        ],
+        "consoleErrors": "None observed",
+        "network": "All network requests returned 200/success status"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-CROSS-001",
+      "title": "End-to-end product loop reachable from project navigation",
+      "status": "pass",
+      "steps": [
+        { "action": "Navigate to Onboarding project Autopilot tab via URL", "expected": "Full Autopilot surface loads with all sections", "observed": "URL navigation works: http://localhost:3100/TES/projects/onboarding?tab=plugin:paperclip.autoresearch-improver-example:autopilot-project-tab" },
+        { "action": "Verify all autopilot sections are visible", "expected": "Autopilot Settings, Ideas, Swipe Review, Delivery Runs sections all present", "observed": "All sections present and functional: Settings (Enable checkbox, Save, Pause/Resume), Product Program, Research, Ideas form (title, description, score, rationale, sources inputs + Add Idea), Swipe Review (Pass/Maybe/Yes/Now buttons for multiple ideas), Delivery Runs (shows 4 runs with metadata), Recent Swipes, Preference Profile." },
+        { "action": "Verify complete E2E flow works: add idea -> swipe YES -> delivery run created", "expected": "Idea approved via YES creates delivery run visible in Delivery Runs section", "observed": "Full E2E flow verified: Idea 'Test Idea Round 6' added -> Swiped YES at 10:31:03 AM -> Idea marked Approved -> New delivery run (2907bdd8) appeared in Delivery Runs section. All 4 ideas are now Approved and 4 delivery runs exist." }
+      ],
+      "evidence": {
+        "screenshots": [
+          "delivery-control/round6/01-initial-page.png",
+          "delivery-control/round6/02-autopilot-tab.png",
+          "delivery-control/round6/03-after-add-idea.png",
+          "delivery-control/round6/04-after-swipe-yes.png",
+          "delivery-control/round6/05-delivery-runs-visible.png",
+          "delivery-control/round6/06-delivery-runs-after-fix.png"
+        ],
+        "consoleErrors": "None observed",
+        "network": "All network requests returned 200/success status"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Round 6 re-validation of VAL-AUTOPILOT-030 and VAL-CROSS-001 after fix commit 6a3db604. Both assertions now PASS. The fix in autopilot/worker.ts (recordSwipe now creates PlanningArtifact and DeliveryRun for YES/NOW decisions) works correctly. Ideas can be added via the form, appear in Swipe Review, and when swiped YES/NOW, a delivery run is created with workspace, branch, idea ID, and artifact ID visible in the Delivery Runs section. The E2E product loop (navigate -> add idea -> swipe YES -> delivery run created) is fully functional."
+}
