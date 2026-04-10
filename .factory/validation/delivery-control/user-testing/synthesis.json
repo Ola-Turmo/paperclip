@@ -1,11 +1,11 @@
 {
   "milestone": "delivery-control",
-  "round": 11,
-  "status": "failure",
+  "round": 12,
+  "status": "pass",
   "assertionsSummary": {
     "total": 24,
-    "passed": 23,
-    "failed": 1,
+    "passed": 24,
+    "failed": 0,
     "blocked": 0
   },
   "passedAssertions": [
@@ -26,6 +26,7 @@
     "VAL-AUTOPILOT-034",
     "VAL-AUTOPILOT-035",
     "VAL-AUTOPILOT-036",
+    "VAL-AUTOPILOT-037",
     "VAL-AUTOPILOT-038",
     "VAL-AUTOPILOT-039",
     "VAL-AUTOPILOT-040",
@@ -33,30 +34,23 @@
     "VAL-CROSS-001",
     "VAL-CROSS-002"
   ],
-  "failedAssertions": [
-    {
-      "id": "VAL-AUTOPILOT-037",
-      "reason": "Backend product lock handlers not wired into main worker.ts entry point. The UI code (dist/ui/index.js) correctly queries product-locks via usePluginData and would display merge conflict indicators when locks exist, but the worker.js (dist/worker.js) is missing all product lock data and action handlers. Source files src/autopilot/helpers.ts and src/autopilot/worker.ts contain implementations (upsertProductLock, listProductLockEntities, acquireProductLock handler) but these are NOT imported or registered in the main worker.ts entry point. Specifically missing: (1) ctx.data.register for 'product-locks' data key, (2) ctx.actions.register for acquire-product-lock, (3) ctx.actions.register for release-product-lock, (4) ctx.actions.register for check-merge-conflict. Cannot test UI behavior without functional backend."
-    }
-  ],
+  "failedAssertions": [],
   "blockedAssertions": [],
-  "systemicBlockers": [
-    {
-      "description": "Product lock backend not integrated into main plugin worker. src/autopilot/helpers.ts has upsertProductLock, findProductLock, listProductLockEntities. src/autopilot/worker.ts has ctx.actions.register for acquireProductLock, releaseProductLock, checkMergeConflict. But worker.ts (entry point) does not import these functions or register these handlers.",
-      "affectedAssertions": ["VAL-AUTOPILOT-037"],
-      "requiredFix": "Add to src/worker.ts imports from './autopilot/helpers.js': asProductLock, upsertProductLock, findProductLock, listProductLockEntities, findActiveProductLock, findProductLockForTarget. Add to src/worker.ts: (1) ctx.data.register for 'product-lock' and 'product-locks' data keys using upsertProductLock/listProductLockEntities/findProductLock, (2) ctx.actions.register for acquire-product-lock using the logic from autopilot/worker.ts, (3) ctx.actions.register for release-product-lock, (4) ctx.actions.register for check-merge-conflict. Then rebuild plugin with: cd packages/plugins/examples/plugin-autoresearch-improver && node ./esbuild.config.mjs"
-    }
-  ],
+  "systemicBlockers": [],
   "appliedUpdates": [],
-  "frictions": [
-    {
-      "description": "Product lock data key returns empty results because no data handler registered - this is a backend gap not a UI issue. The UI correctly shows nothing when no locks exist.",
-      "resolved": false,
-      "affectedAssertions": ["VAL-AUTOPILOT-037"]
-    }
-  ],
-  "toolsUsed": ["agent-browser", "curl"],
+  "frictions": [],
+  "toolsUsed": ["agent-browser", "curl", "vitest"],
   "flowReports": ["val-autopilot-037-rerun.json"],
-  "previousRound": ".factory/validation/delivery-control/user-testing/synthesis.json (round 10)",
-  "progressFromPriorRounds": "Round 10 had 23 passed, 1 failed (VAL-AUTOPILOT-037, reported as missing UI). This round (11) investigated root cause: the UI code IS present in dist/ui/index.js with correct merge conflict/badge rendering logic, but the backend worker.js lacks the product lock data and action handlers. The autopilot sub-module (src/autopilot/worker.ts) has the implementations but they were never wired into the main worker.ts entry point. This is an integration gap, not a missing feature gap."
+  "previousRound": ".factory/validation/delivery-control/user-testing/synthesis.json (round 11)",
+  "progressFromPriorRounds": "Round 11 had 23 passed, 1 failed (VAL-AUTOPILOT-037 blocked by missing backend integration). This round (12) verified the fix from commit 87ac266c (feat(product-lock): wire product lock backend into worker.ts entrypoint). All product lock handlers are now registered in worker.ts (lines 3705, 3747, 3767 for actions; lines 2624, 2633 for data). Built dist/worker.js confirmed to contain all implementations. Unit tests: 4/4 passed for VAL-AUTOPILOT-037. Browser verification confirmed Delivery Runs section visible with 4 pending runs and UI merge conflict logic (product-locks data query, conflict badges, Merge Blocked warnings) is correct. All 24 assertions now passing.",
+  "round12Changes": {
+    "VAL-AUTOPILOT-037": {
+      "priorStatus": "failed",
+      "priorRound": 11,
+      "priorReason": "Backend worker.js missing product lock handlers (acquire-product-lock, release-product-lock, check-merge-conflict not registered in worker.ts)",
+      "fixApplied": "Commit 87ac266c wired product lock handlers into worker.ts: upsertProductLock imported, ctx.data.register for product-lock/product-locks, ctx.actions.register for acquire-product-lock/release-product-lock/check-merge-conflict",
+      "newStatus": "passed",
+      "verification": "4/4 unit tests pass; dist/worker.js confirmed to contain implementations; browser UI confirmed to query product-locks and render merge conflict indicators"
+    }
+  }
 }
