@@ -11,7 +11,11 @@ export const ENTITY_TYPES = {
   planningArtifact: "planning-artifact",
   deliveryRun: "delivery-run",
   workspaceLease: "workspace-lease",
-  companyBudget: "company-budget"
+  companyBudget: "company-budget",
+  convoyTask: "convoy-task",
+  checkpoint: "checkpoint",
+  productLock: "product-lock",
+  operatorIntervention: "operator-intervention"
 } as const;
 
 export const DATA_KEYS = {
@@ -37,7 +41,15 @@ export const DATA_KEYS = {
   workspaceLease: "workspace-lease",
   workspaceLeases: "workspace-leases",
   companyBudget: "company-budget",
-  companyBudgets: "company-budgets"
+  companyBudgets: "company-budgets",
+  convoyTask: "convoy-task",
+  convoyTasks: "convoy-tasks",
+  checkpoint: "checkpoint",
+  checkpoints: "checkpoints",
+  productLock: "product-lock",
+  productLocks: "product-locks",
+  operatorIntervention: "operator-intervention",
+  operatorInterventions: "operator-interventions"
 } as const;
 
 export const ACTION_KEYS = {
@@ -59,7 +71,18 @@ export const ACTION_KEYS = {
   pauseDeliveryRun: "pause-delivery-run",
   resumeDeliveryRun: "resume-delivery-run",
   updateCompanyBudget: "update-company-budget",
-  checkBudgetAndPauseIfNeeded: "check-budget-and-pause-if-needed"
+  checkBudgetAndPauseIfNeeded: "check-budget-and-pause-if-needed",
+  decomposeIntoConvoyTasks: "decompose-into-convoy-tasks",
+  updateConvoyTaskStatus: "update-convoy-task-status",
+  createCheckpoint: "create-checkpoint",
+  resumeFromCheckpoint: "resume-from-checkpoint",
+  acquireProductLock: "acquire-product-lock",
+  releaseProductLock: "release-product-lock",
+  checkMergeConflict: "check-merge-conflict",
+  addOperatorNote: "add-operator-note",
+  requestCheckpoint: "request-checkpoint",
+  nudgeRun: "nudge-run",
+  inspectLinkedIssue: "inspect-linked-issue"
 } as const;
 
 export const JOB_KEYS = {} as const;
@@ -73,6 +96,9 @@ export type ResearchStatus = "pending" | "running" | "completed" | "failed";
 export type RunStatus = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
 export type ExecutionMode = "simple" | "convoy";
 export type ApprovalMode = "manual" | "auto_approve";
+export type ConvoyTaskStatus = "pending" | "blocked" | "running" | "passed" | "failed" | "skipped";
+export type InterventionType = "note" | "checkpoint_request" | "nudge" | "linked_issue_inspection";
+export type LockType = "product_lock" | "merge_lock";
 
 export interface AutopilotProject {
   autopilotId: string;
@@ -223,4 +249,67 @@ export interface CompanyBudget {
   paused: boolean;
   pauseReason?: string;
   updatedAt: string;
+}
+
+export interface ConvoyTask {
+  taskId: string;
+  companyId: string;
+  projectId: string;
+  runId: string;
+  artifactId: string;
+  title: string;
+  description: string;
+  status: ConvoyTaskStatus;
+  dependsOnTaskIds: string[];
+  startedAt: string | null;
+  completedAt: string | null;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Checkpoint {
+  checkpointId: string;
+  companyId: string;
+  projectId: string;
+  runId: string;
+  snapshotState: Record<string, unknown>;
+  taskStates: Record<string, ConvoyTaskStatus>;
+  workspaceSnapshot: {
+    branchName: string;
+    commitSha: string | null;
+    workspacePath: string;
+    leasedPort: number | null;
+  };
+  pauseReason?: string;
+  createdAt: string;
+}
+
+export interface ProductLock {
+  lockId: string;
+  companyId: string;
+  projectId: string;
+  runId: string;
+  lockType: LockType;
+  targetBranch: string;
+  targetPath: string;
+  acquiredAt: string;
+  releasedAt: string | null;
+  isActive: boolean;
+  blockReason?: string;
+}
+
+export interface OperatorIntervention {
+  interventionId: string;
+  companyId: string;
+  projectId: string;
+  runId: string;
+  interventionType: InterventionType;
+  note?: string;
+  checkpointId?: string;
+  linkedIssueId?: string;
+  linkedIssueUrl?: string;
+  linkedIssueTitle?: string;
+  linkedIssueComments?: string[];
+  createdAt: string;
 }

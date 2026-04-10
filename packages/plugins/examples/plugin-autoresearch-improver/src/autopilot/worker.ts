@@ -29,7 +29,14 @@ import {
   type CompanyBudget,
   type RunStatus,
   type ExecutionMode,
-  type ApprovalMode
+  type ApprovalMode,
+  type ConvoyTask,
+  type ConvoyTaskStatus,
+  type Checkpoint,
+  type ProductLock,
+  type OperatorIntervention,
+  type InterventionType,
+  type LockType
 } from "./constants.js";
 
 function nowIso(): string {
@@ -110,12 +117,36 @@ function asCompanyBudget(record: PluginEntityRecord): CompanyBudget {
   return record.data as unknown as CompanyBudget;
 }
 
+function asConvoyTask(record: PluginEntityRecord): ConvoyTask {
+  return record.data as unknown as ConvoyTask;
+}
+
+function asCheckpoint(record: PluginEntityRecord): Checkpoint {
+  return record.data as unknown as Checkpoint;
+}
+
+function asProductLock(record: PluginEntityRecord): ProductLock {
+  return record.data as unknown as ProductLock;
+}
+
+function asOperatorIntervention(record: PluginEntityRecord): OperatorIntervention {
+  return record.data as unknown as OperatorIntervention;
+}
+
 function isValidSwipeDecision(value: unknown): value is SwipeDecision {
   return value === "pass" || value === "maybe" || value === "yes" || value === "now";
 }
 
 function isValidIdeaStatus(value: unknown): value is IdeaStatus {
   return ["active", "maybe", "approved", "rejected", "in_progress", "completed"].includes(String(value));
+}
+
+function isValidConvoyTaskStatus(value: unknown): value is ConvoyTaskStatus {
+  return ["pending", "blocked", "running", "passed", "failed", "skipped"].includes(String(value));
+}
+
+function isValidInterventionType(value: unknown): value is InterventionType {
+  return ["note", "checkpoint_request", "nudge", "linked_issue_inspection"].includes(String(value));
 }
 
 // Normalize idea text for duplicate detection: lowercase, trim, collapse whitespace
@@ -546,6 +577,177 @@ async function upsertCompanyBudget(
   });
 }
 
+// ─── ConvoyTask Helpers ──────────────────────────────────────────────────────
+
+async function upsertConvoyTask(
+  ctx: PluginContext,
+  task: ConvoyTask
+): Promise<PluginEntityRecord> {
+  return await ctx.entities.upsert({
+    entityType: ENTITY_TYPES.convoyTask,
+    scopeKind: "project",
+    scopeId: task.projectId,
+    externalId: task.taskId,
+    title: task.title.slice(0, 80),
+    status: task.status === "passed" || task.status === "failed" || task.status === "skipped" ? "inactive" : "active",
+    data: task as unknown as Record<string, unknown>
+  });
+}
+
+async function findConvoyTask(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+  taskId: string
+): Promise<PluginEntityRecord | null> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.convoyTask,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 200,
+    offset: 0
+  });
+  return entities.find((e) => {
+    const data = e.data as unknown as ConvoyTask;
+    return data.companyId === companyId && data.taskId === taskId;
+  }) ?? null;
+}
+
+async function listConvoyTaskEntities(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+  runId?: string
+): Promise<PluginEntityRecord[]> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.convoyTask,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 500,
+    offset: 0
+  });
+  return entities.filter((e) => {
+    const data = e.data as unknown as ConvoyTask;
+    if (data.companyId !== companyId) return false;
+    if (runId && data.runId !== runId) return false;
+    return true;
+  });
+}
+
+async function findBlockingLock(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+  targetBranch: string,
+  excludeRunId?: string
+): Promise<ProductLock | null> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.productLock,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 200,
+    offset: 0
+  });
+  const matches = entities
+    .map(asProductLock)
+    .filter(
+      (lock) =>
+        lock.isActive &&
+        lock.targetBranch === targetBranch &&
+        lock.runId !== excludeRunId
+    );
+  return matches.length > 0 ? matches[0] : null;
+}
+
+// ─── Checkpoint Helpers ───────────────────────────────────────────────────────
+
+async function upsertCheckpoint(
+  ctx: PluginContext,
+  checkpoint: Checkpoint
+): Promise<PluginEntityRecord> {
+  return await ctx.entities.upsert({
+    entityType: ENTITY_TYPES.checkpoint,
+    scopeKind: "project",
+    scopeId: checkpoint.projectId,
+    externalId: checkpoint.checkpointId,
+    title: `Checkpoint ${checkpoint.checkpointId.slice(0, 8)}`,
+    status: "active",
+    data: checkpoint as unknown as Record<string, unknown>
+  });
+}
+
+async function findCheckpoint(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+  checkpointId: string
+): Promise<PluginEntityRecord | null> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.checkpoint,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 100,
+    offset: 0
+  });
+  return entities.find((e) => {
+    const data = e.data as unknown as Checkpoint;
+    return data.companyId === companyId && data.checkpointId === checkpointId;
+  }) ?? null;
+}
+
+// ─── ProductLock Helpers ─────────────────────────────────────────────────────
+
+async function upsertProductLock(
+  ctx: PluginContext,
+  lock: ProductLock
+): Promise<PluginEntityRecord> {
+  return await ctx.entities.upsert({
+    entityType: ENTITY_TYPES.productLock,
+    scopeKind: "project",
+    scopeId: lock.projectId,
+    externalId: lock.lockId,
+    title: `${lock.lockType} on ${lock.targetBranch}`,
+    status: lock.isActive ? "active" : "inactive",
+    data: lock as unknown as Record<string, unknown>
+  });
+}
+
+async function findProductLock(
+  ctx: PluginContext,
+  companyId: string,
+  projectId: string,
+  lockId: string
+): Promise<PluginEntityRecord | null> {
+  const entities = await ctx.entities.list({
+    entityType: ENTITY_TYPES.productLock,
+    scopeKind: "project",
+    scopeId: projectId,
+    limit: 100,
+    offset: 0
+  });
+  return entities.find((e) => {
+    const data = e.data as unknown as ProductLock;
+    return data.companyId === companyId && data.lockId === lockId;
+  }) ?? null;
+}
+
+// ─── OperatorIntervention Helpers ────────────────────────────────────────────
+
+async function upsertOperatorIntervention(
+  ctx: PluginContext,
+  intervention: OperatorIntervention
+): Promise<PluginEntityRecord> {
+  return await ctx.entities.upsert({
+    entityType: ENTITY_TYPES.operatorIntervention,
+    scopeKind: "project",
+    scopeId: intervention.projectId,
+    externalId: intervention.interventionId,
+    title: `${intervention.interventionType} on run ${intervention.runId.slice(0, 8)}`,
+    status: "active",
+    data: intervention as unknown as Record<string, unknown>
+  });
+}
+
 // --- Order ideas by score (desc) and status priority ---
 const STATUS_PRIORITY: Record<IdeaStatus, number> = {
   active: 0,
@@ -866,6 +1068,145 @@ const plugin: PaperclipPlugin = definePlugin({
       const companyId = typeof params.companyId === "string" ? params.companyId : "";
       if (!companyId) return null;
       return await findCompanyBudget(ctx, companyId);
+    });
+
+    // Convoy task data handlers
+    ctx.data.register(DATA_KEYS.convoyTask, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const taskId = typeof params.taskId === "string" ? params.taskId : "";
+      if (!companyId || !projectId || !taskId) return null;
+      const entity = await findConvoyTask(ctx, companyId, projectId, taskId);
+      if (!entity) return null;
+      const task = asConvoyTask(entity);
+      if (task.companyId !== companyId) return null;
+      return task;
+    });
+
+    ctx.data.register(DATA_KEYS.convoyTasks, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : undefined;
+      if (!companyId || !projectId) return [];
+      const entities = await listConvoyTaskEntities(ctx, companyId, projectId, runId);
+      return entities.map(asConvoyTask).sort((a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+    });
+
+    // Checkpoint data handlers
+    ctx.data.register(DATA_KEYS.checkpoint, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const checkpointId = typeof params.checkpointId === "string" ? params.checkpointId : "";
+      if (!companyId || !projectId || !checkpointId) return null;
+      const entity = await findCheckpoint(ctx, companyId, projectId, checkpointId);
+      if (!entity) return null;
+      const checkpoint = asCheckpoint(entity);
+      if (checkpoint.companyId !== companyId) return null;
+      return checkpoint;
+    });
+
+    ctx.data.register(DATA_KEYS.checkpoints, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : undefined;
+      if (!companyId || !projectId) return [];
+      const entities = await ctx.entities.list({
+        entityType: ENTITY_TYPES.checkpoint,
+        scopeKind: "project",
+        scopeId: projectId,
+        limit: 200,
+        offset: 0
+      });
+      return entities
+        .filter((e) => {
+          const data = e.data as unknown as Checkpoint;
+          if (data.companyId !== companyId) return false;
+          if (runId && data.runId !== runId) return false;
+          return true;
+        })
+        .map(asCheckpoint)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    });
+
+    // Product lock data handlers
+    ctx.data.register(DATA_KEYS.productLock, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const lockId = typeof params.lockId === "string" ? params.lockId : "";
+      if (!companyId || !projectId || !lockId) return null;
+      const entity = await findProductLock(ctx, companyId, projectId, lockId);
+      if (!entity) return null;
+      const lock = asProductLock(entity);
+      if (lock.companyId !== companyId) return null;
+      return lock;
+    });
+
+    ctx.data.register(DATA_KEYS.productLocks, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : undefined;
+      if (!companyId || !projectId) return [];
+      const entities = await ctx.entities.list({
+        entityType: ENTITY_TYPES.productLock,
+        scopeKind: "project",
+        scopeId: projectId,
+        limit: 200,
+        offset: 0
+      });
+      return entities
+        .filter((e) => {
+          const data = e.data as unknown as ProductLock;
+          if (data.companyId !== companyId) return false;
+          if (runId && data.runId !== runId) return false;
+          return true;
+        })
+        .map(asProductLock)
+        .sort((a, b) => new Date(b.acquiredAt).getTime() - new Date(a.acquiredAt).getTime());
+    });
+
+    // Operator intervention data handlers
+    ctx.data.register(DATA_KEYS.operatorIntervention, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const interventionId = typeof params.interventionId === "string" ? params.interventionId : "";
+      if (!companyId || !projectId || !interventionId) return null;
+      const entities = await ctx.entities.list({
+        entityType: ENTITY_TYPES.operatorIntervention,
+        scopeKind: "project",
+        scopeId: projectId,
+        limit: 100,
+        offset: 0
+      });
+      const match = entities.find((e) => {
+        const data = e.data as unknown as OperatorIntervention;
+        return data.companyId === companyId && data.interventionId === interventionId;
+      });
+      return match ? asOperatorIntervention(match) : null;
+    });
+
+    ctx.data.register(DATA_KEYS.operatorInterventions, async (params) => {
+      const companyId = typeof params.companyId === "string" ? params.companyId : "";
+      const projectId = typeof params.projectId === "string" ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : undefined;
+      if (!companyId || !projectId) return [];
+      const entities = await ctx.entities.list({
+        entityType: ENTITY_TYPES.operatorIntervention,
+        scopeKind: "project",
+        scopeId: projectId,
+        limit: 500,
+        offset: 0
+      });
+      return entities
+        .filter((e) => {
+          const data = e.data as unknown as OperatorIntervention;
+          if (data.companyId !== companyId) return false;
+          if (runId && data.runId !== runId) return false;
+          return true;
+        })
+        .map(asOperatorIntervention)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     });
 
     // Register action handlers
@@ -1630,6 +1971,374 @@ const plugin: PaperclipPlugin = definePlugin({
       }
 
       return { paused: autopilot.paused, reason: autopilot.pauseReason ?? null };
+    });
+
+    // ─── Convoy Task Actions ─────────────────────────────────────────────────
+
+    ctx.actions.register(ACTION_KEYS.decomposeIntoConvoyTasks, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      const artifactId = typeof params.artifactId === "string" ? params.artifactId : "";
+      const tasksRaw = Array.isArray(params.tasks) ? params.tasks : [];
+      if (!companyId || !projectId || !runId || !artifactId) {
+        throw new Error("companyId, projectId, runId, and artifactId are required");
+      }
+
+      const createdTasks: ConvoyTask[] = [];
+      for (let i = 0; i < tasksRaw.length; i++) {
+        const raw = tasksRaw[i];
+        const taskId = typeof raw.taskId === "string" && raw.taskId
+          ? raw.taskId
+          : randomUUID();
+        const title = typeof raw.title === "string" ? raw.title : `Task ${i + 1}`;
+        const description = typeof raw.description === "string" ? raw.description : "";
+        const dependsOnTaskIds = Array.isArray(raw.dependsOnTaskIds) ? raw.dependsOnTaskIds : [];
+
+        const task: ConvoyTask = {
+          taskId,
+          companyId,
+          projectId,
+          runId,
+          artifactId,
+          title,
+          description,
+          status: dependsOnTaskIds.length > 0 ? "blocked" : "pending",
+          dependsOnTaskIds,
+          startedAt: null,
+          completedAt: null,
+          createdAt: nowIso(),
+          updatedAt: nowIso()
+        };
+        await upsertConvoyTask(ctx, task);
+        createdTasks.push(task);
+      }
+
+      return createdTasks;
+    });
+
+    ctx.actions.register(ACTION_KEYS.updateConvoyTaskStatus, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const taskId = typeof params.taskId === "string" ? params.taskId : "";
+      const newStatus = isValidConvoyTaskStatus(params.status) ? params.status : "pending";
+      if (!companyId || !projectId || !taskId) {
+        throw new Error("companyId, projectId, and taskId are required");
+      }
+
+      const entity = await findConvoyTask(ctx, companyId, projectId, taskId);
+      if (!entity) {
+        throw new Error("Convoy task not found");
+      }
+
+      const task = asConvoyTask(entity);
+      task.status = newStatus;
+      task.updatedAt = nowIso();
+      if (newStatus === "running") {
+        task.startedAt = nowIso();
+      } else if (newStatus === "passed" || newStatus === "failed" || newStatus === "skipped") {
+        task.completedAt = nowIso();
+      }
+
+      await upsertConvoyTask(ctx, task);
+
+      // Update blocked tasks if a dependency passed - re-evaluate blocking status
+      if (newStatus === "passed") {
+        const allTaskEntities = await listConvoyTaskEntities(ctx, companyId, projectId, task.runId);
+        const allTasks = allTaskEntities.map(asConvoyTask);
+        for (const t of allTasks) {
+          if (t.status === "blocked") {
+            const depsAllPassed = t.dependsOnTaskIds.every((depId) => {
+              const dep = allTasks.find((x) => x.taskId === depId);
+              return dep && dep.status === "passed";
+            });
+            if (depsAllPassed) {
+              t.status = "pending";
+              t.updatedAt = nowIso();
+              await upsertConvoyTask(ctx, t);
+            }
+          }
+        }
+      }
+
+      return task;
+    });
+
+    // ─── Checkpoint Actions ─────────────────────────────────────────────────
+
+    ctx.actions.register(ACTION_KEYS.createCheckpoint, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      if (!companyId || !projectId || !runId) {
+        throw new Error("companyId, projectId, and runId are required");
+      }
+
+      const runEntity = await findDeliveryRun(ctx, companyId, projectId, runId);
+      if (!runEntity) {
+        throw new Error("Delivery run not found");
+      }
+      const run = asDeliveryRun(runEntity);
+
+      const taskEntities = await listConvoyTaskEntities(ctx, companyId, projectId, runId);
+      const taskStates: Record<string, ConvoyTaskStatus> = {};
+      for (const entity of taskEntities) {
+        const task = asConvoyTask(entity);
+        taskStates[task.taskId] = task.status;
+      }
+
+      const checkpoint: Checkpoint = {
+        checkpointId: randomUUID(),
+        companyId,
+        projectId,
+        runId,
+        snapshotState: {
+          runStatus: run.status,
+          paused: run.paused,
+          pauseReason: run.pauseReason,
+          commitSha: run.commitSha
+        },
+        taskStates,
+        workspaceSnapshot: {
+          branchName: run.branchName,
+          commitSha: run.commitSha,
+          workspacePath: run.workspacePath,
+          leasedPort: run.leasedPort
+        },
+        pauseReason: run.pauseReason,
+        createdAt: nowIso()
+      };
+
+      await upsertCheckpoint(ctx, checkpoint);
+      return checkpoint;
+    });
+
+    ctx.actions.register(ACTION_KEYS.resumeFromCheckpoint, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      const checkpointId = typeof params.checkpointId === "string" ? params.checkpointId : "";
+      if (!companyId || !projectId || !runId || !checkpointId) {
+        throw new Error("companyId, projectId, runId, and checkpointId are required");
+      }
+
+      const checkpointEntity = await findCheckpoint(ctx, companyId, projectId, checkpointId);
+      if (!checkpointEntity) {
+        throw new Error("Checkpoint not found");
+      }
+      const checkpoint = asCheckpoint(checkpointEntity);
+
+      const runEntity = await findDeliveryRun(ctx, companyId, projectId, runId);
+      if (!runEntity) {
+        throw new Error("Delivery run not found");
+      }
+      const run = asDeliveryRun(runEntity);
+
+      // Restore run state from checkpoint
+      run.status = (checkpoint.snapshotState.runStatus as RunStatus) ?? "running";
+      run.paused = (checkpoint.snapshotState.paused as boolean) ?? false;
+      run.pauseReason = checkpoint.snapshotState.pauseReason as string | undefined;
+      run.commitSha = checkpoint.snapshotState.commitSha as string | null;
+      run.updatedAt = nowIso();
+      await upsertDeliveryRun(ctx, run);
+
+      // Restore task states from checkpoint
+      const taskEntities = await listConvoyTaskEntities(ctx, companyId, projectId, runId);
+      for (const entity of taskEntities) {
+        const task = asConvoyTask(entity);
+        const savedStatus = checkpoint.taskStates[task.taskId];
+        if (savedStatus) {
+          task.status = savedStatus;
+          task.updatedAt = nowIso();
+          await upsertConvoyTask(ctx, task);
+        }
+      }
+
+      return { run, checkpoint };
+    });
+
+    // ─── Product Lock Actions ────────────────────────────────────────────────
+
+    ctx.actions.register(ACTION_KEYS.acquireProductLock, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      const targetBranch = typeof params.targetBranch === "string" ? params.targetBranch : "";
+      const lockType = (params.lockType === "product_lock" || params.lockType === "merge_lock")
+        ? params.lockType
+        : "product_lock";
+      const blockReason = typeof params.blockReason === "string" ? params.blockReason : undefined;
+      if (!companyId || !projectId || !runId || !targetBranch) {
+        throw new Error("companyId, projectId, runId, and targetBranch are required");
+      }
+
+      // Check if there's already an active lock on this branch
+      const existingLock = await findBlockingLock(ctx, companyId, projectId, targetBranch, runId);
+      if (existingLock) {
+        throw new Error(
+          `Cannot acquire lock: ${existingLock.lockType} already held by run ${existingLock.runId} on branch ${targetBranch}. Block reason: ${existingLock.blockReason ?? "None"}`
+        );
+      }
+
+      const runEntity = await findDeliveryRun(ctx, companyId, projectId, runId);
+      const run = runEntity ? asDeliveryRun(runEntity) : null;
+
+      const lock: ProductLock = {
+        lockId: randomUUID(),
+        companyId,
+        projectId,
+        runId,
+        lockType,
+        targetBranch,
+        targetPath: run?.workspacePath ?? "",
+        acquiredAt: nowIso(),
+        releasedAt: null,
+        isActive: true,
+        blockReason
+      };
+
+      await upsertProductLock(ctx, lock);
+      return lock;
+    });
+
+    ctx.actions.register(ACTION_KEYS.releaseProductLock, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const lockId = typeof params.lockId === "string" ? params.lockId : "";
+      if (!companyId || !projectId || !lockId) {
+        throw new Error("companyId, projectId, and lockId are required");
+      }
+
+      const lockEntity = await findProductLock(ctx, companyId, projectId, lockId);
+      if (!lockEntity) {
+        throw new Error("Product lock not found");
+      }
+
+      const lock = asProductLock(lockEntity);
+      lock.isActive = false;
+      lock.releasedAt = nowIso();
+      await upsertProductLock(ctx, lock);
+      return lock;
+    });
+
+    ctx.actions.register(ACTION_KEYS.checkMergeConflict, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      const targetBranch = typeof params.targetBranch === "string" ? params.targetBranch : "";
+      if (!companyId || !projectId || !runId || !targetBranch) {
+        throw new Error("companyId, projectId, runId, and targetBranch are required");
+      }
+
+      const blockingLock = await findBlockingLock(ctx, companyId, projectId, targetBranch, runId);
+      if (blockingLock) {
+        return {
+          hasConflict: true,
+          conflictReason: `Branch "${targetBranch}" is locked by ${blockingLock.lockType} from run ${blockingLock.runId}. ${blockingLock.blockReason ?? ""}`.trim(),
+          blockingLock
+        };
+      }
+      return { hasConflict: false, conflictReason: null, blockingLock: null };
+    });
+
+    // ─── Operator Intervention Actions ──────────────────────────────────────
+
+    ctx.actions.register(ACTION_KEYS.addOperatorNote, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      const note = typeof params.note === "string" ? params.note : "";
+      if (!companyId || !projectId || !runId) {
+        throw new Error("companyId, projectId, and runId are required");
+      }
+
+      const intervention: OperatorIntervention = {
+        interventionId: randomUUID(),
+        companyId,
+        projectId,
+        runId,
+        interventionType: "note",
+        note,
+        createdAt: nowIso()
+      };
+
+      await upsertOperatorIntervention(ctx, intervention);
+      return intervention;
+    });
+
+    ctx.actions.register(ACTION_KEYS.requestCheckpoint, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      const checkpointId = typeof params.checkpointId === "string" ? params.checkpointId : "";
+      if (!companyId || !projectId || !runId) {
+        throw new Error("companyId, projectId, and runId are required");
+      }
+
+      const intervention: OperatorIntervention = {
+        interventionId: randomUUID(),
+        companyId,
+        projectId,
+        runId,
+        interventionType: "checkpoint_request",
+        checkpointId: checkpointId || undefined,
+        createdAt: nowIso()
+      };
+
+      await upsertOperatorIntervention(ctx, intervention);
+      return intervention;
+    });
+
+    ctx.actions.register(ACTION_KEYS.nudgeRun, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      const note = typeof params.note === "string" ? params.note : "Operator nudged this run";
+      if (!companyId || !projectId || !runId) {
+        throw new Error("companyId, projectId, and runId are required");
+      }
+
+      const intervention: OperatorIntervention = {
+        interventionId: randomUUID(),
+        companyId,
+        projectId,
+        runId,
+        interventionType: "nudge",
+        note,
+        createdAt: nowIso()
+      };
+
+      await upsertOperatorIntervention(ctx, intervention);
+      return intervention;
+    });
+
+    ctx.actions.register(ACTION_KEYS.inspectLinkedIssue, async (params) => {
+      const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+      const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      const linkedIssueId = typeof params.linkedIssueId === "string" ? params.linkedIssueId : "";
+      const linkedIssueUrl = typeof params.linkedIssueUrl === "string" ? params.linkedIssueUrl : undefined;
+      const linkedIssueTitle = typeof params.linkedIssueTitle === "string" ? params.linkedIssueTitle : undefined;
+      const linkedIssueComments = Array.isArray(params.linkedIssueComments) ? params.linkedIssueComments : undefined;
+      if (!companyId || !projectId || !runId) {
+        throw new Error("companyId, projectId, and runId are required");
+      }
+
+      const intervention: OperatorIntervention = {
+        interventionId: randomUUID(),
+        companyId,
+        projectId,
+        runId,
+        interventionType: "linked_issue_inspection",
+        linkedIssueId: linkedIssueId || undefined,
+        linkedIssueUrl,
+        linkedIssueTitle,
+        linkedIssueComments,
+        createdAt: nowIso()
+      };
+
+      await upsertOperatorIntervention(ctx, intervention);
+      return intervention;
     });
 
     ctx.logger.info("Autopilot plugin ready", { pluginId: PLUGIN_ID });

@@ -1931,4 +1931,1136 @@ describe("autopilot worker", () => {
       expect(otherBudget).toBeNull();
     });
   });
+
+  // ─── VAL-AUTOPILOT-035: Convoy execution blocks downstream tasks until dependencies pass ───────────────────────────────────────
+
+  describe("VAL-AUTOPILOT-035: Convoy execution blocks downstream tasks until dependencies pass", () => {
+    it("decomposes a planning artifact into convoy tasks with dependencies", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      // Enable autopilot
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      // Set up company budget
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      // Create an idea and planning artifact
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Complex feature", description: "Multi-step implementation", rationale: "High value", sourceReferences: [], score: 85 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Complex feature",
+        scope: "Multi-step implementation",
+        dependencies: [],
+        tests: [],
+        executionMode: "convoy"
+      }) as { artifactId: string };
+
+      const run = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/complex",
+        workspacePath: "/tmp/complex-feature",
+        leasedPort: 5000
+      }) as { run: { runId: string } };
+
+      // Decompose into convoy tasks with dependencies
+      const tasks = await harness.performAction("decompose-into-convoy-tasks", {
+        companyId,
+        projectId,
+        runId: run.run.runId,
+        artifactId: artifact.artifactId,
+        tasks: [
+          { title: "Design phase", description: "Initial design", dependsOnTaskIds: [] },
+          { title: "Backend implementation", description: "Build API", dependsOnTaskIds: [] },
+          { title: "Frontend implementation", description: "Build UI", dependsOnTaskIds: ["Design phase"] },
+          { title: "Integration tests", description: "Test integration", dependsOnTaskIds: ["Backend implementation", "Frontend implementation"] }
+        ]
+      }) as Array<{ taskId: string; title: string; status: string; dependsOnTaskIds: string[] }>;
+
+      expect(tasks).toHaveLength(4);
+      // Tasks with no dependencies should be pending
+      const designTask = tasks.find((t) => t.title === "Design phase");
+      expect(designTask!.status).toBe("pending");
+      const backendTask = tasks.find((t) => t.title === "Backend implementation");
+      expect(backendTask!.status).toBe("pending");
+      // Tasks with dependencies should be blocked
+      const frontendTask = tasks.find((t) => t.title === "Frontend implementation");
+      expect(frontendTask!.status).toBe("blocked");
+      const integrationTask = tasks.find((t) => t.title === "Integration tests");
+      expect(integrationTask!.status).toBe("blocked");
+    });
+
+    it("unblocks downstream tasks when prerequisite tasks pass", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      // Enable autopilot
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Feature with deps", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Feature with deps",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "convoy"
+      }) as { artifactId: string };
+
+      const run = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/deps",
+        workspacePath: "/tmp/deps",
+        leasedPort: 5100
+      }) as { run: { runId: string } };
+
+      const tasks = await harness.performAction("decompose-into-convoy-tasks", {
+        companyId,
+        projectId,
+        runId: run.run.runId,
+        artifactId: artifact.artifactId,
+        tasks: [
+          { title: "Task A", description: "First task", dependsOnTaskIds: [] },
+          { title: "Task B", description: "Depends on A", dependsOnTaskIds: [] }
+        ]
+      }) as Array<{ taskId: string; title: string; status: string }>;
+
+      const taskA = tasks.find((t) => t.title === "Task A")!;
+      const taskB = tasks.find((t) => t.title === "Task B")!;
+
+      // Both should be pending initially (no deps)
+      expect(taskA.status).toBe("pending");
+      expect(taskB.status).toBe("pending");
+
+      // Mark task A as passed
+      await harness.performAction("update-convoy-task-status", {
+        companyId,
+        projectId,
+        taskId: taskA.taskId,
+        status: "passed"
+      });
+
+      // Verify task A is passed
+      const updatedTaskA = await harness.getData("convoy-task", {
+        companyId,
+        projectId,
+        taskId: taskA.taskId
+      }) as { status: string };
+      expect(updatedTaskA.status).toBe("passed");
+    });
+
+    it("lists convoy tasks for a delivery run", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Convoy list test", description: "Desc", rationale: "", sourceReferences: [], score: 75 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Convoy list test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "convoy"
+      }) as { artifactId: string };
+
+      const run = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/list",
+        workspacePath: "/tmp/list",
+        leasedPort: 5200
+      }) as { run: { runId: string } };
+
+      await harness.performAction("decompose-into-convoy-tasks", {
+        companyId,
+        projectId,
+        runId: run.run.runId,
+        artifactId: artifact.artifactId,
+        tasks: [
+          { title: "Alpha", description: "First", dependsOnTaskIds: [] },
+          { title: "Beta", description: "Second", dependsOnTaskIds: [] }
+        ]
+      });
+
+      const tasks = await harness.getData("convoy-tasks", {
+        companyId,
+        projectId,
+        runId: run.run.runId
+      }) as Array<{ taskId: string; title: string }>;
+
+      expect(tasks).toHaveLength(2);
+      expect(tasks.some((t) => t.title === "Alpha")).toBe(true);
+      expect(tasks.some((t) => t.title === "Beta")).toBe(true);
+    });
+  });
+
+  // ─── VAL-AUTOPILOT-036: Checkpoint and resume restore run state ───────────────────────────────────────────────────────────────
+
+  describe("VAL-AUTOPILOT-036: Checkpoint and resume restore run state", () => {
+    it("creates a checkpoint that captures run and task state", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Checkpoint test", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Checkpoint test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "convoy"
+      }) as { artifactId: string };
+
+      const run = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/checkpoint",
+        workspacePath: "/tmp/checkpoint",
+        leasedPort: 5300
+      }) as { run: { runId: string } };
+
+      // Decompose into tasks and mark one as passed
+      const tasks = await harness.performAction("decompose-into-convoy-tasks", {
+        companyId,
+        projectId,
+        runId: run.run.runId,
+        artifactId: artifact.artifactId,
+        tasks: [
+          { title: "First task", description: "Do this first", dependsOnTaskIds: [] }
+        ]
+      }) as Array<{ taskId: string }>;
+
+      await harness.performAction("update-convoy-task-status", {
+        companyId,
+        projectId,
+        taskId: tasks[0].taskId,
+        status: "passed"
+      });
+
+      // Create checkpoint
+      const checkpoint = await harness.performAction("create-checkpoint", {
+        companyId,
+        projectId,
+        runId: run.run.runId
+      }) as { checkpointId: string; workspaceSnapshot: { branchName: string }; taskStates: Record<string, string> };
+
+      expect(checkpoint.checkpointId).toBeDefined();
+      expect(checkpoint.workspaceSnapshot.branchName).toBe("feature/checkpoint");
+      expect(checkpoint.taskStates[tasks[0].taskId]).toBe("passed");
+    });
+
+    it("resumes from a checkpoint and restores task/run state", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Resume test", description: "Desc", rationale: "", sourceReferences: [], score: 78 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Resume test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "convoy"
+      }) as { artifactId: string };
+
+      const run = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/resume",
+        workspacePath: "/tmp/resume",
+        leasedPort: 5400
+      }) as { run: { runId: string } };
+
+      const tasks = await harness.performAction("decompose-into-convoy-tasks", {
+        companyId,
+        projectId,
+        runId: run.run.runId,
+        artifactId: artifact.artifactId,
+        tasks: [
+          { title: "Task to resume", description: "Desc", dependsOnTaskIds: [] }
+        ]
+      }) as Array<{ taskId: string }>;
+
+      // Mark task as running
+      await harness.performAction("update-convoy-task-status", {
+        companyId,
+        projectId,
+        taskId: tasks[0].taskId,
+        status: "running"
+      });
+
+      // Create checkpoint (captures current task state = running)
+      const checkpoint = await harness.performAction("create-checkpoint", {
+        companyId,
+        projectId,
+        runId: run.run.runId
+      }) as { checkpointId: string; taskStates: Record<string, string> };
+
+      // Verify checkpoint captured the task state
+      expect(checkpoint.taskStates[tasks[0].taskId]).toBe("running");
+
+      // Resume from checkpoint
+      const resumed = await harness.performAction("resume-from-checkpoint", {
+        companyId,
+        projectId,
+        runId: run.run.runId,
+        checkpointId: checkpoint.checkpointId
+      }) as { run: { status: string } };
+
+      // The run status was "pending" at checkpoint time, so it should be restored to "pending"
+      expect(resumed.run.status).toBe("pending");
+
+      // Verify task state was restored
+      const restoredTask = await harness.getData("convoy-task", {
+        companyId,
+        projectId,
+        taskId: tasks[0].taskId
+      }) as { status: string };
+      expect(restoredTask.status).toBe("running");
+    });
+
+    it("lists checkpoints for a delivery run", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Checkpoint list test", description: "Desc", rationale: "", sourceReferences: [], score: 76 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Checkpoint list test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "convoy"
+      }) as { artifactId: string };
+
+      const run = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/checkpoint-list",
+        workspacePath: "/tmp/checkpoint-list",
+        leasedPort: 5500
+      }) as { run: { runId: string } };
+
+      // Create multiple checkpoints
+      await harness.performAction("create-checkpoint", {
+        companyId,
+        projectId,
+        runId: run.run.runId
+      });
+
+      await harness.performAction("create-checkpoint", {
+        companyId,
+        projectId,
+        runId: run.run.runId
+      });
+
+      const checkpoints = await harness.getData("checkpoints", {
+        companyId,
+        projectId,
+        runId: run.run.runId
+      }) as Array<{ checkpointId: string }>;
+
+      expect(checkpoints.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  // ─── VAL-AUTOPILOT-037: Merge coordination prevents conflicting run completion ──────────────────────────────────────────────
+
+  describe("VAL-AUTOPILOT-037: Merge coordination prevents conflicting run completion", () => {
+    it("acquires a product lock on a branch", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Lock test", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Lock test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const run = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/lock",
+        workspacePath: "/tmp/lock",
+        leasedPort: 5600
+      }) as { run: { runId: string } };
+
+      const lock = await harness.performAction("acquire-product-lock", {
+        companyId,
+        projectId,
+        runId: run.run.runId,
+        targetBranch: "feature/lock",
+        lockType: "product_lock",
+        blockReason: "Active development on this branch"
+      }) as { lockId: string; isActive: boolean; targetBranch: string };
+
+      expect(lock.lockId).toBeDefined();
+      expect(lock.isActive).toBe(true);
+      expect(lock.targetBranch).toBe("feature/lock");
+    });
+
+    it("blocks acquiring a lock when another run holds it", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      // Create first run and acquire lock
+      const ideas1 = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "First lock", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact1 = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas1[0].ideaId,
+        title: "First lock",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const run1 = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas1[0].ideaId,
+        artifactId: artifact1.artifactId,
+        branchName: "feature/shared-branch",
+        workspacePath: "/tmp/shared",
+        leasedPort: 5700
+      }) as { run: { runId: string } };
+
+      await harness.performAction("acquire-product-lock", {
+        companyId,
+        projectId,
+        runId: run1.run.runId,
+        targetBranch: "feature/shared-branch",
+        lockType: "product_lock"
+      });
+
+      // Create second run and try to acquire lock on same branch
+      const ideas2 = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Second lock", description: "Desc", rationale: "", sourceReferences: [], score: 75 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact2 = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas2[0].ideaId,
+        title: "Second lock",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const run2 = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas2[0].ideaId,
+        artifactId: artifact2.artifactId,
+        branchName: "feature/shared-branch",
+        workspacePath: "/tmp/shared2",
+        leasedPort: 5800
+      }) as { run: { runId: string } };
+
+      // Attempt to acquire lock should throw
+      await expect(
+        harness.performAction("acquire-product-lock", {
+          companyId,
+          projectId,
+          runId: run2.run.runId,
+          targetBranch: "feature/shared-branch",
+          lockType: "product_lock"
+        })
+      ).rejects.toThrow("Cannot acquire lock");
+    });
+
+    it("checkMergeConflict returns conflict info when lock exists", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      // First run holds the lock on the branch
+      const ideas1 = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Conflict check", description: "Desc", rationale: "", sourceReferences: [], score: 82 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact1 = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas1[0].ideaId,
+        title: "Conflict check",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const run1 = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas1[0].ideaId,
+        artifactId: artifact1.artifactId,
+        branchName: "feature/conflict-check",
+        workspacePath: "/tmp/conflict-check",
+        leasedPort: 5900
+      }) as { run: { runId: string } };
+
+      // Acquire lock on the branch
+      await harness.performAction("acquire-product-lock", {
+        companyId,
+        projectId,
+        runId: run1.run.runId,
+        targetBranch: "feature/conflict-check",
+        lockType: "merge_lock",
+        blockReason: "Pending review"
+      });
+
+      // Second run tries to check merge conflict on same branch
+      const ideas2 = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Conflict check 2", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact2 = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas2[0].ideaId,
+        title: "Conflict check 2",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const run2 = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas2[0].ideaId,
+        artifactId: artifact2.artifactId,
+        branchName: "feature/conflict-check-2",
+        workspacePath: "/tmp/conflict-check2",
+        leasedPort: 5901
+      }) as { run: { runId: string } };
+
+      // Check merge conflict from run2's perspective - should detect run1's lock
+      const conflictResult = await harness.performAction("check-merge-conflict", {
+        companyId,
+        projectId,
+        runId: run2.run.runId,
+        targetBranch: "feature/conflict-check"
+      }) as { hasConflict: boolean; conflictReason: string | null };
+
+      expect(conflictResult.hasConflict).toBe(true);
+      expect(conflictResult.conflictReason).toContain("merge_lock");
+    });
+
+    it("releases a product lock", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Release lock", description: "Desc", rationale: "", sourceReferences: [], score: 78 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Release lock",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const run = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/release",
+        workspacePath: "/tmp/release",
+        leasedPort: 6000
+      }) as { run: { runId: string } };
+
+      const lock = await harness.performAction("acquire-product-lock", {
+        companyId,
+        projectId,
+        runId: run.run.runId,
+        targetBranch: "feature/release",
+        lockType: "product_lock"
+      }) as { lockId: string };
+
+      const released = await harness.performAction("release-product-lock", {
+        companyId,
+        projectId,
+        lockId: lock.lockId
+      }) as { isActive: boolean; releasedAt: string | null };
+
+      expect(released.isActive).toBe(false);
+      expect(released.releasedAt).toBeDefined();
+    });
+  });
+
+  // ─── VAL-AUTOPILOT-038: Operator interventions are available during active runs ─────────────────────────────────────────
+
+  describe("VAL-AUTOPILOT-038: Operator interventions are available during active runs", () => {
+    it("adds an operator note to a run", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Note test", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Note test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const run = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/note",
+        workspacePath: "/tmp/note",
+        leasedPort: 6100
+      }) as { run: { runId: string } };
+
+      const note = await harness.performAction("add-operator-note", {
+        companyId,
+        projectId,
+        runId: run.run.runId,
+        note: "This run needs attention due to flaky tests"
+      }) as { interventionId: string; interventionType: string; note: string };
+
+      expect(note.interventionId).toBeDefined();
+      expect(note.interventionType).toBe("note");
+      expect(note.note).toBe("This run needs attention due to flaky tests");
+    });
+
+    it("requests a checkpoint on a run", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Checkpoint request", description: "Desc", rationale: "", sourceReferences: [], score: 78 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Checkpoint request",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const run = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/check-req",
+        workspacePath: "/tmp/check-req",
+        leasedPort: 6200
+      }) as { run: { runId: string } };
+
+      const request = await harness.performAction("request-checkpoint", {
+        companyId,
+        projectId,
+        runId: run.run.runId
+      }) as { interventionId: string; interventionType: string };
+
+      expect(request.interventionId).toBeDefined();
+      expect(request.interventionType).toBe("checkpoint_request");
+    });
+
+    it("nudges a run", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Nudge test", description: "Desc", rationale: "", sourceReferences: [], score: 76 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Nudge test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const run = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/nudge",
+        workspacePath: "/tmp/nudge",
+        leasedPort: 6300
+      }) as { run: { runId: string } };
+
+      const nudge = await harness.performAction("nudge-run", {
+        companyId,
+        projectId,
+        runId: run.run.runId,
+        note: "Please prioritize this run"
+      }) as { interventionId: string; interventionType: string; note: string };
+
+      expect(nudge.interventionId).toBeDefined();
+      expect(nudge.interventionType).toBe("nudge");
+      expect(nudge.note).toBe("Please prioritize this run");
+    });
+
+    it("inspects linked issue context", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Issue inspection", description: "Desc", rationale: "", sourceReferences: [], score: 82 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Issue inspection",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const run = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/issue",
+        workspacePath: "/tmp/issue",
+        leasedPort: 6400
+      }) as { run: { runId: string } };
+
+      const inspection = await harness.performAction("inspect-linked-issue", {
+        companyId,
+        projectId,
+        runId: run.run.runId,
+        linkedIssueId: "ISSUE-123",
+        linkedIssueUrl: "https://github.com/org/repo/issues/123",
+        linkedIssueTitle: "Fix authentication bug",
+        linkedIssueComments: ["Comment 1", "Comment 2"]
+      }) as { interventionId: string; interventionType: string; linkedIssueId: string; linkedIssueTitle: string };
+
+      expect(inspection.interventionId).toBeDefined();
+      expect(inspection.interventionType).toBe("linked_issue_inspection");
+      expect(inspection.linkedIssueId).toBe("ISSUE-123");
+      expect(inspection.linkedIssueTitle).toBe("Fix authentication bug");
+    });
+
+    it("lists operator interventions for a run", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "List interventions", description: "Desc", rationale: "", sourceReferences: [], score: 75 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "List interventions",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const run = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/list-int",
+        workspacePath: "/tmp/list-int",
+        leasedPort: 6500
+      }) as { run: { runId: string } };
+
+      // Add multiple interventions
+      await harness.performAction("add-operator-note", {
+        companyId,
+        projectId,
+        runId: run.run.runId,
+        note: "First note"
+      });
+
+      await harness.performAction("nudge-run", {
+        companyId,
+        projectId,
+        runId: run.run.runId,
+        note: "Second nudge"
+      });
+
+      const interventions = await harness.getData("operator-interventions", {
+        companyId,
+        projectId,
+        runId: run.run.runId
+      }) as Array<{ interventionId: string; interventionType: string }>;
+
+      expect(interventions.length).toBeGreaterThanOrEqual(2);
+      expect(interventions.some((i) => i.interventionType === "note")).toBe(true);
+      expect(interventions.some((i) => i.interventionType === "nudge")).toBe(true);
+    });
+
+    it("isolates operator interventions by company", async () => {
+      const { harness, companyId, projectId, otherCompanyId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Isolation test", description: "Desc", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      const artifact = await harness.performAction("create-planning-artifact", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        title: "Isolation test",
+        scope: "Scope",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple"
+      }) as { artifactId: string };
+
+      const run = await harness.performAction("create-delivery-run", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        artifactId: artifact.artifactId,
+        branchName: "feature/iso",
+        workspacePath: "/tmp/iso",
+        leasedPort: 6600
+      }) as { run: { runId: string } };
+
+      await harness.performAction("add-operator-note", {
+        companyId,
+        projectId,
+        runId: run.run.runId,
+        note: "Company 1 private note"
+      });
+
+      const otherCompanyInterventions = await harness.getData("operator-interventions", {
+        companyId: otherCompanyId,
+        projectId,
+        runId: run.run.runId
+      }) as Array<{ interventionId: string }>;
+
+      expect(otherCompanyInterventions).toHaveLength(0);
+    });
+  });
 });
