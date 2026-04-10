@@ -1,13 +1,13 @@
 {
   "milestone": "delivery-control",
-  "round": 8,
-  "status": "passed",
+  "round": 9,
+  "status": "failure",
   "assertionsSummary": {
     "total": 24,
     "passed": 17,
     "failed": 0,
     "blocked": 7,
-    "improved": 3,
+    "improved": 0,
     "regressed": 0
   },
   "passedAssertions": [
@@ -33,58 +33,55 @@
   "blockedAssertions": [
     {
       "id": "VAL-AUTOPILOT-035",
-      "blockedBy": "Convoy feature (convoy-checkpoint-and-merge-coordination) not yet implemented - blocked by advanced-execution milestone"
+      "blockedBy": "Convoy UI surface (convoy task list, dependency graph, blocking indicators) not yet built in Autopilot tab",
+      "updatedFrom": "Convoy feature (convoy-checkpoint-and-merge-coordination) not yet implemented"
     },
     {
       "id": "VAL-AUTOPILOT-036",
-      "blockedBy": "Checkpoint/resume feature (convoy-checkpoint-and-merge-coordination) not yet implemented - blocked by advanced-execution milestone"
+      "blockedBy": "Checkpoint/Resume UI controls not yet built in Autopilot tab",
+      "updatedFrom": "Checkpoint/resume feature (convoy-checkpoint-and-merge-coordination) not yet implemented"
     },
     {
       "id": "VAL-AUTOPILOT-037",
-      "blockedBy": "Merge coordination feature (convoy-checkpoint-and-merge-coordination) not yet implemented - blocked by advanced-execution milestone"
+      "blockedBy": "Merge coordination UI (conflict indicators, merge lock status) not yet built in Autopilot tab",
+      "updatedFrom": "Merge coordination feature (convoy-checkpoint-and-merge-coordination) not yet implemented"
     },
     {
       "id": "VAL-AUTOPILOT-038",
-      "blockedBy": "Operator interventions (convoy-checkpoint-and-merge-coordination) not yet implemented - blocked by advanced-execution milestone"
+      "blockedBy": "Operator intervention UI controls not yet built in Autopilot tab",
+      "updatedFrom": "Operator interventions (convoy-checkpoint-and-merge-coordination) not yet implemented"
     },
     {
       "id": "VAL-AUTOPILOT-039",
-      "blockedBy": "Knowledge/learner feature (knowledge-digests-release-health-and-rollback) not yet implemented - blocked by closed-loop-operations milestone"
+      "blockedBy": "Knowledge/learner UI section not yet built in Autopilot tab",
+      "updatedFrom": "Knowledge/learner feature (knowledge-digests-release-health-and-rollback) not yet implemented"
     },
     {
       "id": "VAL-AUTOPILOT-040",
-      "blockedBy": "Digest feature (knowledge-digests-release-health-and-rollback) not yet implemented - blocked by closed-loop-operations milestone"
+      "blockedBy": "Digest/alerts UI section not yet built in Autopilot tab",
+      "updatedFrom": "Digest feature (knowledge-digests-release-health-and-rollback) not yet implemented"
     },
     {
       "id": "VAL-AUTOPILOT-041",
-      "blockedBy": "Release-health feature (knowledge-digests-release-health-and-rollback) not yet implemented - blocked by closed-loop-operations milestone"
+      "blockedBy": "Release Health/rollback UI section not yet built in Autopilot tab",
+      "updatedFrom": "Release-health feature (knowledge-digests-release-health-and-rollback) not yet implemented"
     }
   ],
-  "systemicBlockers": [],
-  "improvementsFromRound7": [
+  "systemicBlockers": [
     {
-      "assertion": "VAL-AUTOPILOT-031",
-      "change": "Status changed from 'blocked' to 'passed'",
-      "description": "Automation Tier combobox now visible and interactable in Autopilot Settings. Shows 3 options (Supervised/Semi-Auto/Full Auto). Unit tests verify tier enforcement correctly sets approvalMode based on automation tier. Runs show automation tier metadata."
-    },
-    {
-      "assertion": "VAL-AUTOPILOT-032",
-      "change": "Status changed from 'blocked' to 'passed'",
-      "description": "Delivery runs now show workspace and branch metadata in UI. Port field shows '—' for pending runs (expected - no port leased yet). Workspace configuration fields (workspaceId, repoUrl) visible in AutopilotSettings. Unit tests verify workspace and port metadata storage."
-    },
-    {
-      "assertion": "VAL-AUTOPILOT-033",
-      "change": "Status changed from 'blocked' to 'passed'",
-      "description": "Pause Autopilot button visible in Autopilot Settings when autopilot enabled. Budget tab exists at project level. Unit tests verify budget pause enforcement and check-budget-and-pause-if-needed correctly handles budget cap scenarios."
+      "description": "Backend features for convoy/checkpoint/merge/knowledge/digest/release-health are implemented and pass unit tests (commits 75f41c1e, 2364db05). However, the UI surfaces to access these features are NOT implemented in the Autopilot tab. This is the root cause blocking all 7 assertions - they require UI components that show: (1) convoy task lists with blocked/unblocked status, (2) checkpoint/resume buttons, (3) merge conflict indicators, (4) operator intervention controls, (5) knowledge/learner summary section, (6) digest/alerts section, (7) release-health monitoring section with rollback controls.",
+      "affectedAssertions": ["VAL-AUTOPILOT-035", "VAL-AUTOPILOT-036", "VAL-AUTOPILOT-037", "VAL-AUTOPILOT-038", "VAL-AUTOPILOT-039", "VAL-AUTOPILOT-040", "VAL-AUTOPILOT-041"]
     }
   ],
-  "regressionsFromRound7": [],
+  "improvementsFromRound8": [],
+  "regressionsFromRound8": [],
   "appliedUpdates": [],
   "frictions": [],
-  "toolsUsed": ["agent-browser", "curl"],
+  "toolsUsed": ["agent-browser"],
   "flowReports": [
-    "val-autopilot-031-033-round8.json"
+    "val-autopilot-035-038-round9.json",
+    "val-autopilot-039-041-round9.json"
   ],
-  "previousRound": ".factory/validation/delivery-control/user-testing/synthesis.json (round 6)",
-  "progressFromPriorRounds": "Round 6 found VAL-AUTOPILOT-031, 032, and 033 blocked because: (1) runs were pending without tier enforcement visible, (2) port showed '—' without actual allocation, (3) budget depletion scenario impractical to test. Round 8 re-testing after advanced-execution and closed-loop-operations commits (75f41c1e, 2364db05) shows: automation tier combobox is visible with 3 options; delivery runs show workspace/branch metadata; Pause Autopilot button and Budget tab exist; unit tests pass for tier enforcement (approvalMode based on tier), workspace/port metadata storage, and budget pause enforcement. All 17 delivery-control assertions now passed."
+  "previousRound": ".factory/validation/delivery-control/user-testing/synthesis.json (round 8)",
+  "progressFromPriorRounds": "Round 8 had 17 passed, 0 failed, 7 blocked. The 7 blocked assertions (035-041) were previously blocked by 'feature not yet implemented' (backend missing). This round confirms the backend IS now implemented (per commits 75f41c1e and 2364db05 with passing unit tests), but the BLOCKING ISSUE has shifted to missing UI surfaces in the Autopilot tab. The backend features work (proven by unit tests), but the Autopilot project page UI does not include the sections/components to access them: no convoy task list, no checkpoint/resume controls, no merge coordination UI, no operator intervention controls, no knowledge section, no digest section, no release-health section."
 }
