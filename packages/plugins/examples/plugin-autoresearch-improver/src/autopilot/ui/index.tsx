@@ -216,12 +216,24 @@ function AutopilotSettings({
           marginTop: 8,
           padding: "10px 14px",
           borderRadius: 10,
-          border: "1px solid rgba(234, 179, 8, 0.5)",
-          background: "rgba(234, 179, 8, 0.08)",
+          border: "1px solid rgba(249, 115, 22, 0.5)",
+          background: "rgba(249, 115, 22, 0.08)",
           fontSize: 13,
-          color: "#854d0e"
+          color: "#9a3412"
         }}>
-          <strong>Paused:</strong> {budgetQuery.data?.pauseReason ?? autopilot?.pauseReason ?? "No reason provided"}
+          <span style={{
+            display: "inline-block",
+            padding: "2px 8px",
+            borderRadius: 6,
+            background: "rgba(249, 115, 22, 0.15)",
+            color: "#c2410c",
+            fontWeight: 700,
+            fontSize: 12,
+            marginRight: 8
+          }}>
+            PAUSED
+          </span>
+          {budgetQuery.data?.pauseReason ?? autopilot?.pauseReason ?? "No reason provided"}
         </div>
       )}
 
@@ -231,7 +243,7 @@ function AutopilotSettings({
             Resume Autopilot
           </button>
         ) : (
-          <button type="button" style={buttonStyle} onClick={async () => { await pauseAutopilot({ companyId, projectId: autopilot?.projectId ?? "" }); }}>
+          <button type="button" style={buttonStyle} onClick={async () => { await pauseAutopilot({ companyId, projectId: autopilot?.projectId ?? "" }); }} disabled={!autopilot?.projectId}>
             Pause Autopilot
           </button>
         )}
