@@ -1102,7 +1102,92 @@ const plugin: PaperclipPlugin = definePlugin({
 
       await upsertPreferenceProfile(ctx, profile);
 
-      return { swipe, idea, profile };
+      // Auto-create planning artifact and delivery run for approved ideas
+      let planningArtifact: PlanningArtifact | null = null;
+      let deliveryRun: DeliveryRun | null = null;
+
+      if (decision === "yes" || decision === "now") {
+        // Get automation tier from autopilot project
+        const autopilotEntity = await findAutopilotProject(ctx, companyId, projectId);
+        const autopilot = autopilotEntity ? asAutopilotProject(autopilotEntity) : null;
+        const automationTier = autopilot?.automationTier ?? "supervised";
+
+        // Create planning artifact
+        planningArtifact = {
+          artifactId: randomUUID(),
+          companyId,
+          projectId,
+          ideaId,
+          title: idea.title,
+          scope: idea.description || "",
+          dependencies: [],
+          tests: [],
+          executionMode: "simple",
+          approvalMode: automationTier === "fullauto" ? "auto_approve" : "manual",
+          automationTier,
+          createdAt: nowIso(),
+          updatedAt: nowIso()
+        };
+        await upsertPlanningArtifact(ctx, planningArtifact);
+
+        // Check budget constraints before creating delivery run
+        const companyBudget = await findCompanyBudget(ctx, companyId);
+        if (companyBudget && companyBudget.paused) {
+          // Budget paused — skip delivery run creation but still created the artifact
+        } else if (autopilot?.paused) {
+          // Autopilot paused — skip delivery run creation but still created the artifact
+        } else {
+          const runId = randomUUID();
+          const branchName = `autopilot-run-${runId.slice(0, 8)}`;
+
+          const lease: WorkspaceLease = {
+            leaseId: randomUUID(),
+            companyId,
+            projectId,
+            runId,
+            workspacePath: autopilot?.workspaceId ?? "",
+            branchName,
+            leasedPort: null,
+            gitRepoRoot: autopilot?.repoUrl ?? null,
+            isActive: true,
+            createdAt: nowIso(),
+            releasedAt: null
+          };
+          await upsertWorkspaceLease(ctx, lease);
+
+          deliveryRun = {
+            runId,
+            companyId,
+            projectId,
+            ideaId,
+            artifactId: planningArtifact.artifactId,
+            status: "pending",
+            automationTier,
+            branchName,
+            workspacePath: autopilot?.workspaceId ?? "",
+            leasedPort: null,
+            commitSha: null,
+            paused: false,
+            completedAt: null,
+            createdAt: nowIso(),
+            updatedAt: nowIso()
+          };
+          await upsertDeliveryRun(ctx, deliveryRun);
+
+          // Track used minutes against company budget
+          if (companyBudget) {
+            companyBudget.autopilotUsedMinutes += autopilot?.budgetMinutes ?? 0;
+            companyBudget.updatedAt = nowIso();
+            if (companyBudget.autopilotUsedMinutes >= companyBudget.autopilotBudgetMinutes) {
+              companyBudget.paused = true;
+              companyBudget.pauseReason = "Autopilot budget minutes exceeded";
+            }
+            await upsertCompanyBudget(ctx, companyBudget);
+          }
+        }
+      }
+
+      return { swipe, idea, profile, planningArtifact, deliveryRun };
     });
 
     ctx.actions.register(ACTION_KEYS.updatePreferenceProfile, async (params) => {

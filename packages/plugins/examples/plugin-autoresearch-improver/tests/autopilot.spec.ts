@@ -1663,6 +1663,204 @@ describe("autopilot worker", () => {
     });
   });
 
+  describe("VAL-AUTOPILOT-030: Planning flow is created for approved ideas", () => {
+    it("swiping YES creates both a planning artifact and a delivery run", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      // Enable autopilot with budget
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      // Set company budget (not paused)
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      // Create an idea
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Add dark mode", description: "Dark theme option", rationale: "User demand", sourceReferences: [], score: 85 }]
+      }) as Array<{ ideaId: string }>;
+      const ideaId = ideas[0].ideaId;
+
+      // Swipe YES — should auto-create planning artifact and delivery run
+      const result = await harness.performAction("record-swipe", {
+        companyId,
+        projectId,
+        ideaId,
+        decision: "yes"
+      }) as { planningArtifact: { artifactId: string } | null; deliveryRun: { runId: string } | null };
+
+      expect(result.planningArtifact).toBeDefined();
+      expect(result.deliveryRun).toBeDefined();
+      const runId = result.deliveryRun!.runId;
+      expect(runId).toBeDefined();
+
+      // Verify delivery run exists in data layer
+      const runs = await harness.getData("delivery-runs", { companyId, projectId }) as Array<{ runId: string; ideaId: string }>;
+      expect(runs.some((r) => r.ideaId === ideaId)).toBe(true);
+
+      // Verify planning artifact exists in data layer
+      const artifacts = await harness.getData("planning-artifacts", { companyId, projectId, ideaId }) as Array<{ ideaId: string }>;
+      expect(artifacts.some((a) => a.ideaId === ideaId)).toBe(true);
+    });
+
+    it("swiping NOW creates both a planning artifact and a delivery run", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "supervised",
+        budgetMinutes: 60
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 500,
+        autopilotBudgetMinutes: 200,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Fix critical bug", description: "Hotfix needed", rationale: "Production issue", sourceReferences: [], score: 98 }]
+      }) as Array<{ ideaId: string }>;
+
+      const result = await harness.performAction("record-swipe", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        decision: "now"
+      }) as { planningArtifact: { artifactId: string } | null; deliveryRun: { runId: string } | null };
+
+      expect(result.planningArtifact).toBeDefined();
+      expect(result.deliveryRun).toBeDefined();
+
+      const runs = await harness.getData("delivery-runs", { companyId, projectId }) as Array<{ runId: string }>;
+      expect(runs.length).toBeGreaterThan(0);
+    });
+
+    it("delivery run inherits automation tier from autopilot project", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      // Test fullauto tier
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "fullauto",
+        budgetMinutes: 300
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 2000,
+        autopilotBudgetMinutes: 1000,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Auto feature", description: "Auto approval test", rationale: "", sourceReferences: [], score: 80 }]
+      }) as Array<{ ideaId: string }>;
+
+      await harness.performAction("record-swipe", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        decision: "yes"
+      });
+
+      const runs = await harness.getData("delivery-runs", { companyId, projectId }) as Array<{ automationTier: string }>;
+      expect(runs[0].automationTier).toBe("fullauto");
+
+      // Also verify the planning artifact has correct approvalMode
+      const artifacts = await harness.getData("planning-artifacts", { companyId, projectId }) as Array<{ approvalMode: string }>;
+      expect(artifacts[artifacts.length - 1].approvalMode).toBe("auto_approve");
+    });
+
+    it("swiping PASS does NOT create planning artifact or delivery run", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Rejected idea", description: "Not good enough", rationale: "", sourceReferences: [], score: 30 }]
+      }) as Array<{ ideaId: string }>;
+
+      const result = await harness.performAction("record-swipe", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        decision: "pass"
+      }) as { planningArtifact: unknown; deliveryRun: unknown };
+
+      expect(result.planningArtifact).toBeNull();
+      expect(result.deliveryRun).toBeNull();
+
+      const runs = await harness.getData("delivery-runs", { companyId, projectId }) as Array<unknown>;
+      expect(runs).toHaveLength(0);
+    });
+
+    it("swiping MAYBE does NOT create planning artifact or delivery run", async () => {
+      const { harness, companyId, projectId } = setup;
+
+      await harness.performAction("enable-autopilot", {
+        companyId,
+        projectId,
+        automationTier: "semiauto",
+        budgetMinutes: 120
+      });
+
+      await harness.performAction("update-company-budget", {
+        companyId,
+        totalBudgetMinutes: 1000,
+        autopilotBudgetMinutes: 500,
+        autopilotUsedMinutes: 0
+      });
+
+      const ideas = await harness.performAction("generate-ideas", {
+        companyId,
+        projectId,
+        ideas: [{ title: "Maybe idea", description: "Not sure yet", rationale: "", sourceReferences: [], score: 55 }]
+      }) as Array<{ ideaId: string }>;
+
+      const result = await harness.performAction("record-swipe", {
+        companyId,
+        projectId,
+        ideaId: ideas[0].ideaId,
+        decision: "maybe"
+      }) as { planningArtifact: unknown; deliveryRun: unknown };
+
+      expect(result.planningArtifact).toBeNull();
+      expect(result.deliveryRun).toBeNull();
+    });
+  });
+
   describe("Cross-company isolation for delivery control", () => {
     it("does not expose another company's delivery runs", async () => {
       const { harness, companyId, projectId, otherCompanyId } = setup;
