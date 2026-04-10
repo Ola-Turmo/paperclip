@@ -1,0 +1,153 @@
+{
+  "groupId": "val-autopilot-030-034",
+  "testedAt": "2026-04-10T08:30:00.000Z",
+  "isolation": {
+    "appUrl": "http://localhost:3100",
+    "companyId": "fbba62ed-3883-4007-af12-c1c30673b752",
+    "projectId": "3a1f2e81-0da8-4d2a-914d-293b380bce7e",
+    "plugin": "paperclip.autoresearch-improver-example (installed)",
+    "workingDirectory": "/root/work/paperclip"
+  },
+  "toolsUsed": ["agent-browser"],
+  "assertions": [
+    {
+      "id": "VAL-AUTOPILOT-030",
+      "title": "Planning flow is created for approved ideas",
+      "status": "blocked",
+      "steps": [
+        { "action": "Navigate to Autopilot tab", "expected": "Autopilot tab visible with form elements", "observed": "Autopilot tab visible with Product Program, Research, Ideas, Swipe sections" },
+        { "action": "Fill Idea title and description", "expected": "Add Idea button enabled", "observed": "Add Idea button remained disabled after filling fields" },
+        { "action": "Submit idea via Add Idea", "expected": "Idea appears in ideas list", "observed": "No idea appeared - Add Idea button disabled state persisted" },
+        { "action": "Find ideas and swipe Yes/Now", "expected": "Swipe buttons visible for ideas", "observed": "No ideas visible in the swipe queue" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "delivery-control/planning-delivery/03-autopilot-tab.png",
+          "delivery-control/planning-delivery/06-autopilot-annotated.png",
+          "delivery-control/planning-delivery/10-autopilot-resumed-state.png"
+        ],
+        "consoleErrors": "Many Unauthenticated errors for OIDC token validation and response.clone errors - appears to be background polling issues, not blocking the UI",
+        "network": "GET /api/projects/3a1f2e81-0da8-4d2a-914d-293b380bce7e -> 200 (project loaded)"
+      },
+      "issues": "Cannot complete the idea->swipe->planning flow. The Add Idea button is present but remains disabled even when title and description fields are filled. No ideas appear in the swipe queue. The autopilot plugin appears to be in a state where ideas cannot be created through the UI. Additionally, there is no visible 'Ideas' section or 'Swipe' section in the main Autopilot tab - these may be rendered below the visible viewport or require scrolling. The plugin's internal API routes (/api/autopilot/ideas) are not exposed as standard Paperclip REST endpoints."
+    },
+    {
+      "id": "VAL-AUTOPILOT-031",
+      "title": "Automation tiers enforce the configured approval path",
+      "status": "blocked",
+      "steps": [
+        { "action": "Navigate to Autopilot tab", "expected": "Automation tier selector visible (Supervised/Semi-Auto/Full Auto)", "observed": "Automation tier selector visible with 'Supervised — requires approval for each run' selected" },
+        { "action": "Check for existing delivery runs", "expected": "Delivery runs section visible with runs or empty state", "observed": "Could not scroll to see delivery runs section - requires swipe flow to create runs" },
+        { "action": "Create ideas and swipe Yes/Now to trigger runs", "expected": "Runs created based on tier", "observed": "BLOCKED - Cannot create ideas (VAL-AUTOPILOT-030 prerequisite)" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "delivery-control/planning-delivery/03-autopilot-tab.png",
+          "delivery-control/planning-delivery/10-autopilot-resumed-state.png"
+        ],
+        "consoleErrors": "Same Unauthenticated and response.clone errors as VAL-AUTOPILOT-030",
+        "network": "GET /api/projects/3a1f2e81-0da8-4d2a-914d-293b380bce7e -> 200"
+      },
+      "issues": "Cannot test automation tier enforcement without being able to create ideas and delivery runs first. VAL-AUTOPILOT-030 is a prerequisite that is blocked."
+    },
+    {
+      "id": "VAL-AUTOPILOT-032",
+      "title": "Delivery run uses an isolated workspace and leased port",
+      "status": "blocked",
+      "steps": [
+        { "action": "Navigate to Autopilot tab", "expected": "Workspace/port metadata visible for runs", "observed": "Automation tier selector present, workspace fields present (repo URL, workspace-uuid textboxes)" },
+        { "action": "Start delivery run", "expected": "Branch, workspace path, leased port shown in UI", "observed": "BLOCKED - Cannot create runs without ideas" },
+        { "action": "Check run metadata", "expected": "Run details show workspace isolation info", "observed": "BLOCKED - No runs exist to inspect" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "delivery-control/planning-delivery/03-autopilot-tab.png"
+        ],
+        "consoleErrors": "Same Unauthenticated and response.clone errors",
+        "network": "GET /api/projects/3a1f2e81-0da8-4d2a-914d-293b380bce7e -> 200"
+      },
+      "issues": "Cannot test workspace/port allocation without delivery runs. Requires VAL-AUTOPILOT-030 (and 031) to create runs first. The UI has workspace configuration fields (textboxes for repo URL, workspace UUID) but isolated workspace allocation on run start cannot be verified without runs."
+    },
+    {
+      "id": "VAL-AUTOPILOT-033",
+      "title": "Budget caps pause future runs",
+      "status": "blocked",
+      "steps": [
+        { "action": "Navigate to Budget tab", "expected": "Budget settings visible with cap controls", "observed": "Budget tab visible with $0.00 spend and Set budget button (disabled)" },
+        { "action": "Set budget to 0 to trigger pause", "expected": "Budget cap causes autopilot to pause", "observed": "BLOCKED - Cannot set budget to 0 (button disabled, no input field accessible)" },
+        { "action": "Trigger autopilot usage", "expected": "Pause badge appears with reason", "observed": "BLOCKED - Cannot use autopilot without ideas" },
+        { "action": "Verify pause badge visibility", "expected": "Amber pause badge with budget reason visible in Autopilot tab", "observed": "BLOCKED - No autopilot usage possible" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "delivery-control/planning-delivery/08-budget-tab.png"
+        ],
+        "consoleErrors": "Same errors",
+        "network": "GET /api/projects/3a1f2e81-0da8-4d2a-914d-293b380bce7e -> 200"
+      },
+      "issues": "The Budget tab shows $0.00 spend with a disabled 'Set budget' button. Cannot interact with budget settings to test pause behavior. The autopilot appears to be in a paused state already (button shows 'Resume Autopilot' instead of 'Pause Autopilot'). Need to understand why budget controls are disabled."
+    },
+    {
+      "id": "VAL-AUTOPILOT-034",
+      "title": "Operator can pause and resume autopilot",
+      "status": "fail",
+      "steps": [
+        { "action": "Navigate to Autopilot tab with autopilot enabled", "expected": "'Pause Autopilot' button visible and functional", "observed": "Button shows 'Pause Autopilot' when checked, but clicking it shows 'Resume Autopilot' - indicates autopilot was paused" },
+        { "action": "Click 'Pause Autopilot' button", "expected": "Autopilot pauses, button changes to 'Resume Autopilot'", "observed": "Button already shows 'Resume Autopilot' - autopilot is already paused" },
+        { "action": "Click 'Resume Autopilot' button", "expected": "Autopilot resumes, button changes back to 'Pause Autopilot'", "observed": "Button remains 'Resume Autopilot' - failed to resume autopilot" },
+        { "action": "Verify autopilot state persisted", "expected": "Autopilot state (paused/resumed) survives page reload", "observed": "Cannot test persistence without successful resume" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "delivery-control/planning-delivery/10-autopilot-resumed-state.png"
+        ],
+        "consoleErrors": "Unauthenticated errors and response.clone errors throughout",
+        "network": "GET /api/projects/3a1f2e81-0da8-4d2a-914d-293b380bce7e -> 200"
+      },
+      "issues": "The autopilot appears to be stuck in a paused state. The 'Resume Autopilot' button is visible but clicking it does not resume the autopilot - it remains in paused state. This could indicate: (1) A bug in the resume logic, (2) The pause reason (budget cap or other) is still active preventing resume, or (3) An API error when trying to resume. The button is functional (clickable) but the resume action does not appear to succeed."
+    }
+  ],
+  "frictions": [
+    {
+      "description": "Add Idea button remains disabled even after filling in title and description fields",
+      "resolved": false,
+      "resolution": "Could not resolve - the button state did not change after filling fields. May require specific interactions or a different flow to enable.",
+      "affectedAssertions": ["VAL-AUTOPILOT-030", "VAL-AUTOPILOT-031", "VAL-AUTOPILOT-032"]
+    },
+    {
+      "description": "Autopilot tab has many sections (Settings, Product Program, Research, Ideas, Swipe, Delivery Runs) but only top portion is visible without extensive scrolling",
+      "resolved": true,
+      "resolution": "Used scroll down to reveal more content, but content structure is unclear from accessibility tree alone",
+      "affectedAssertions": ["VAL-AUTOPILOT-030", "VAL-AUTOPILOT-031", "VAL-AUTOPILOT-032"]
+    },
+    {
+      "description": "Console shows thousands of Unauthenticated errors (OIDC token validation failures) - background polling seems to be failing repeatedly",
+      "resolved": false,
+      "resolution": "Not resolved - appears to be ongoing authentication issues with some internal service",
+      "affectedAssertions": ["VAL-AUTOPILOT-030", "VAL-AUTOPILOT-031", "VAL-AUTOPILOT-032", "VAL-AUTOPILOT-033", "VAL-AUTOPILOT-034"]
+    }
+  ],
+  "blockers": [
+    {
+      "description": "Cannot create ideas through the UI - Add Idea button stays disabled. This blocks the entire idea->swipe->planning flow which is the prerequisite for all other VAL-AUTOPILOT-030-034 assertions.",
+      "affectedAssertions": ["VAL-AUTOPILOT-030", "VAL-AUTOPILOT-031", "VAL-AUTOPILOT-032", "VAL-AUTOPILOT-033"],
+      "quickFixAttempted": "Filled title and description fields using fill command, re-snapshot to check button state, tried multiple times - button remained disabled"
+    },
+    {
+      "description": "Autopilot is stuck in paused state - Resume button does not successfully resume autopilot. This blocks VAL-AUTOPILOT-034 and also prevents testing other assertions that require active autopilot.",
+      "affectedAssertions": ["VAL-AUTOPILOT-034"],
+      "quickFixAttempted": "Clicked Resume Autopilot button, waited for network idle, re-snapshot - state did not change from paused"
+    },
+    {
+      "description": "Budget controls are disabled - cannot set budget to 0 to test budget cap pause behavior. The Budget tab shows disabled Set budget button.",
+      "affectedAssertions": ["VAL-AUTOPILOT-033"],
+      "quickFixAttempted": "Navigated to Budget tab, observed disabled button - no accessible input field to modify budget"
+    },
+    {
+      "description": "Plugin uses internal plugin API routes (/api/autopilot/*) not exposed as standard Paperclip REST endpoints. Cannot verify API behavior via curl.",
+      "affectedAssertions": ["VAL-AUTOPILOT-030", "VAL-AUTOPILOT-031", "VAL-AUTOPILOT-032", "VAL-AUTOPILOT-033", "VAL-AUTOPILOT-034"],
+      "quickFixAttempted": "Attempted curl requests to /api/autopilot/ideas and other paths - all returned 'API route not found'"
+    }
+  ],
+  "summary": "Tested 5 assertions (VAL-AUTOPILOT-030 to 034): 1 FAIL, 4 BLOCKED. Main blocker: Cannot create ideas through the UI (Add Idea button stays disabled), which prevents the entire idea->swipe->planning flow. Additionally, autopilot appears stuck in paused state with Resume button non-functional. Budget controls are also disabled. These issues cascade - VAL-AUTOPILOT-030 is prerequisite for 031-033, and 034 (pause/resume) is also failing. Screenshots captured: 10 total. Console shows widespread Unauthenticated errors suggesting auth issues with background services."
+}

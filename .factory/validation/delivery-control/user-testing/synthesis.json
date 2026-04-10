@@ -1,92 +1,127 @@
 {
   "milestone": "delivery-control",
-  "round": 3,
+  "round": 4,
   "status": "fail",
   "assertionsSummary": {
-    "total": 5,
+    "total": 13,
     "passed": 0,
-    "failed": 3,
-    "blocked": 2,
-    "improved": 3
+    "failed": 2,
+    "blocked": 11,
+    "improved": 0,
+    "regressed": 2
   },
   "passedAssertions": [],
   "failedAssertions": [
     {
-      "id": "VAL-AUTOPILOT-031",
-      "reason": "Automation Tier dropdown IS VISIBLE and interactable (3 tiers shown after enabling autopilot). Round 2 blocker resolved. However, approval enforcement behavior cannot be validated without creating actual delivery runs — which requires VAL-AUTOPILOT-030 (idea->swipe->planning) to work first."
+      "id": "VAL-AUTOPILOT-034",
+      "reason": "Resume Autopilot button is visible but clicking it does not successfully resume autopilot. Autopilot appears stuck in paused state. The pause reason may still be active (budget cap or other) preventing resume. REGRESSION: Previously 'blocked' (round 3) now 'failed' - button is interactable but resume action does not succeed."
     },
     {
-      "id": "VAL-AUTOPILOT-032",
-      "reason": "DeliveryRunSection IS VISIBLE with 'No delivery runs yet.' empty state. Round 2 blocker resolved. Cannot verify workspace/port metadata without creating actual delivery runs — which requires VAL-AUTOPILOT-030 to work first."
-    },
-    {
-      "id": "VAL-AUTOPILOT-033",
-      "reason": "Budget tab shows project-level USD budget (0.00) and Autopilot Settings shows budget minutes (60). No 'paused' state indicator visible when autopilot is running normally. Backend enforces pause but UI never shows the paused condition. UNCHANGED from round 2."
+      "id": "VAL-CROSS-001",
+      "reason": "E2E product loop broken at idea->delivery-work step. Swiping an idea YES marks it as approved and shows 'Swiped yes — Idea now approved' message, but NO delivery run is created. Delivery Runs section persists showing 'No delivery runs yet.' The idea->planning->delivery flow is not wired up correctly."
     }
   ],
   "blockedAssertions": [
     {
       "id": "VAL-AUTOPILOT-030",
-      "blockedBy": "recordSwipe action handler now exists in root worker.ts (line 3511), round 2 'not registered' issue resolved in code. Full end-to-end flow (create idea -> swipe Yes/Now -> planning artifact) was not exercised because ideas must be created first through the Ideas section."
+      "blockedBy": "Add Idea button stays disabled even after filling title and description fields. Cannot create ideas to trigger planning flow."
     },
     {
-      "id": "VAL-AUTOPILOT-034",
-      "blockedBy": "'Pause Autopilot' button IS VISIBLE. Round 2 blocker resolved. However: (1) pause->resume end-to-end flow not exercised, (2) run-level pause/resume blocked by VAL-AUTOPILOT-032 (no delivery runs exist)"
-    }
-  ],
-  "improvementsFromRound2": [
-    {
-      "assertion": "VAL-AUTOPILOT-030",
-      "improvement": "recordSwipe action handler IS registered at worker.ts:3511 (was missing in round 2)"
+      "id": "VAL-AUTOPILOT-031",
+      "blockedBy": "Cannot create delivery runs without VAL-AUTOPILOT-030 (idea creation)"
     },
     {
-      "assertion": "VAL-AUTOPILOT-031",
-      "improvement": "Automation Tier dropdown IS VISIBLE and interactable after enabling autopilot (3 tiers)"
+      "id": "VAL-AUTOPILOT-032",
+      "blockedBy": "No delivery runs exist to test workspace/port metadata"
     },
     {
-      "assertion": "VAL-AUTOPILOT-032",
-      "improvement": "DeliveryRunSection IS VISIBLE in the Autopilot tab (was entirely missing in round 2)"
+      "id": "VAL-AUTOPILOT-033",
+      "blockedBy": "Budget controls disabled; autopilot stuck in paused state preventing budget cap testing"
     },
     {
-      "assertion": "VAL-AUTOPILOT-034",
-      "improvement": "'Pause Autopilot' button IS VISIBLE in Autopilot Settings (was missing in round 2)"
-    }
-  ],
-  "unchangedFromRound2": [
+      "id": "VAL-AUTOPILOT-035",
+      "blockedBy": "No delivery runs exist to test convoy blocking"
+    },
     {
-      "assertion": "VAL-AUTOPILOT-033",
-      "reason": "Budget pause state still not visible in UI"
+      "id": "VAL-AUTOPILOT-036",
+      "blockedBy": "No delivery runs exist to test checkpoint/resume"
+    },
+    {
+      "id": "VAL-AUTOPILOT-037",
+      "blockedBy": "No delivery runs exist to test merge coordination"
+    },
+    {
+      "id": "VAL-AUTOPILOT-038",
+      "blockedBy": "No active delivery runs exist for operator intervention testing"
+    },
+    {
+      "id": "VAL-AUTOPILOT-039",
+      "blockedBy": "No completed runs to generate learner summaries; Knowledge section not visible in UI"
+    },
+    {
+      "id": "VAL-AUTOPILOT-040",
+      "blockedBy": "No digest section visible in UI; digests not triggered"
+    },
+    {
+      "id": "VAL-AUTOPILOT-041",
+      "blockedBy": "No release-health section visible in UI; no merged runs with health failures"
     }
   ],
   "systemicBlockers": [
     {
-      "description": "VAL-AUTOPILOT-030 (idea->swipe->planning flow) is the critical path blocker. All other delivery-control assertions (approval enforcement, workspace metadata, run-level pause/resume) are blocked by it. The recordSwipe handler is now registered in code, but the UI requires ideas to be created first before the swipe review section becomes active.",
-      "affectedAssertions": ["VAL-AUTOPILOT-031", "VAL-AUTOPILOT-032", "VAL-AUTOPILOT-034"],
-      "rootCause": "The idea creation and swipe review UI flow (Ideas section -> Swipe Review section) must produce an approved idea that can trigger planning artifact creation. This chain must work before delivery runs can be created."
+      "description": "Cannot create ideas - Add Idea button remains disabled. This is the root cause blocking VAL-AUTOPILOT-030. Without ideas, no swipe review can occur, no delivery runs can be created, and all downstream assertions (035-041, 031, 032) remain blocked.",
+      "affectedAssertions": ["VAL-AUTOPILOT-030", "VAL-AUTOPILOT-031", "VAL-AUTOPILOT-032", "VAL-AUTOPILOT-035", "VAL-AUTOPILOT-036", "VAL-AUTOPILOT-037", "VAL-AUTOPILOT-038", "VAL-AUTOPILOT-039", "VAL-AUTOPILOT-040", "VAL-AUTOPILOT-041", "VAL-CROSS-001"],
+      "rootCause": "Add Idea button UI state does not enable when title/description fields are filled. Could be: (1) Form validation not triggering state change, (2) Submit handler not wired to button, (3) API call failing silently"
     },
     {
-      "description": "VAL-AUTOPILOT-033: Budget pause state display completely missing. The backend sets autopilot.paused=true when budget is exceeded, but no UI element shows this state.",
-      "affectedAssertions": ["VAL-AUTOPILOT-033"],
-      "rootCause": "No UI component renders the paused state or pauseReason from autopilot or companyBudget entities."
-    }
-  ],
-  "appliedUpdates": [
+      "description": "Autopilot stuck in paused state with non-functional Resume button. This blocks VAL-AUTOPILOT-034 testing and prevents autopilot from running at all, compounding the idea creation issue.",
+      "affectedAssertions": ["VAL-AUTOPILOT-034", "VAL-AUTOPILOT-033"],
+      "rootCause": "Resume button click does not change autopilot state. May indicate: (1) API call failing, (2) pause reason still active, (3) state not persisting"
+    },
     {
-      "target": "user-testing.md",
-      "description": "Added note: plugin must be installed via POST /api/plugins/install with {packageName: localPath, isLocalPath: true}. Not available through npm registry.",
-      "source": "setup"
+      "description": "E2E flow broken at idea->delivery-work step. Even when existing ideas are approved via swipe, no delivery run is created. VAL-CROSS-001 fails.",
+      "affectedAssertions": ["VAL-CROSS-001"],
+      "rootCause": "Swipe YES marks idea as approved but createDeliveryRun or equivalent is not triggered or not working"
+    },
+    {
+      "description": "Missing UI sections for Knowledge (039), Digests (040), and Release Health (041). These may not be implemented yet or not visible in current UI.",
+      "affectedAssertions": ["VAL-AUTOPILOT-039", "VAL-AUTOPILOT-040", "VAL-AUTOPILOT-041"],
+      "rootCause": "These sections may require implementation or may only appear after certain conditions (completed runs, triggered digests, release failures)"
     }
   ],
+  "improvementsFromRound3": [],
+  "regressionsFromRound3": [
+    {
+      "assertion": "VAL-AUTOPILOT-034",
+      "change": "Status changed from 'blocked' to 'failed'",
+      "description": "Button is now interactable but resume action does not succeed. Previously not tested end-to-end."
+    }
+  ],
+  "appliedUpdates": [],
   "frictions": [
     {
-      "description": "Plugin required manual API installation — not available in Plugin Manager UI npm install flow",
+      "description": "Add Idea button remains disabled even after filling in title and description fields",
+      "resolved": false
+    },
+    {
+      "description": "Autopilot stuck in paused state - Resume button non-functional",
+      "resolved": false
+    },
+    {
+      "description": "Console shows many Unauthenticated OIDC token errors and response.clone errors",
+      "resolved": false
+    },
+    {
+      "description": "Idea->delivery-work flow broken: swipe YES creates approved idea but no delivery run",
       "resolved": false
     }
   ],
   "toolsUsed": ["agent-browser", "curl"],
   "flowReports": [
-    "val-autopilot-030-034-round3.json"
+    "val-autopilot-035-038.json",
+    "val-autopilot-039-041-cross001.json",
+    "val-autopilot-030-034.json"
   ],
-  "previousRound": ".factory/validation/delivery-control/user-testing/synthesis.json (round 2)",
-  "progressFromRound1And2": "Significant improvement from round 2: (1) recordSwipe handler now registered in root worker.ts, (2) Automation Tier dropdown interactable, (3) DeliveryRunSection visible, (4) Pause button visible. Remaining: (1) Full idea->swipe->planning flow not exercised, (2) Budget pause state still missing from UI."
+  "previousRound": ".factory/validation/delivery-control/user-testing/synthesis.json (round 3)",
+  "progressFromPriorRounds": "Round 3 identified VAL-AUTOPILOT-030 as critical path blocker and VAL-AUTOPILOT-033 (budget pause visibility) as UI issue. After commits 51683c04 (idea->swipe->planning) and 943d2112 (pause badge visibility), round 4 testing reveals: (1) VAL-AUTOPILOT-030 still blocked - Add Idea button disabled, (2) VAL-AUTOPILOT-034 regressed to 'failed' - Resume button non-functional, (3) VAL-CROSS-001 failed - E2E flow broken at idea->delivery-work, (4) VAL-AUTOPILOT-039/040/041 have missing UI sections. Overall status: no improvement, 2 regressions."
 }

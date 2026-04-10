@@ -1,0 +1,125 @@
+{
+  "groupId": "val-autopilot-039-041-cross001",
+  "testedAt": "2026-04-10T09:30:00.000Z",
+  "isolation": {
+    "appUrl": "http://localhost:3100",
+    "companyId": "fbba62ed-3883-4007-af12-c1c30673b752",
+    "projectId": "3a1f2e81-0da8-4d2a-914d-293b380bce7e",
+    "plugin": "paperclip.autoresearch-improver-example"
+  },
+  "toolsUsed": ["agent-browser", "curl"],
+  "assertions": [
+    {
+      "id": "VAL-AUTOPILOT-039",
+      "title": "Learner summaries and reusable knowledge are generated after runs",
+      "status": "blocked",
+      "steps": [
+        { "action": "Navigate to Autopilot tab", "expected": "Autopilot settings visible", "observed": "Autopilot tab selected, settings visible" },
+        { "action": "Scroll to Delivery Runs section", "expected": "Delivery runs list visible", "observed": "Delivery Runs section found with 'No delivery runs yet.'" },
+        { "action": "Search for Knowledge section in UI", "expected": "Knowledge/reusable knowledge section visible", "observed": "No Knowledge section found in the Autopilot tab UI" }
+      ],
+      "evidence": {
+        "screenshots": ["delivery-control/knowledge-e2e/04_delivery_runs_section.png", "delivery-control/knowledge-e2e/06_after_swipe_scrolled.png"],
+        "consoleErrors": "Many Unauthenticated OIDC errors and response.clone errors in console, but UI still renders"
+      },
+      "issues": "Cannot test learner summaries because no delivery runs have been completed. The Delivery Runs section shows 'No delivery runs yet.' Learner summaries require completed runs to generate."
+    },
+    {
+      "id": "VAL-AUTOPILOT-040",
+      "title": "Digests and alerts are generated for recurring autopilot conditions",
+      "status": "blocked",
+      "steps": [
+        { "action": "Navigate to Autopilot tab", "expected": "Autopilot surfaces visible", "observed": "Autopilot tab selected with Settings, Product Program, Delivery Runs, Research, Ideas, Swipe sections" },
+        { "action": "Search for Digests section in UI", "expected": "Digest/alert section visible", "observed": "No Digest section found in the Autopilot tab UI" },
+        { "action": "Check page text for 'digest' or 'alert'", "expected": "Digest-related content visible", "observed": "No matching text found for knowledge/digest/learner/summary" }
+      ],
+      "evidence": {
+        "screenshots": ["delivery-control/knowledge-e2e/07_autopilot_full_view.png"],
+        "consoleErrors": "Many Unauthenticated OIDC errors and response.clone errors in console"
+      },
+      "issues": "Cannot test digests and alerts because no digest section is visible in the UI. Either the feature is not implemented yet or digests have not been triggered for this project."
+    },
+    {
+      "id": "VAL-AUTOPILOT-041",
+      "title": "Release-health failures trigger rollback or revert handling",
+      "status": "blocked",
+      "steps": [
+        { "action": "Navigate to Autopilot tab", "expected": "Autopilot surfaces visible", "observed": "Autopilot tab selected" },
+        { "action": "Search for Release Health section in UI", "expected": "Release health monitoring section visible", "observed": "No Release Health section found in the Autopilot tab UI" },
+        { "action": "Check for rollback-related content", "expected": "Rollback or revert controls visible", "observed": "No rollback-related UI elements found" }
+      ],
+      "evidence": {
+        "screenshots": ["delivery-control/knowledge-e2e/07_autopilot_full_view.png"],
+        "consoleErrors": "Many Unauthenticated OIDC errors and response.clone errors in console"
+      },
+      "issues": "Cannot test release-health rollback because no release-health section is visible in the UI. Also, there are no merged delivery runs with health check failures to trigger rollback. Prerequisite not met: no merged runs with health check failures exist."
+    },
+    {
+      "id": "VAL-CROSS-001",
+      "title": "End-to-end product loop is reachable from project navigation",
+      "status": "fail",
+      "steps": [
+        { "action": "Navigate to project via sidebar", "expected": "Autopilot Test Project visible", "observed": "Autopilot Test Project visible in sidebar" },
+        { "action": "Click Autopilot tab", "expected": "Autopilot surfaces shown", "observed": "Autopilot tab selected, shows Settings, Product Program, Research, Ideas, Swipe sections" },
+        { "action": "Check Research section - Run Research button", "expected": "Run Research enabled", "observed": "Run Research button is DISABLED" },
+        { "action": "Check Ideas section - Add Idea button", "expected": "Add Idea enabled after filling", "observed": "Add Idea button remains DISABLED even after filling idea title" },
+        { "action": "Existing ideas visible with swipe buttons", "expected": "Ideas in swipe queue", "observed": "3 ideas visible in Swipe Review section with Pass/Maybe/Yes/Now buttons" },
+        { "action": "Click Yes on first idea", "expected": "Idea approved, delivery work created", "observed": "Idea marked as 'Approved', 'Swiped yes — Idea now approved' message shown, Recent Swipes shows 1 YES" },
+        { "action": "Check Delivery Runs for created work", "expected": "Delivery run visible", "observed": "Delivery Runs section still shows 'No delivery runs yet.' - NO delivery run created" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "delivery-control/knowledge-e2e/01_home.png",
+          "delivery-control/knowledge-e2e/02_autopilot_tab.png",
+          "delivery-control/knowledge-e2e/05_after_swipe_yes.png",
+          "delivery-control/knowledge-e2e/06_after_swipe_scrolled.png"
+        ],
+        "consoleErrors": "Many Unauthenticated OIDC errors, response.clone errors, and Maximum call stack size exceeded errors"
+      },
+      "issues": "E2E product loop is broken at the idea->delivery-work step. Swiping an idea YES marks it as approved but does NOT create a delivery run. The Delivery Runs section persists showing 'No delivery runs yet.' This indicates the idea->planning->delivery flow is not wired up correctly."
+    }
+  ],
+  "frictions": [
+    {
+      "description": "Run Research button is disabled and Add Idea button is disabled - cannot create new ideas or run research in the UI",
+      "resolved": false,
+      "resolution": "Using existing pre-populated ideas in the swipe queue instead",
+      "affectedAssertions": ["VAL-CROSS-001"]
+    },
+    {
+      "description": "Console shows many Unauthenticated OIDC token errors - background API calls failing with auth issues",
+      "resolved": false,
+      "resolution": "UI still renders despite auth errors, suggesting polling fallback behavior",
+      "affectedAssertions": ["VAL-AUTOPILOT-039", "VAL-AUTOPILOT-040", "VAL-AUTOPILOT-041", "VAL-CROSS-001"]
+    },
+    {
+      "description": "Console shows 'response.clone is not a function' errors repeatedly",
+      "resolved": false,
+      "resolution": "Unknown - UI still functions",
+      "affectedAssertions": ["VAL-AUTOPILOT-039", "VAL-AUTOPILOT-040", "VAL-AUTOPILOT-041", "VAL-CROSS-001"]
+    }
+  ],
+  "blockers": [
+    {
+      "description": "VAL-AUTOPILOT-039 blocked: No completed delivery runs exist to generate learner summaries",
+      "affectedAssertions": ["VAL-AUTOPILOT-039"],
+      "quickFixAttempted": "Cannot create runs - E2E flow (VAL-CROSS-001) is broken at idea->delivery-work step"
+    },
+    {
+      "description": "VAL-AUTOPILOT-040 blocked: No digest section visible in UI and no digests exist",
+      "affectedAssertions": ["VAL-AUTOPILOT-040"],
+      "quickFixAttempted": "Checked entire Autopilot tab UI, no digest-related section found"
+    },
+    {
+      "description": "VAL-AUTOPILOT-041 blocked: No release-health section visible in UI and no merged runs with health failures exist",
+      "affectedAssertions": ["VAL-AUTOPILOT-041"],
+      "quickFixAttempted": "Cannot test rollback - no merged runs exist, E2E flow is broken"
+    },
+    {
+      "description": "VAL-CROSS-001 failed: E2E product loop incomplete - idea->delivery-work flow not working",
+      "affectedAssertions": ["VAL-CROSS-001"],
+      "quickFixAttempted": "Swiped an idea YES - idea marked approved but no delivery run created"
+    }
+  ],
+  "summary": "Tested 4 assertions: 0 passed, 1 failed (VAL-CROSS-001), 3 blocked (VAL-AUTOPILOT-039/040/041). VAL-CROSS-001 E2E loop fails at idea->delivery-work step: swiping YES marks idea as approved but creates no delivery run. VAL-AUTOPILOT-039/040/041 are blocked by missing prerequisites (no completed runs, no digests, no release-health failures). Many console errors (Unauthenticated, response.clone issues) but UI still renders."
+}

@@ -1,0 +1,89 @@
+{
+  "groupId": "convoy-execution",
+  "testedAt": "2026-04-10T18:45:00.000Z",
+  "isolation": {
+    "appUrl": "http://localhost:3100",
+    "companyId": "fbba62ed-3883-4007-af12-c1c30673b752",
+    "projectId": "3a1f2e81-0da8-4d2a-914d-293b380bce7e",
+    "plugin": "paperclip.autoresearch-improver-example"
+  },
+  "toolsUsed": ["agent-browser", "curl"],
+  "assertions": [
+    {
+      "id": "VAL-AUTOPILOT-035",
+      "title": "Convoy execution blocks downstream tasks until dependencies pass",
+      "status": "blocked",
+      "steps": [
+        { "action": "Navigate to Autopilot tab for assigned project", "expected": "Autopilot tab loaded", "observed": "Autopilot tab loaded with settings, ideas, and swipe sections" },
+        { "action": "Locate Delivery Runs section", "expected": "Convoy task graph with blocked/unblocked states", "observed": "Delivery Runs section found with empty state 'No delivery runs yet.'" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "delivery-control/convoy-execution/VAL-AUTOPILOT-035-app-loaded.png",
+          "delivery-control/convoy-execution/VAL-AUTOPILOT-035-autopilot-tab.png",
+          "delivery-control/convoy-execution/VAL-AUTOPILOT-035-autopilot-full.png"
+        ],
+        "consoleErrors": "Unauthenticated OIDC token errors (expected for unauthenticated API calls), response.clone errors, stack overflow errors",
+        "network": "No delivery run API endpoints found (tried /api/autopilot/delivery-runs)"
+      },
+      "issues": "No delivery runs exist in the project to test convoy blocking behavior. The prerequisite idea->swipe->planning flow (VAL-AUTOPILOT-030) was previously blocked, preventing any delivery runs from being created."
+    },
+    {
+      "id": "VAL-AUTOPILOT-036",
+      "title": "Checkpoint and resume restore run state",
+      "status": "blocked",
+      "steps": [
+        { "action": "Navigate to Delivery Runs section in Autopilot tab", "expected": "Runs with checkpoint state displayed", "observed": "No delivery runs exist - empty state shown" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "delivery-control/convoy-execution/VAL-AUTOPILOT-035-autopilot-full.png"
+        ],
+        "consoleErrors": "See VAL-AUTOPILOT-035",
+        "network": "N/A - no runs to checkpoint"
+      },
+      "issues": "No checkpoint data available to test resume functionality. Blocked by VAL-AUTOPILOT-030 prerequisite."
+    },
+    {
+      "id": "VAL-AUTOPILOT-037",
+      "title": "Merge coordination prevents conflicting run completion",
+      "status": "blocked",
+      "steps": [
+        { "action": "Navigate to Delivery Runs section", "expected": "Runs with merge coordination state", "observed": "No delivery runs exist - cannot test merge coordination" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "delivery-control/convoy-execution/VAL-AUTOPILOT-035-autopilot-full.png"
+        ],
+        "consoleErrors": "See VAL-AUTOPILOT-035",
+        "network": "N/A - no runs to test merge conflicts"
+      },
+      "issues": "No conflicting delivery runs available to test merge coordination. Blocked by VAL-AUTOPILOT-030 prerequisite."
+    },
+    {
+      "id": "VAL-AUTOPILOT-038",
+      "title": "Operator interventions are available during active runs",
+      "status": "blocked",
+      "steps": [
+        { "action": "Navigate to Delivery Runs section", "expected": "Active runs with intervention controls", "observed": "No delivery runs exist - empty state" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "delivery-control/convoy-execution/VAL-AUTOPILOT-035-autopilot-full.png"
+        ],
+        "consoleErrors": "See VAL-AUTOPILOT-035",
+        "network": "N/A - no active runs for intervention"
+      },
+      "issues": "No active delivery runs available for operator intervention testing. Blocked by VAL-AUTOPILOT-030 prerequisite."
+    }
+  ],
+  "frictions": [],
+  "blockers": [
+    {
+      "description": "VAL-AUTOPILOT-030 (Planning flow for approved ideas) is blocked in round 3 validation - the idea->swipe->planning flow was not fully exercised. This cascades to all delivery-control assertions (035-038) which require actual delivery runs to exist before convoy execution, checkpoint/resume, merge coordination, or operator interventions can be tested.",
+      "affectedAssertions": ["VAL-AUTOPILOT-035", "VAL-AUTOPILOT-036", "VAL-AUTOPILOT-037", "VAL-AUTOPILOT-038"],
+      "quickFixAttempted": "Browsed Autopilot tab thoroughly - confirmed UI is properly rendered with Enable Product Autopilot, tier selector (Supervised/Semi-Auto/Full Auto), Budget settings, Product Program editor, Research section, Ideas section with Pass/Maybe/Yes/Now swipe buttons, and Delivery Runs section showing empty state. No delivery runs are present because the prerequisite idea creation and approval flow has not been completed."
+    }
+  ],
+  "summary": "Tested 4 assertions (VAL-AUTOPILOT-035 through VAL-AUTOPILOT-038): all blocked. All four assertions require delivery runs to exist, but no delivery runs are present because the prerequisite idea->swipe->planning flow (VAL-AUTOPILOT-030) was not exercised in prior validation rounds. The Autopilot tab UI is fully functional and rendering correctly, but the empty delivery runs state prevents testing of convoy execution, checkpoint/resume, merge coordination, and operator interventions."
+}
