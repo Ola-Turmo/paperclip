@@ -1,0 +1,33 @@
+{
+  "featureId": "advanced-ui-surfaces-035-041",
+  "reviewedAt": "2026-04-10T14:35:00.000Z",
+  "commitId": "5e1b92c8b26526f865868480eb52051f65dc34d7",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "All 6 UI sections were added to AutopilotProjectTab in plugin-autoresearch-improver: ConvoyTasksSection, CheckpointResumeControls, OperatorInterventionControls, KnowledgeSection, DigestSection, and ReleaseHealthSection. All sections are wired to existing plugin actions registered in worker.ts. The implementation fully covers the feature description.",
+    "issues": [
+      {
+        "file": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/ui/index.tsx",
+        "line": 1666,
+        "severity": "non_blocking",
+        "description": "KnowledgeSection uses state type `\"all\" | \"procedure\" | \"pattern\" | \"lesson\" | \"skill\"` but does not import `KnowledgeType` from constants.ts. The `KnowledgeType` union type defined in constants.ts matches this exactly, so this is a minor redundancy — the inline union works fine but could reference the exported type for consistency. Does not cause any runtime or type error."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The backend-worker skill procedure requires running typecheck, tests, and build before marking done. The worker transcript shows typecheck and test runs, but the build step (pnpm build at root) was not run. Only the plugin-specific typecheck and tests were run. This is likely sufficient for plugin-only changes, but the skill's 'build' step expectation may need clarification — does it mean root build or per-package typecheck?",
+      "evidence": "Transcript skeleton shows skill invocation 'backend-worker', handoff shows commandsRun with typecheck and test but no pnpm build. The AGENTS.md rule 7 says 'pnpm build' as part of verification."
+    },
+    {
+      "area": "services",
+      "observation": "The worker used agent-browser to verify UI sections rendered in a real browser, which is appropriate for UI validation. However, agent-browser is not documented in .factory/services.yaml as a CLI tool available for worker sessions.",
+      "evidence": "Handoff verification.commandsRun shows 'agent-browser snapshot on autopilot tab' with exit code 0. Transcript shows agent-browser was invoked for UI verification. .factory/services.yaml lists services but not agent-browser CLI."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "All 6 UI sections (ConvoyTasksSection, CheckpointResumeControls, OperatorInterventionControls, KnowledgeSection, DigestSection, ReleaseHealthSection) are implemented in the AutopilotProjectTab component, each wired to the correct existing plugin actions and data keys from worker.ts. The implementation fully covers the feature description for VAL-AUTOPILOT-035 through VAL-AUTOPILOT-041. One minor non-blocking issue: KnowledgeSection uses an inline type union instead of importing the exported KnowledgeType. No blocking issues found. The implementation is functionally complete and consistent with existing codebase patterns."
+}

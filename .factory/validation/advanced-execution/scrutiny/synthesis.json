@@ -1,0 +1,87 @@
+{
+  "milestone": "advanced-execution",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "pnpm test:run", "exitCode": 0, "note": "Tests pass; 'ELIFECYCLE Command failed' is from a pre-test pnpm install failure in a worktree test fixture (not a test failure). 158 test files passed with 9 passed summary." },
+    "typecheck": { "passed": true, "command": "pnpm -r typecheck", "exitCode": 0, "note": "All 20 workspace packages typecheck passed in 240s" },
+    "lint": { "passed": true, "command": "pnpm -r lint", "exitCode": 0, "note": "No packages have a lint script (exit code 0)" },
+    "build": { "passed": true, "command": "pnpm build", "exitCode": 0, "note": "UI, server, and CLI built successfully in 35.40s" }
+  },
+  "reviewsSummary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "featuresReviewed": [
+    {
+      "featureId": "convoy-checkpoint-and-merge-coordination",
+      "status": "pass",
+      "commitId": "75f41c1eddaf919e58d7fe7e3b54e66c18bb3163",
+      "nonBlockingIssues": [
+        "In resumeFromCheckpoint action, restoring 'running' status from a checkpoint could be confusing if users expect runs to always resume as 'pending' — but this is correct checkpoint/resume semantics",
+        "updateConvoyTaskStatus re-unblocking only runs when newStatus === 'passed' — correct, non-blocking"
+      ]
+    },
+    {
+      "featureId": "advanced-ui-surfaces-035-041",
+      "status": "pass",
+      "commitId": "5e1b92c8b26526f865868480eb52051f65dc34d7",
+      "nonBlockingIssues": [
+        "KnowledgeSection uses inline type union instead of importing exported KnowledgeType from constants.ts — minor redundancy, no error"
+      ]
+    },
+    {
+      "featureId": "merge-coordination-ui-fix",
+      "status": "pass",
+      "commitId": "b5b44aad",
+      "nonBlockingIssues": [
+        "Variable naming 'competingRunWarnings' could be more descriptive — no functional issue",
+        "Branch-base comparison is a heuristic that may miss overlapping branches like 'feature/a' vs 'feature/a/b' — acceptable for scope",
+        "UI derives conflicts client-side from locks array without calling checkMergeConflict action — acceptable but worth expanding if lock criteria grow",
+        "Compete warning does not suppress when hasActiveLock, so both badges could appear simultaneously — color coding handles hierarchy"
+      ]
+    },
+    {
+      "featureId": "product-lock-backend-wiring",
+      "status": "pass",
+      "commitId": "87ac266c",
+      "nonBlockingIssues": [
+        "Feature description mentioned findProductLockForTarget but worker correctly used findBlockingLock (the function that actually exists and is used by reference handlers) — justified deviation",
+        "findActiveProductLock imported but not used — unused import, no functional impact",
+        "productLocks data handler doesn't filter by isActive: true — consistent with reference handlers, non-blocking"
+      ]
+    }
+  ],
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "services.yaml",
+      "description": "Document that 'pnpm -r lint' returns 0 with no lint script in most packages — lint check is effectively a no-op pass for this project structure",
+      "sourceFeature": "all"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "services.yaml",
+      "suggestion": "Add 'agent-browser' CLI command documentation: agent-browser is available for browser automation and UI verification in worker sessions (used for browser-visible feature validation). Workers should use --session with unique session IDs.",
+      "evidence": "Feature advanced-ui-surfaces-035-041 and merge-coordination-ui-fix used agent-browser for UI verification. The tool is installed on the VPS but not documented in services.yaml.",
+      "isSystemic": true
+    },
+    {
+      "target": "services.yaml",
+      "suggestion": "Add plugin build command documentation: for packages/plugins/examples/plugin-autoresearch-improver, use 'node ./esbuild.config.mjs' instead of 'pnpm build' which is the root workspace command. The root 'pnpm build' runs all workspace builds and may not apply to plugin-only changes.",
+      "evidence": "Feature merge-coordination-ui-fix and product-lock-backend-wiring used 'node ./esbuild.config.mjs' in the plugin directory to rebuild the plugin.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Clarify the 'build' step in skill procedures: for plugin-only features, does 'pnpm build' mean root build (all workspaces) or plugin-specific esbuild rebuild? The backend-worker skill says 'Run typecheck, tests, and build before marking done' but build was not run for plugin-only changes in prior sessions.",
+      "evidence": "Feature advanced-ui-surfaces-035-041 ran typecheck and tests but not build. Handoff verification shows no build step. AGENTS.md rule 7 lists 'pnpm build' but this may not apply to plugin-only changes.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}

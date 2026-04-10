@@ -1,0 +1,40 @@
+{
+  "featureId": "product-lock-backend-wiring",
+  "reviewedAt": "2026-04-10T14:00:00.000Z",
+  "commitId": "87ac266c",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The product-lock backend wiring is correctly implemented in src/worker.ts. Six helper functions and the ProductLock type are imported, data handlers are registered for product-lock and product-locks, and action handlers are registered for acquire-product-lock, release-product-lock, and check-merge-conflict. Typecheck and build pass. The implementation mirrors the handlers in src/autopilot/worker.ts lines 2718-2782.",
+    "issues": [
+      {
+        "file": "packages/plugins/examples/plugin-autoresearch-improver/src/worker.ts",
+        "line": 97,
+        "severity": "non_blocking",
+        "description": "Feature description mentioned importing `findProductLockForTarget` but this function does not exist in helpers.ts. Worker correctly substituted `findBlockingLock` instead (which is the function actually used by the action handlers in autopilot/worker.ts). This substitution is correct."
+      },
+      {
+        "file": "packages/plugins/examples/plugin-autoresearch-improver/src/worker.ts",
+        "line": 99,
+        "severity": "non_blocking",
+        "description": "`findActiveProductLock` is imported but never used in any handler. Unused imports are not ideal but do not cause functional issues."
+      },
+      {
+        "file": "packages/plugins/examples/plugin-autoresearch-improver/src/worker.ts",
+        "line": 2634,
+        "severity": "non_blocking",
+        "description": "The productLocks data handler filters by companyId but does not filter by isActive: true. The reference handlers in autopilot/worker.ts also do not filter by isActive, so this is consistent behavior, but the list may include released/inactive locks if there are any in the DB."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "No shared-state gaps identified. Worker followed existing patterns: imported type from constants.js, imported helpers from helpers.js, registered data handlers in registerDataHandlers(), registered action handlers in registerActionHandlers().",
+      "evidence": "worker.ts imports and registrations follow the same pattern as other data/action registrations (e.g., companyBudgets, preferenceProfile)"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Product-lock backend wiring is correctly implemented. The worker imported 6 helper functions and the ProductLock type, registered data handlers for product-lock/product-locks, and registered action handlers for acquire-product-lock/release-product-lock/check-merge-conflict. Typecheck and build pass. One minor deviation from feature description (findProductLockForTarget → findBlockingLock substitution) is justified because findProductLockForTarget does not exist; findBlockingLock is what the reference handlers actually use. Two minor unused items (findActiveProductLock imported but not used; productLocks data handler doesn't filter by isActive) are non-blocking."
+}

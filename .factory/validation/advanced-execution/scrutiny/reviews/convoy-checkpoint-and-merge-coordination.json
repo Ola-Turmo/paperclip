@@ -1,0 +1,34 @@
+{
+  "featureId": "convoy-checkpoint-and-merge-coordination",
+  "reviewedAt": "2026-04-10T11:20:00.000Z",
+  "commitId": "75f41c1eddaf919e58d7fe7e3b54e66c18bb3163",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation is comprehensive and well-structured. Four new entities (ConvoyTask, Checkpoint, ProductLock, OperatorIntervention) with full CRUD operations, dependency-aware task blocking, checkpoint/resume, merge coordination, and operator intervention controls. All company/project-scoped with cross-company isolation enforced. 16 new tests cover all VAL-AUTOPILOT-035/036/037/038 scenarios.",
+    "issues": [
+      {
+        "file": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts",
+        "line": 2686,
+        "severity": "non_blocking",
+        "description": "In resumeFromCheckpoint action, the run status is restored from checkpoint.snapshotState.runStatus. The test 'resumes from a checkpoint and restores task/run state' expects resumed.run.status to be 'pending', but the test comment says 'The run status was \"pending\" at checkpoint time'. This is tautological - the test verifies behavior where a new run (with status 'pending') is checkpointed and resumed. This works for new runs but could be confusing if a 'running' run were checkpointed - the resume would restore 'running'. This is actually correct behavior for checkpoint/resume semantics, not a bug."
+      },
+      {
+        "file": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts",
+        "line": 2602,
+        "severity": "non_blocking",
+        "description": "In updateConvoyTaskStatus when a dependency passes, blocked tasks are re-evaluated. The re-unblocking logic only runs when newStatus === 'passed'. This is correct - a task passing is what should unblock dependents. Tasks failing or being skipped do not unblock dependents. This matches expected convoy dependency semantics."
+      },
+      {
+        "file": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts",
+        "line": 2718,
+        "severity": "non_blocking",
+        "description": "In acquireProductLock, the action throws if a blocking lock exists. However, the test 'blocks acquiring a lock when another run holds it' uses the same branch name for both runs and expects a throw. The acquireProductLock action correctly throws with message 'Cannot acquire lock: product_lock already held by run run1...' when run2 tries to acquire. This is correct."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Review passed. The convoy-checkpoint-and-merge-coordination feature implements all required functionality: ConvoyTask with dependency-aware blocking (downstream tasks blocked until prerequisites pass), Checkpoint for saving/restoring full run state, ProductLock for merge coordination (blocks conflicting runs with visible reasons), and OperatorIntervention for notes/checkpoint requests/nudges/linked issue inspection. All 16 new tests pass covering VAL-AUTOPILOT-035/036/037/038. Implementation is company/project-scoped with cross-company isolation enforced. Code is clean with no blocking issues."
+}

@@ -1,0 +1,46 @@
+{
+  "featureId": "merge-coordination-ui-fix",
+  "reviewedAt": "2026-04-10T13:55:00.000Z",
+  "commitId": "b5b44aad",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The feature adds merge coordination UI indicators (merge conflict warning, competing branch warning, product lock status, blocking reasons) to the DeliveryRunsSection in the AutopilotProjectTab. The implementation correctly fetches productLocks via usePluginData, computes merge conflicts and competing run warnings in useMemo hooks, color-codes run cards by state, and displays detailed blocking information in expanded run views. The ProductLock type is imported from constants.ts and the worker already provides DATA_KEYS.productLocks registration. TypeScript compiles cleanly.",
+    "issues": [
+      {
+        "file": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/ui/index.tsx",
+        "line": 580,
+        "severity": "non_blocking",
+        "description": "Variable shadowing: the useMemo is named 'competingRunWarnings' but the property accessed in render is 'competingRunWarnings' — consistent but the naming could be more descriptive (e.g., 'competingWarningsMap'). No functional issue."
+      },
+      {
+        "file": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/ui/index.tsx",
+        "line": 590,
+        "severity": "non_blocking",
+        "description": "Branch-base comparison only checks if the first path segment matches. If branch names contain slashes and the base segments differ but overlap (e.g., 'feature/a' vs 'feature/a/b'), the competing run detection may miss some cases. However this is a reasonable heuristic for the feature requirement."
+      },
+      {
+        "file": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/ui/index.tsx",
+        "line": 569,
+        "severity": "non_blocking",
+        "description": "The activeMergeConflicts computation only flags runs that have a branchName matching lock.targetBranch. If product locks are acquired based on other criteria (e.g., file path patterns, not just branch), the UI conflict detection would be incomplete. The worker.checkMergeConflict action exists but is not called from the UI — the UI derives conflicts client-side from the locks array. This is acceptable given the feature scope but worth noting if future lock criteria expand."
+      },
+      {
+        "file": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/ui/index.tsx",
+        "line": 626,
+        "severity": "non_blocking",
+        "description": "The merge conflict badge and competing warning badge are mutually exclusive (competing warning only shows when !hasMergeConflict), but the competing warning does not suppress when hasActiveLock. This is intentional per the feature requirements (distinct badges for distinct states) but means a run could show both a 'Competing Runs' and a 'Product Lock' badge simultaneously — which may be confusing. No blocking issue since the color coding on the card border handles the hierarchy."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "commands",
+      "observation": "Worker used 'node ./esbuild.config.mjs' to build the plugin, but this specific build command is not documented in .factory/services.yaml. The services.yaml documents 'pnpm build' as the main build command, but for the plugin example, the esbuild config script is the correct way to rebuild. This should be documented for workers building plugin examples.",
+      "evidence": "Transcript shows: cd packages/plugins/examples/plugin-autoresearch-improver && node ./esbuild.config.mjs"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation passes scrutiny. The merge coordination UI correctly adds conflict warnings, competing branch indicators, product lock status badges, and blocking reason display to the DeliveryRunsSection. TypeScript compiles cleanly and browser verification was performed. No blocking issues found; a few non-blocking observations about naming and the competing-run heuristic are documented but do not affect correctness."
+}
