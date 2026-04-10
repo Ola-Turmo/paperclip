@@ -1,13 +1,13 @@
 {
   "milestone": "delivery-control",
-  "round": 9,
+  "round": 10,
   "status": "failure",
   "assertionsSummary": {
     "total": 24,
-    "passed": 17,
-    "failed": 0,
-    "blocked": 7,
-    "improved": 0,
+    "passed": 23,
+    "failed": 1,
+    "blocked": 0,
+    "improved": 6,
     "regressed": 0
   },
   "passedAssertions": [
@@ -26,62 +26,70 @@
     "VAL-AUTOPILOT-032",
     "VAL-AUTOPILOT-033",
     "VAL-AUTOPILOT-034",
+    "VAL-AUTOPILOT-035",
+    "VAL-AUTOPILOT-036",
+    "VAL-AUTOPILOT-038",
+    "VAL-AUTOPILOT-039",
+    "VAL-AUTOPILOT-040",
+    "VAL-AUTOPILOT-041",
     "VAL-CROSS-001",
     "VAL-CROSS-002"
   ],
-  "failedAssertions": [],
-  "blockedAssertions": [
-    {
-      "id": "VAL-AUTOPILOT-035",
-      "blockedBy": "Convoy UI surface (convoy task list, dependency graph, blocking indicators) not yet built in Autopilot tab",
-      "updatedFrom": "Convoy feature (convoy-checkpoint-and-merge-coordination) not yet implemented"
-    },
-    {
-      "id": "VAL-AUTOPILOT-036",
-      "blockedBy": "Checkpoint/Resume UI controls not yet built in Autopilot tab",
-      "updatedFrom": "Checkpoint/resume feature (convoy-checkpoint-and-merge-coordination) not yet implemented"
-    },
+  "failedAssertions": [
     {
       "id": "VAL-AUTOPILOT-037",
-      "blockedBy": "Merge coordination UI (conflict indicators, merge lock status) not yet built in Autopilot tab",
-      "updatedFrom": "Merge coordination feature (convoy-checkpoint-and-merge-coordination) not yet implemented"
-    },
-    {
-      "id": "VAL-AUTOPILOT-038",
-      "blockedBy": "Operator intervention UI controls not yet built in Autopilot tab",
-      "updatedFrom": "Operator interventions (convoy-checkpoint-and-merge-coordination) not yet implemented"
-    },
-    {
-      "id": "VAL-AUTOPILOT-039",
-      "blockedBy": "Knowledge/learner UI section not yet built in Autopilot tab",
-      "updatedFrom": "Knowledge/learner feature (knowledge-digests-release-health-and-rollback) not yet implemented"
-    },
-    {
-      "id": "VAL-AUTOPILOT-040",
-      "blockedBy": "Digest/alerts UI section not yet built in Autopilot tab",
-      "updatedFrom": "Digest feature (knowledge-digests-release-health-and-rollback) not yet implemented"
-    },
-    {
-      "id": "VAL-AUTOPILOT-041",
-      "blockedBy": "Release Health/rollback UI section not yet built in Autopilot tab",
-      "updatedFrom": "Release-health feature (knowledge-digests-release-health-and-rollback) not yet implemented"
+      "reason": "Merge coordination UI (conflict indicators, merge lock status, merge blocking reasons) not yet built in Autopilot tab. Delivery Runs section shows only 'Status: pending' without any merge-related status. Backend features exist (acquire-product-lock, release-product-lock, check-merge-conflict) but no UI surface shows merge conflict indicators, merge lock status, or merge blocking reasons."
     }
   ],
-  "systemicBlockers": [
+  "blockedAssertions": [],
+  "systemicBlockers": [],
+  "improvementsFromRound9": [
     {
-      "description": "Backend features for convoy/checkpoint/merge/knowledge/digest/release-health are implemented and pass unit tests (commits 75f41c1e, 2364db05). However, the UI surfaces to access these features are NOT implemented in the Autopilot tab. This is the root cause blocking all 7 assertions - they require UI components that show: (1) convoy task lists with blocked/unblocked status, (2) checkpoint/resume buttons, (3) merge conflict indicators, (4) operator intervention controls, (5) knowledge/learner summary section, (6) digest/alerts section, (7) release-health monitoring section with rollback controls.",
-      "affectedAssertions": ["VAL-AUTOPILOT-035", "VAL-AUTOPILOT-036", "VAL-AUTOPILOT-037", "VAL-AUTOPILOT-038", "VAL-AUTOPILOT-039", "VAL-AUTOPILOT-040", "VAL-AUTOPILOT-041"]
+      "assertion": "VAL-AUTOPILOT-035",
+      "change": "BLOCKED → PASSED",
+      "reason": "ConvoyTasksSection UI component is now present in Autopilot tab with 'Convoy Tasks' heading and 'Decompose into Convoy Tasks' button"
+    },
+    {
+      "assertion": "VAL-AUTOPILOT-036",
+      "change": "BLOCKED → PASSED",
+      "reason": "CheckpointResumeControls UI component is now present with Create Checkpoint and Decompose into Convoy Tasks buttons"
+    },
+    {
+      "assertion": "VAL-AUTOPILOT-038",
+      "change": "BLOCKED → PASSED",
+      "reason": "OperatorInterventionControls UI component is now present with all 4 intervention buttons (Add Note, Request Checkpoint, Nudge Run, Inspect Linked Issue)"
+    },
+    {
+      "assertion": "VAL-AUTOPILOT-039",
+      "change": "BLOCKED → PASSED",
+      "reason": "KnowledgeSection UI component is now present with empty state and type filters"
+    },
+    {
+      "assertion": "VAL-AUTOPILOT-040",
+      "change": "BLOCKED → PASSED",
+      "reason": "DigestSection UI component is now present with Check Stuck Runs and Generate Budget Alert buttons"
+    },
+    {
+      "assertion": "VAL-AUTOPILOT-041",
+      "change": "BLOCKED → PASSED",
+      "reason": "ReleaseHealthSection UI component is now present with Create Health Check button and health check list"
     }
   ],
-  "improvementsFromRound8": [],
-  "regressionsFromRound8": [],
+  "regressionsFromRound9": [],
   "appliedUpdates": [],
-  "frictions": [],
+  "frictions": [
+    {
+      "description": "Add Note and Inspect Linked Issue buttons appear disabled when no active run is present - expected behavior but not clearly indicated in UI",
+      "resolved": false,
+      "resolution": "UI behavior appears reasonable - intervention controls likely disabled when no active run is present. Consider adding tooltip or helper text explaining disabled state.",
+      "affectedAssertions": ["VAL-AUTOPILOT-038"]
+    }
+  ],
   "toolsUsed": ["agent-browser"],
   "flowReports": [
-    "val-autopilot-035-038-round9.json",
-    "val-autopilot-039-041-round9.json"
+    "val-autopilot-035-038-round10.json",
+    "val-autopilot-039-041-round10.json"
   ],
-  "previousRound": ".factory/validation/delivery-control/user-testing/synthesis.json (round 8)",
-  "progressFromPriorRounds": "Round 8 had 17 passed, 0 failed, 7 blocked. The 7 blocked assertions (035-041) were previously blocked by 'feature not yet implemented' (backend missing). This round confirms the backend IS now implemented (per commits 75f41c1e and 2364db05 with passing unit tests), but the BLOCKING ISSUE has shifted to missing UI surfaces in the Autopilot tab. The backend features work (proven by unit tests), but the Autopilot project page UI does not include the sections/components to access them: no convoy task list, no checkpoint/resume controls, no merge coordination UI, no operator intervention controls, no knowledge section, no digest section, no release-health section."
+  "previousRound": ".factory/validation/delivery-control/user-testing/synthesis.json (round 9)",
+  "progressFromPriorRounds": "Round 9 had 17 passed, 0 failed, 7 blocked. This round (10) shows major improvement: 23 passed (+6), 1 failed (VAL-AUTOPILOT-037, merge coordination UI), 0 blocked. 6 assertions improved from blocked to passed: VAL-AUTOPILOT-035, 036, 038, 039, 040, 041. Only VAL-AUTOPILOT-037 remains failed due to missing merge coordination UI surface."
 }

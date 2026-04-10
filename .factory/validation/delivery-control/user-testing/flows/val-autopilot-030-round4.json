@@ -1,0 +1,55 @@
+{
+  "groupId": "VAL-AUTOPILOT-030",
+  "testedAt": "2026-04-10T09:45:00Z",
+  "isolation": {
+    "paperclipUrl": "http://localhost:3100",
+    "companyId": "fbba62ed-3883-4007-af12-c1c30673b752",
+    "projectId": "3a1f2e81-0da8-4d2a-914d-293b380bce7e",
+    "pluginId": "06ec1b7f-72b2-48c5-a9c5-aae0824b5d50",
+    "pluginKey": "paperclip.autoresearch-improver-example",
+    "projectName": "Autopilot Test Project"
+  },
+  "toolsUsed": ["agent-browser", "curl"],
+  "assertions": [
+    {
+      "id": "VAL-AUTOPILOT-030",
+      "title": "Planning flow is created for approved ideas",
+      "status": "partial",
+      "steps": [
+        { "action": "Navigate to Autopilot tab in project", "expected": "Autopilot tab loaded with Ideas and Swipe Review sections", "observed": "Autopilot tab loaded successfully with Ideas section (4 ideas) and Swipe Review section visible" },
+        { "action": "Observe Ideas section", "expected": "Ideas visible with Pass/Maybe/Yes/Now buttons in Swipe Review", "observed": "4 ideas visible with swipe buttons (Pass, Maybe, Yes, Now) in Swipe Review section" },
+        { "action": "Click Yes on an idea", "expected": "Idea status changes to approved, planning artifact is created", "observed": "Clicking Yes calls recordSwipe action. recordSwipe updates idea status to 'approved' and updates preference profile. Does NOT automatically create planning artifact." },
+        { "action": "Verify planning artifact creation via API", "expected": "Planning artifact exists for the swiped idea", "observed": "API returned 3 planning artifacts for idea fa1291c9-be0a-4112-bf1c-641bb29fe991. Each has: scope, dependencies, tests, executionMode (simple), approvalMode (manual), automationTier (supervised)" },
+        { "action": "Check delivery run creation", "expected": "Delivery run created after approval", "observed": "API returned 1 delivery run: runId=ba8dcb17-478d-4e72-9d09-0221b21e08fc, status=pending, automationTier=supervised" },
+        { "action": "Verify DeliveryRunSection in UI", "expected": "DeliveryRunSection shows the run", "observed": "DeliveryRunSection visible in UI with empty state 'No delivery runs yet.' in current viewport - may need scrolling to see runs" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "evidence/delivery-control/030-flow/VAL-AUTOPILOT-030-autopilot-tab.png",
+          "evidence/delivery-control/030-flow/VAL-AUTOPILOT-030-swipe-review-with-ideas.png",
+          "evidence/delivery-control/030-flow/VAL-AUTOPILOT-030-ideas-and-swipe.png",
+          "evidence/delivery-control/030-flow/VAL-AUTOPILOT-030-after-swipe.png",
+          "evidence/delivery-control/030-flow/VAL-AUTOPILOT-030-swipe-feedback.png",
+          "evidence/delivery-control/030-flow/VAL-AUTOPILOT-030-delivery-runs-visible.png"
+        ],
+        "consoleErrors": "none",
+        "network": "POST /api/plugins/06ec1b7f-72b2-48c5-a9c5-aae0824b5d50/bridge/data -> 200 with planning artifacts (3 found), delivery runs (1 found)"
+      },
+      "issues": "The recordSwipe action handler does NOT automatically create a planning artifact. It only: (1) records the swipe event, (2) updates idea status to approved, (3) updates preference profile. The planning artifacts exist in the system but were created by a separate mechanism (not automatically from swiping). The createPlanningArtifact action exists but is not called from recordSwipe. This means the automatic flow from idea approval to planning artifact creation is not fully wired."
+    }
+  ],
+  "frictions": [
+    {
+      "description": "recordSwipe action does NOT automatically create planning artifact - planning artifacts exist but from separate creation flow",
+      "resolved": false,
+      "affectedAssertions": ["VAL-AUTOPILOT-030"]
+    },
+    {
+      "description": "Browser ref IDs get invalidated frequently requiring re-snapshot before each interaction",
+      "resolved": true,
+      "resolution": "Re-snapshot after page transitions and before important interactions"
+    }
+  ],
+  "blockers": [],
+  "summary": "VAL-AUTOPILOT-030: Planning artifacts exist in the system (3 artifacts found for one idea, plus 1 delivery run created). However, the recordSwipe action handler does NOT automatically create planning artifacts - it only updates the idea status and preference profile. The createPlanningArtifact action exists but is not wired into the swipe flow. The assertion is partial: artifacts are being created (by some mechanism) and have correct structure, but the automatic flow from idea approval to planning artifact creation is not implemented in the swipe handler."
+}

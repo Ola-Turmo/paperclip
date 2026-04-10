@@ -1,0 +1,116 @@
+{
+  "groupId": "val-autopilot-033-034",
+  "testedAt": "2026-04-10T09:45:00.000Z",
+  "isolation": {
+    "paperclipUrl": "http://localhost:3100",
+    "companyId": "fbba62ed-3883-4007-af12-c1c30673b752",
+    "projectId": "3a1f2e81-0da8-4d2a-914d-293b380bce7e",
+    "projectName": "Autopilot Test Project",
+    "plugin": "autoresearch-improver"
+  },
+  "toolsUsed": ["agent-browser", "curl"],
+  "assertions": [
+    {
+      "id": "VAL-AUTOPILOT-033",
+      "title": "Budget caps pause future runs",
+      "status": "failed",
+      "steps": [
+        {
+          "action": "Navigate to Autopilot tab",
+          "expected": "Autopilot settings visible with budget information",
+          "observed": "Autopilot settings visible. Budget shows 60 minutes/week. No paused state visible when autopilot is running normally."
+        },
+        {
+          "action": "Navigate to Budget tab",
+          "expected": "Budget tab shows pause indicator if budget exceeded",
+          "observed": "Budget tab shows only '0.00' USD budget input and 'Set budget' button. No pause badge, no pause reason displayed."
+        },
+        {
+          "action": "Check UI code for pause indicator",
+          "expected": "Pause badge should be visible when autopilot.paused=true or budgetQuery.data?.paused=true",
+          "observed": "Code in AutopilotSettings.tsx shows pause badge logic exists: '((budgetQuery.data?.paused && budgetQuery.data?.pauseReason) || (autopilot && autopilot.paused))' but it does not appear in the rendered UI during normal operation."
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "delivery-control/033-034-budget-pause/VAL-AUTOPILOT-033-budget-tab.png",
+          "delivery-control/033-034-budget-pause/VAL-AUTOPILOT-034-autopilot-paused-state.png"
+        ],
+        "consoleErrors": "WebSocket closed without opened (6 instances) - appears to be a known connection issue, not blocking",
+        "network": "All API calls via Convex broker, not standard /api/* routes"
+      },
+      "issues": "Budget pause state is NOT visibly surfaced in the UI. The backend code has checkBudgetAndPauseIfNeeded but the UI does not display a pause badge when budget is exceeded. Round 3 finding confirmed: 'no Paused state indicator is visible in the Budget tab or Autopilot Settings when autopilot is running normally.' This round 4 test confirms the feature (pause badge display) was NOT completed."
+    },
+    {
+      "id": "VAL-AUTOPILOT-034",
+      "title": "Operator can pause and resume autopilot or a specific run",
+      "status": "failed",
+      "steps": [
+        {
+          "action": "Navigate to Autopilot tab - initial state",
+          "expected": "'Pause Autopilot' button visible (running state)",
+          "observed": "'Pause Autopilot' button visible with 'Enable Product Autopilot' checkbox checked"
+        },
+        {
+          "action": "Click 'Pause Autopilot' button",
+          "expected": "Button changes to 'Resume Autopilot', indicating paused state",
+          "observed": "Button immediately changed to 'Resume Autopilot' - pause action confirmed working at UI level"
+        },
+        {
+          "action": "Reload page to verify pause state persistence",
+          "expected": "Autopilot remains paused, 'Resume Autopilot' button visible",
+          "observed": "Page reloaded to autopilot tab URL '/TES/projects/autopilot-test-project?tab=...'. 'Pause Autopilot' button visible again - paused state NOT persisted across reload"
+        },
+        {
+          "action": "Click 'Pause Autopilot' again, then click 'Resume Autopilot'",
+          "expected": "Resume restores running state, button changes back to 'Pause Autopilot'",
+          "observed": "Clicked Pause, then clicked Resume button, but UI still showed 'Resume Autopilot' button - resume action does not properly transition UI back to running state"
+        },
+        {
+          "action": "Wait and re-snapshot after resume click",
+          "expected": "Snapshot shows 'Pause Autopilot' button",
+          "observed": "After 5 second wait, snapshot still shows 'Resume Autopilot' button - resume action appears to fail silently"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "delivery-control/033-034-budget-pause/VAL-AUTOPILOT-034-before-pause.png",
+          "delivery-control/033-034-budget-pause/VAL-AUTOPILOT-034-pause-button-changed.png",
+          "delivery-control/033-034-budget-pause/VAL-AUTOPILOT-034-autopilot-paused-state.png",
+          "delivery-control/033-034-budget-pause/VAL-AUTOPILOT-034-after-resume-running.png"
+        ],
+        "consoleErrors": "WebSocket closed without opened (6 instances)",
+        "network": "Pause/Resume via plugin SDK action system (not REST API)"
+      },
+      "issues": "Two issues found: (1) Pause state does NOT persist across page reload - clicking Pause then reloading shows 'Pause Autopilot' button again instead of 'Resume Autopilot'. (2) Resume action does NOT properly transition UI back to running state - clicking Resume leaves UI stuck showing 'Resume Autopilot' button. The pauseAutopilot and resumeAutopilot actions need backend implementation fixes."
+    }
+  ],
+  "frictions": [
+    {
+      "description": "Pause state reverts on page reload - backend persistence issue",
+      "resolved": false,
+      "resolution": "None - backend bug",
+      "affectedAssertions": ["VAL-AUTOPILOT-034"]
+    },
+    {
+      "description": "Resume action fails to transition UI back to running state",
+      "resolved": false,
+      "resolution": "None - backend bug",
+      "affectedAssertions": ["VAL-AUTOPILOT-034"]
+    },
+    {
+      "description": "No budget pause badge visible in Budget tab or Autopilot Settings when autopilot is paused due to budget",
+      "resolved": false,
+      "resolution": "None - feature not implemented",
+      "affectedAssertions": ["VAL-AUTOPILOT-033"]
+    },
+    {
+      "description": "WebSocket connection errors (6 instances) - likely related to Convex broker setup, non-blocking",
+      "resolved": false,
+      "resolution": "Non-blocking cosmetic issue",
+      "affectedAssertions": []
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 2 assertions: VAL-AUTOPILOT-033 failed (no budget pause indicator visible), VAL-AUTOPILOT-034 failed (pause state does not persist on reload, resume action fails to restore running state). Both assertions remain broken from round 3 - no fixes applied in this iteration."
+}
