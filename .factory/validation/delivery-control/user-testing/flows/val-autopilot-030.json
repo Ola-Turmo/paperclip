@@ -1,82 +1,98 @@
 {
-  "groupId": "val-autopilot-030",
-  "testedAt": "2026-04-09T21:15:00.000Z",
-  "isolation": {
-    "appUrl": "http://localhost:3100",
-    "session": "4660e352b63c__val030",
-    "companyId": "efe86897-afa7-4583-9a50-99bf210a7288",
-    "projectId": "autopilot-browser-verification-project",
-    "pluginInstanceId": "3b70e344-41ec-4fe1-bdfc-8e4f778f94b9"
-  },
-  "toolsUsed": ["agent-browser", "curl"],
-  "assertions": [
-    {
-      "id": "VAL-AUTOPILOT-030",
-      "title": "Planning flow is created for approved ideas",
-      "status": "blocked",
-      "steps": [
-        {
-          "action": "Navigate to Autopilot tab in project",
-          "expected": "Autopilot configuration page loads with Ideas and Swipe sections",
-          "observed": "Autopilot tab loaded successfully with settings, Product Program, Research, Ideas, and Swipe sections visible"
-        },
-        {
-          "action": "Add a new idea through the Ideas form",
-          "expected": "Idea is created and appears in the ideas list",
-          "observed": "Idea form accepts title and description, Add Idea button is present"
-        },
-        {
-          "action": "API call to /api/plugins/:pluginId/data/ideas",
-          "expected": "Returns list of ideas with 200 status",
-          "observed": "API returned error: 'No data handler registered for key \"ideas\"'"
-        },
-        {
-          "action": "API call to /api/plugins/:pluginId/data/planning-artifacts",
-          "expected": "Returns planning artifacts with 200 status",
-          "observed": "API returned error: 'No data handler registered for key \"planning-artifacts\"'"
-        },
-        {
-          "action": "Inspect worker code for ideas and planning artifact data handlers",
-          "expected": "Data handlers are registered for ideas and planning-artifacts",
-          "observed": "Root worker.ts only registers: autopilotProject, autopilotProjects, productProgramRevision, productProgramRevisions. Ideas and planningArtifacts handlers are defined in autopilot/worker.ts but that file is NOT the entrypoint (manifest points to root worker.ts)"
-        }
-      ],
-      "evidence": {
-        "screenshots": [
-          "delivery-control/val-autopilot-030/VAL-AUTOPILOT-030-initial-load.png",
-          "delivery-control/val-autopilot-030/VAL-AUTOPILOT-030-autopilot-tab.png",
-          "delivery-control/val-autopilot-030/VAL-AUTOPILOT-030-autopilot-reloaded.png"
-        ],
-        "consoleErrors": "WebSocket closed without opened (non-critical)",
-        "network": "POST /api/plugins/3b70e344-41ec-4fe1-bdfc-8e4f778f94b9/data/ideas -> 502 with error 'No data handler registered for key \"ideas\"'"
+  "testId": "VAL-AUTOPILOT-030",
+  "milestone": "delivery-control",
+  "title": "Planning flow is created for approved ideas",
+  "tool": "agent-browser",
+  "timestamp": "2026-04-10T00:00:00Z",
+  "session": "8822510eaa69__val030",
+  "pluginId": "3b70e344-41ec-4fe1-bdfc-8e4f778f94b9",
+  "pluginKey": "paperclip.autoresearch-improver-example",
+  "companyId": "efe86897-afa7-4583-9a50-99bf210a7288",
+  "projectId": "autopilot-browser-verification-project",
+  "description": "A Yes or Now idea produces a planning artifact that summarizes scope, dependencies, tests, and recommended execution mode.",
+  "evidence": {
+    "screenshots": [
+      "evidence/delivery-control/val-autopilot-030/autopilot-initial-state.png",
+      "evidence/delivery-control/val-autopilot-030/autopilot-scroll-down.png"
+    ],
+    "network": [
+      {
+        "endpoint": "POST /api/plugins/3b70e344-41ec-4fe1-bdfc-8e4f778f94b9/data/ideas",
+        "method": "POST",
+        "status": 200,
+        "response": "[]"
       },
-      "issues": "The ideas and planningArtifacts data handlers are NOT registered in the root worker.ts. They exist only in autopilot/worker.ts which is NOT the plugin entrypoint. This means: (1) Ideas data cannot be fetched via the API, (2) Planning artifacts cannot be created or fetched, (3) The validation assertion VAL-AUTOPILOT-030 cannot be tested because the feature is not implemented."
+      {
+        "endpoint": "POST /api/plugins/3b70e344-41ec-4fe1-bdfc-8e4f778f94b9/data/planning-artifacts",
+        "method": "POST",
+        "status": 200,
+        "response": "[]"
+      },
+      {
+        "endpoint": "POST /api/plugins/3b70e344-41ec-4fe1-bdfc-8e4f778f94b9/actions/record-swipe",
+        "method": "POST",
+        "status": 200,
+        "response": "{\"code\":\"WORKER_ERROR\",\"message\":\"No action handler registered for key \\\"record-swipe\\\"\"}"
+      }
+    ],
+    "consoleErrors": []
+  },
+  "findings": {
+    "dataHandlers": {
+      "ideas": {
+        "registered": true,
+        "apiStatus": 200,
+        "response": "[]",
+        "notes": "Data handler is registered and accessible via API"
+      },
+      "planningArtifacts": {
+        "registered": true,
+        "apiStatus": 200,
+        "response": "[]",
+        "notes": "Data handler is registered and accessible via API"
+      }
+    },
+    "actionHandlers": {
+      "recordSwipe": {
+        "registered": false,
+        "apiStatus": 200,
+        "response": "{\"code\":\"WORKER_ERROR\",\"message\":\"No action handler registered for key \\\"record-swipe\\\"\"}",
+        "notes": "Action handler is NOT registered in root worker.ts - it only exists in autopilot/worker.ts"
+      }
+    },
+    "uiElements": {
+      "swipeSection": {
+        "visible": false,
+        "notes": "The SwipeSection with Yes/Now swipe buttons was not visible in the current UI view. May require scrolling to find."
+      },
+      "planningArtifactSection": {
+        "visible": false,
+        "notes": "Planning artifact creation section was not observed in the visible UI."
+      }
     }
-  ],
-  "frictions": [
+  },
+  "flowValidation": {
+    "ideasDataAccessible": true,
+    "planningArtifactsDataAccessible": true,
+    "recordSwipeActionAvailable": false,
+    "planningArtifactCreationActionAvailable": false,
+    "fullFlowTestable": false
+  },
+  "issues": [
     {
-      "description": "Interactive snapshot does not show full page content - Ideas and Swipe sections appear to be below fold but snapshot truncates",
-      "resolved": false,
-      "resolution": "Used full page screenshot instead to verify sections exist",
-      "affectedAssertions": ["VAL-AUTOPILOT-030"]
-    }
-  ],
-  "blockers": [
-    {
-      "description": "Ideas data handler not registered in root worker.ts - API returns 'No data handler registered for key \"ideas\"'",
-      "affectedAssertions": ["VAL-AUTOPILOT-030"],
-      "quickFixAttempted": "Verified via curl that endpoint returns error; inspected worker.ts source code confirms handler is missing from root worker registration"
+      "severity": "blocking",
+      "description": "The recordSwipe action handler is NOT registered in root worker.ts. It exists in autopilot/worker.ts but not in the root worker entry point.",
+      "location": "packages/plugins/examples/plugin-autoresearch-improver/src/worker.ts",
+      "impact": "Cannot swipe ideas via API to transition them to approved/now status. The createPlanningArtifact action is also not verified as accessible."
     },
     {
-      "description": "Planning artifacts data handler not registered - feature for VAL-AUTOPILOT-030 does not exist in codebase",
-      "affectedAssertions": ["VAL-AUTOPILOT-030"],
-      "quickFixAttempted": "Verified via curl and source code inspection that planningArtifacts handler is missing"
-    },
-    {
-      "description": "autopilot/worker.ts is not the plugin entrypoint - its data handlers are never executed",
-      "affectedAssertions": ["VAL-AUTOPILOT-030"],
-      "quickFixAttempted": "Checked manifest.ts - entrypoints.worker points to './dist/worker.js' (root), not './dist/autopilot/worker.js'"
+      "severity": "info",
+      "description": "Ideas data handler and planningArtifacts data handler ARE now registered and return 200 from the API.",
+      "location": "packages/plugins/examples/plugin-autoresearch-improver/src/worker.ts (lines ~2475 and ~2516)",
+      "impact": "Data fetching works, but action to trigger planning artifact creation is missing."
     }
   ],
-  "summary": "Tested 1 assertion (VAL-AUTOPILOT-030): BLOCKED. The planning artifact feature described in the validation contract is not implemented. The ideas and planningArtifacts data handlers exist in autopilot/worker.ts but are not registered in the root worker.ts which is the actual plugin entrypoint. The swipe action (Yes/Now) changes idea status to 'approved' but does NOT automatically create planning artifacts as specified in VAL-AUTOPILOT-030. The feature needs to be implemented by either: (1) Moving the data handler registrations from autopilot/worker.ts to root worker.ts, OR (2) Creating planning artifact data handlers in root worker.ts and connecting them to the swipe flow."
+  "verdict": "PARTIAL",
+  "verdictReason": "Data handlers for ideas and planningArtifacts are correctly registered and return 200. However, the recordSwipe action handler is NOT registered, preventing the full flow (swipe idea -> create planning artifact) from being tested. The flow is partially implemented but the critical recordSwipe action is missing from the root worker entry point.",
+  "recommendation": "Register the recordSwipe action handler in root worker.ts and verify createPlanningArtifact action is also accessible. Then re-test the full flow: add idea, swipe Yes/Now, verify planning artifact created."
 }

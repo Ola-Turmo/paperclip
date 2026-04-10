@@ -1,0 +1,151 @@
+{
+  "assertionId": "VAL-AUTOPILOT-031",
+  "title": "Automation tiers enforce the configured approval path",
+  "status": "partial",
+  "browserVerification": {
+    "tool": "agent-browser",
+    "session": "8822510eaa69__val031034",
+    "steps": [
+      {
+        "action": "Navigate to project page",
+        "result": "Successfully loaded Autopilot Browser Verification Project"
+      },
+      {
+        "action": "Click Autopilot tab",
+        "result": "Autopilot tab loaded with settings section"
+      },
+      {
+        "action": "Click automation tier combobox",
+        "result": "Dropdown expanded and all three options visible"
+      },
+      {
+        "action": "Select 'Semi-Auto' tier",
+        "result": "Option selected successfully using agent-browser select command"
+      }
+    ],
+    "screenshots": [
+      "01_initial_load.png",
+      "02_project_page.png",
+      "03_autopilot_tab.png",
+      "04_semiauto_tier_selected.png"
+    ],
+    "finding": "The automation tier dropdown is now interactable. Three tiers are available: Supervised (requires approval for each run), Semi-Auto (runs automatically, pauses on issues), Full Auto (fully autonomous). The dropdown options are visible and selectable. Previously this was a blocker. However, the approval enforcement behavior requires actual delivery run creation to fully validate - the UI shows the tier selection but not the downstream approval gate behavior."
+  },
+  "evidence": {
+    "dropdownOptions": [
+      "Supervised — requires approval for each run",
+      "Semi-Auto — runs automatically, pauses on issues",
+      "Full Auto — fully autonomous operation"
+    ],
+    "selectedTier": "semiauto",
+    "networkCalls": "GET delivery run endpoint was not directly tested via network inspection as no delivery runs section is visible in UI"
+  }
+}
+{
+  "assertionId": "VAL-AUTOPILOT-032",
+  "title": "Delivery run uses an isolated workspace and leased port",
+  "status": "missing-ui",
+  "browserVerification": {
+    "tool": "agent-browser",
+    "session": "8822510eaa69__val031034",
+    "steps": [
+      {
+        "action": "Navigate to Autopilot tab",
+        "result": "Autopilot tab loaded"
+      },
+      {
+        "action": "Scroll through entire autopilot surface",
+        "result": "No delivery runs section, runs list, or 'Create Delivery Run' button found"
+      },
+      {
+        "action": "Check for workspace/lease metadata display",
+        "result": "No workspace metadata section visible in the autopilot tab UI"
+      }
+    ],
+    "screenshots": [
+      "07_autopilot_top.png",
+      "08_autopilot_full_page.png"
+    ],
+    "finding": "The backend registers data handlers for deliveryRuns, workspaceLeases, companyBudgets in worker.ts. However, the UI (src/autopilot/ui/index.tsx) does not have any component rendering delivery runs or workspace lease information. No delivery run creation form, runs list, or workspace metadata display exists in the autopilot tab surface. The UI sections found are: Autopilot Settings (with tier selector), Product Program Editor, Research, Ideas, Swipe Review, and Preference Profile. VAL-AUTOPILOT-032 cannot be validated in the browser without UI additions."
+  },
+  "evidence": {
+    "backendHandlers": [
+      "ctx.data.register(AUTOPILOT_DATA_KEYS.deliveryRuns, ...)",
+      "ctx.data.register(AUTOPILOT_DATA_KEYS.workspaceLease, ...)",
+      "ctx.data.register(AUTOPILOT_DATA_KEYS.workspaceLeases, ...)"
+    ],
+    "uiComponents": "ResearchSection, IdeasSection, SwipeSection, PreferenceSection, AutopilotSettings, ProductProgramEditor - no DeliveryRunSection"
+  }
+}
+{
+  "assertionId": "VAL-AUTOPILOT-033",
+  "title": "Budget caps pause future runs",
+  "status": "partial",
+  "browserVerification": {
+    "tool": "agent-browser",
+    "session": "8822510eaa69__val031034",
+    "steps": [
+      {
+        "action": "Click Budget tab",
+        "result": "Budget tab loaded with '0.00' textbox and 'Update budget' button"
+      },
+      {
+        "action": "Inspect budget tab content",
+        "result": "Project-level budget field visible but company-wide budget cap display not visible"
+      }
+    ],
+    "screenshots": [
+      "05_budget_tab.png",
+      "05b_budget_tab_full.png",
+      "09_budget_tab_full.png",
+      "10_budget_tab_scrolled.png"
+    ],
+    "finding": "The Budget tab shows a project-level budget input (textbox '0.00' with 'Update budget' button). There are also notifications with 'View run' and 'View agent' links suggesting some budget tracking exists. The backend has companyBudget data handlers that enforce pause behavior when autopilot budget minutes are exceeded (see worker.ts check: 'if (companyBudget.autopilotUsedMinutes >= companyBudget.autopilotBudgetMinutes) { companyBudget.paused = true; companyBudget.pauseReason = \"Autopilot budget minutes exceeded\"; }'). However, the UI does not display a 'paused' state for budgets in the Budget tab. The AutopilotSettings component shows a paused state for the autopilot itself (when autopilot.paused is true), but not for company budgets specifically. Budget cap enforcement cannot be fully tested in browser without setting actual budget values and exhausting them."
+  },
+  "evidence": {
+    "budgetTabFields": [
+      "textbox '0.00' (project budget minutes)",
+      "button 'Update budget'"
+    ],
+    "backendPauseLogic": "check-budget-and-pause-if-needed action sets companyBudget.paused = true when autopilotUsedMinutes >= autopilotBudgetMinutes",
+    "consoleErrors": "Multiple 502 Bad Gateway errors for failed resource loads"
+  }
+}
+{
+  "assertionId": "VAL-AUTOPILOT-034",
+  "title": "Operator can pause and resume autopilot or a specific run",
+  "status": "partial",
+  "browserVerification": {
+    "tool": "agent-browser",
+    "session": "8822510eaa69__val031034",
+    "steps": [
+      {
+        "action": "Navigate to Autopilot tab",
+        "result": "Autopilot settings loaded with automation tier selector"
+      },
+      {
+        "action": "Inspect for pause/resume controls",
+        "result": "No Pause/Resume buttons found in autopilot settings or elsewhere in the tab"
+      },
+      {
+        "action": "Check autopilot.paused display",
+        "result": "AutopilotSettings component has logic to display 'Paused:' message when autopilot.paused is true (line: 'autopilot && autopilot.paused && (<div>Paused: {autopilot.pauseReason}</div>)')"
+      }
+    ],
+    "screenshots": [
+      "07_autopilot_top.png",
+      "08_autopilot_full_page.png"
+    ],
+    "finding": "The backend registers pauseAutopilot and resumeAutopilot actions (ACTION_KEYS.pauseAutopilot, ACTION_KEYS.resumeAutopilot in constants.ts, implemented in autopilot/worker.ts). The AutopilotSettings component has code to display a paused state message when autopilot.paused is true. However, no Pause/Resume buttons are visible in the UI - neither for the autopilot project level nor for individual delivery runs. The backend actions exist but no UI controls invoke them. Additionally, there is no delivery run section in the UI (see VAL-AUTOPILOT-032), so run-level pause/resume cannot be tested. The network calls for POST pause/resume were not exercised because no UI buttons exist to trigger them."
+  },
+  "evidence": {
+    "backendActions": [
+      "pauseAutopilot - sets autopilot.paused = true with pauseReason",
+      "resumeAutopilot - sets autopilot.paused = false",
+      "pauseDeliveryRun - pauses specific run",
+      "resumeDeliveryRun - resumes specific run"
+    ],
+    "uiDisplayCode": "autopilot && autopilot.paused && (<div><strong>Paused:</strong> {autopilot.pauseReason}</div>)",
+    "missingUI": "No Pause/Resume buttons in autopilot settings section"
+  }
+}
