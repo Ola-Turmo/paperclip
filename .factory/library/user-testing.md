@@ -52,3 +52,22 @@ Validators should explicitly cover:
 - Concurrency/isolation checks: explicit evidence of blocked downstream tasks, denied conflicting leases, or preserved resumed state
 - Cross-company checks: clear evidence of success in the allowed company and denial (`403`/`404`) in the disallowed company
 - Release-health/rollback checks: evidence of alert state, created rollback work, or revert result visibility
+
+## Plugin Installation for User Testing
+
+The `autoresearch-improver` plugin (`@paperclipai/plugin-autoresearch-improver-example`) is a **local plugin** not published to npm. To install it for browser testing:
+
+```bash
+# Install via Paperclip API using local path
+curl -X POST http://localhost:3100/api/plugins/install \
+  -H "Content-Type: application/json" \
+  -d '{"packageName": "/root/work/paperclip/packages/plugins/examples/plugin-autoresearch-improver", "isLocalPath": true}'
+```
+
+The plugin manifest declares these UI slots for projects:
+- `autopilot-project-tab` → Autopilot tab in project detail view
+- `autopilot-project-link` → "Autopilot" link in project sidebar
+
+After installation, navigate to any project → "Autopilot" tab to access the plugin UI.
+
+**Note**: The Plugin Manager UI ("Install Plugin" button) only supports npm package names, not local file paths. Use the API directly as shown above.

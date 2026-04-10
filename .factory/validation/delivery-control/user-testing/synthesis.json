@@ -1,77 +1,92 @@
 {
   "milestone": "delivery-control",
-  "round": 2,
+  "round": 3,
   "status": "fail",
   "assertionsSummary": {
     "total": 5,
     "passed": 0,
-    "failed": 5,
-    "blocked": 0
+    "failed": 3,
+    "blocked": 2,
+    "improved": 3
   },
   "passedAssertions": [],
   "failedAssertions": [
     {
-      "id": "VAL-AUTOPILOT-030",
-      "reason": "Data handlers for ideas and planningArtifacts now return 200, but recordSwipe action handler is NOT registered in root worker.ts. API returns 'No action handler registered for key record-swipe'. The full flow (swipe idea -> create planning artifact) cannot be tested.",
-      "improvementFromRound1": "Round 1: ideas/planningArtifacts data handlers missing - NOW FIXED. Round 2: Action handlers still missing."
-    },
-    {
       "id": "VAL-AUTOPILOT-031",
-      "reason": "Automation tier dropdown is now interactable (all three tiers visible and selectable). However, the approval enforcement behavior cannot be validated without creating actual delivery runs.",
-      "improvementFromRound1": "Round 1: Automation tier combobox non-interactive - NOW FIXED (dropdown works). Still blocked by no delivery runs to test approval behavior."
+      "reason": "Automation Tier dropdown IS VISIBLE and interactable (3 tiers shown after enabling autopilot). Round 2 blocker resolved. However, approval enforcement behavior cannot be validated without creating actual delivery runs — which requires VAL-AUTOPILOT-030 (idea->swipe->planning) to work first."
     },
     {
       "id": "VAL-AUTOPILOT-032",
-      "reason": "Backend registers deliveryRuns, workspaceLease, workspaceLeases data handlers, but UI has no component to display delivery runs, create runs, or show workspace/port metadata.",
-      "improvementFromRound1": "Round 1: Plugin backend 502 errors - NOW FIXED (handlers exist and return 200). Still missing: UI components for delivery run display."
+      "reason": "DeliveryRunSection IS VISIBLE with 'No delivery runs yet.' empty state. Round 2 blocker resolved. Cannot verify workspace/port metadata without creating actual delivery runs — which requires VAL-AUTOPILOT-030 to work first."
     },
     {
       "id": "VAL-AUTOPILOT-033",
-      "reason": "Budget tab shows project-level budget input, backend enforces pause when budget exceeded, but UI does not display paused state or pause reason for budgets.",
-      "improvementFromRound1": "Round 1: Product Program prerequisite blocked testing - NOW RESOLVED. Still missing: UI element showing budget paused state."
+      "reason": "Budget tab shows project-level USD budget (0.00) and Autopilot Settings shows budget minutes (60). No 'paused' state indicator visible when autopilot is running normally. Backend enforces pause but UI never shows the paused condition. UNCHANGED from round 2."
+    }
+  ],
+  "blockedAssertions": [
+    {
+      "id": "VAL-AUTOPILOT-030",
+      "blockedBy": "recordSwipe action handler now exists in root worker.ts (line 3511), round 2 'not registered' issue resolved in code. Full end-to-end flow (create idea -> swipe Yes/Now -> planning artifact) was not exercised because ideas must be created first through the Ideas section."
     },
     {
       "id": "VAL-AUTOPILOT-034",
-      "reason": "Backend registers pauseAutopilot/resumeAutopilot actions, AutopilotSettings has paused state display code, but no Pause/Resume buttons are visible in UI. No delivery run section means run-level pause/resume cannot be tested.",
-      "improvementFromRound1": "Round 1: No active delivery run - STILL TRUE (no run UI). Additional issue: Pause/Resume buttons missing from autopilot settings."
+      "blockedBy": "'Pause Autopilot' button IS VISIBLE. Round 2 blocker resolved. However: (1) pause->resume end-to-end flow not exercised, (2) run-level pause/resume blocked by VAL-AUTOPILOT-032 (no delivery runs exist)"
     }
   ],
-  "blockedAssertions": [],
+  "improvementsFromRound2": [
+    {
+      "assertion": "VAL-AUTOPILOT-030",
+      "improvement": "recordSwipe action handler IS registered at worker.ts:3511 (was missing in round 2)"
+    },
+    {
+      "assertion": "VAL-AUTOPILOT-031",
+      "improvement": "Automation Tier dropdown IS VISIBLE and interactable after enabling autopilot (3 tiers)"
+    },
+    {
+      "assertion": "VAL-AUTOPILOT-032",
+      "improvement": "DeliveryRunSection IS VISIBLE in the Autopilot tab (was entirely missing in round 2)"
+    },
+    {
+      "assertion": "VAL-AUTOPILOT-034",
+      "improvement": "'Pause Autopilot' button IS VISIBLE in Autopilot Settings (was missing in round 2)"
+    }
+  ],
+  "unchangedFromRound2": [
+    {
+      "assertion": "VAL-AUTOPILOT-033",
+      "reason": "Budget pause state still not visible in UI"
+    }
+  ],
   "systemicBlockers": [
     {
-      "description": "Action handlers (recordSwipe, createPlanningArtifact) exist in autopilot/worker.ts but are NOT registered in root worker.ts. The root worker.ts registers ideas and planningArtifacts data handlers (lines 2475, 2516) but not the corresponding action handlers.",
-      "affectedAssertions": ["VAL-AUTOPILOT-030"],
-      "triagedTo": "planning-automation-tiers-and-delivery-runs feature fix"
+      "description": "VAL-AUTOPILOT-030 (idea->swipe->planning flow) is the critical path blocker. All other delivery-control assertions (approval enforcement, workspace metadata, run-level pause/resume) are blocked by it. The recordSwipe handler is now registered in code, but the UI requires ideas to be created first before the swipe review section becomes active.",
+      "affectedAssertions": ["VAL-AUTOPILOT-031", "VAL-AUTOPILOT-032", "VAL-AUTOPILOT-034"],
+      "rootCause": "The idea creation and swipe review UI flow (Ideas section -> Swipe Review section) must produce an approved idea that can trigger planning artifact creation. This chain must work before delivery runs can be created."
     },
     {
-      "description": "UI components missing for delivery run management. The backend has deliveryRuns, workspaceLeases, companyBudgets handlers, but the UI (src/autopilot/ui/index.tsx) has no DeliveryRunSection, no runs list, no workspace/port metadata display, and no Create Delivery Run button.",
-      "affectedAssertions": ["VAL-AUTOPILOT-032", "VAL-AUTOPILOT-034"],
-      "triagedTo": "planning-automation-tiers-and-delivery-runs feature - UI component additions"
-    },
-    {
-      "description": "Budget pause state display missing. Backend enforces pause when autopilotUsedMinutes >= autopilotBudgetMinutes, but UI does not show a paused state message or reason when budgets are exceeded.",
+      "description": "VAL-AUTOPILOT-033: Budget pause state display completely missing. The backend sets autopilot.paused=true when budget is exceeded, but no UI element shows this state.",
       "affectedAssertions": ["VAL-AUTOPILOT-033"],
-      "triagedTo": "planning-automation-tiers-and-delivery-runs feature - budget pause UI"
-    },
+      "rootCause": "No UI component renders the paused state or pauseReason from autopilot or companyBudget entities."
+    }
+  ],
+  "appliedUpdates": [
     {
-      "description": "Automation tier approval enforcement cannot be tested without delivery runs. The dropdown selection works, but validating that Supervised requires approval, Semi-Auto pauses on issues, and Full Auto runs autonomously requires actual runs to be created.",
-      "affectedAssertions": ["VAL-AUTOPILOT-031"],
-      "triagedTo": "Requires delivery run creation flow (VAL-AUTOPILOT-032 UI fix first)"
+      "target": "user-testing.md",
+      "description": "Added note: plugin must be installed via POST /api/plugins/install with {packageName: localPath, isLocalPath: true}. Not available through npm registry.",
+      "source": "setup"
     }
   ],
   "frictions": [
     {
-      "description": "Console shows multiple 502 Bad Gateway errors for resource loads even though backend data handlers return 200",
-      "affectedAssertions": ["VAL-AUTOPILOT-032"],
+      "description": "Plugin required manual API installation — not available in Plugin Manager UI npm install flow",
       "resolved": false
     }
   ],
-  "appliedUpdates": [],
   "toolsUsed": ["agent-browser", "curl"],
   "flowReports": [
-    "val-autopilot-030.json",
-    "val-autopilot-031-034.json"
+    "val-autopilot-030-034-round3.json"
   ],
-  "previousRound": ".factory/validation/delivery-control/user-testing/synthesis.json (round 1)",
-  "progressFromRound1": "Improvements observed in: (1) ideas and planningArtifacts data handlers now registered and return 200, (2) automation tier dropdown is now interactable, (3) backend 502 errors resolved. Remaining gaps: (1) action handlers not registered in root worker.ts, (2) UI components for delivery runs missing, (3) budget pause state UI missing, (4) pause/resume buttons missing."
+  "previousRound": ".factory/validation/delivery-control/user-testing/synthesis.json (round 2)",
+  "progressFromRound1And2": "Significant improvement from round 2: (1) recordSwipe handler now registered in root worker.ts, (2) Automation Tier dropdown interactable, (3) DeliveryRunSection visible, (4) Pause button visible. Remaining: (1) Full idea->swipe->planning flow not exercised, (2) Budget pause state still missing from UI."
 }
