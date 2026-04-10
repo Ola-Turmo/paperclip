@@ -1,0 +1,22 @@
+commands:
+  install: pnpm install
+  typecheck: pnpm -r typecheck
+  build: pnpm build
+  test: pnpm test:run
+  lint: pnpm -r lint
+  e2e: pnpm test:e2e
+
+services:
+  postgres:
+    start: pg_ctlcluster 16 main start
+    stop: pg_ctlcluster 16 main stop
+    healthcheck: pg_isready -p 5433
+    port: 5433
+    depends_on: []
+
+  paperclip:
+    start: DATABASE_URL="postgres://paperclip:paperclip@127.0.0.1:5433/paperclip" PAPERCLIP_MIGRATION_AUTO_APPLY=true PAPERCLIP_PORT=3100 pnpm dev
+    stop: lsof -ti :3100 | xargs kill
+    healthcheck: curl -sf http://localhost:3100/api/health
+    port: 3100
+    depends_on: [postgres]
