@@ -18,7 +18,9 @@ import {
   type SwipeEvent,
   type PreferenceProfile,
   type IdeaStatus,
-  type SwipeDecision
+  type SwipeDecision,
+  type DeliveryRun,
+  type CompanyBudget
 } from "../constants.js";
 
 type ProjectInfo = {
@@ -76,9 +78,11 @@ function formatDate(isoString: string): string {
 
 function AutopilotSettings({
   autopilot,
+  companyId,
   onSave
 }: {
   autopilot: AutopilotProject | null;
+  companyId: string;
   onSave: (updates: Partial<AutopilotProject>) => Promise<void>;
 }) {
   const [enabled, setEnabled] = useState(autopilot?.enabled ?? false);
@@ -88,6 +92,9 @@ function AutopilotSettings({
   const [workspaceId, setWorkspaceId] = useState(autopilot?.workspaceId ?? "");
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const pauseAutopilot = usePluginAction(ACTION_KEYS.pauseAutopilot);
+  const resumeAutopilot = usePluginAction(ACTION_KEYS.resumeAutopilot);
+  const budgetQuery = usePluginData<CompanyBudget | null>(DATA_KEYS.companyBudget, { companyId });
 
   useEffect(() => {
     if (autopilot) {
@@ -137,7 +144,19 @@ function AutopilotSettings({
             <select
               style={{ ...inputStyle, marginTop: 6 }}
               value={automationTier}
-              onChange={(e) => setAutomationTier(e.target.value as AutomationTier)}
+              onChange={(e) => {
+                const nextTier = e.target.value as AutomationTier;
+                setAutomationTier(nextTier);
+                if (enabled) {
+                  void onSave({
+                    enabled,
+                    automationTier: nextTier,
+                    budgetMinutes: parseInt(budgetMinutes, 10),
+                    repoUrl: repoUrl || undefined,
+                    workspaceId: workspaceId || undefined
+                  });
+                }
+              }}
             >
               <option value="supervised">Supervised — requires approval for each run</option>
               <option value="semiauto">Semi-Auto — runs automatically, pauses on issues</option>
@@ -192,7 +211,7 @@ function AutopilotSettings({
         )}
       </div>
 
-      {autopilot && autopilot.paused && (
+      {((budgetQuery.data?.paused && budgetQuery.data?.pauseReason) || (autopilot && autopilot.paused)) && (
         <div style={{
           marginTop: 8,
           padding: "10px 14px",
@@ -202,19 +221,33 @@ function AutopilotSettings({
           fontSize: 13,
           color: "#854d0e"
         }}>
-          <strong>Paused:</strong> {autopilot.pauseReason ?? "No reason provided"}
+          <strong>Paused:</strong> {budgetQuery.data?.pauseReason ?? autopilot?.pauseReason ?? "No reason provided"}
         </div>
       )}
+
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        {autopilot?.paused ? (
+          <button type="button" style={buttonStyle} onClick={async () => { await resumeAutopilot({ companyId, projectId: autopilot.projectId }); }}>
+            Resume Autopilot
+          </button>
+        ) : (
+          <button type="button" style={buttonStyle} onClick={async () => { await pauseAutopilot({ companyId, projectId: autopilot?.projectId ?? "" }); }}>
+            Pause Autopilot
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
 function ProductProgramEditor({
+  companyId,
   revision,
   revisionHistory,
   onSave,
   onCreateRevision
 }: {
+  companyId: string;
   revision: ProductProgramRevision | null;
   revisionHistory: RevisionHistory[];
   onSave: (content: string) => Promise<void>;
@@ -223,6 +256,9 @@ function ProductProgramEditor({
   const [content, setContent] = useState(revision?.content ?? "");
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const pauseAutopilot = usePluginAction(ACTION_KEYS.pauseAutopilot);
+  const resumeAutopilot = usePluginAction(ACTION_KEYS.resumeAutopilot);
+  const budgetQuery = usePluginData<CompanyBudget | null>(DATA_KEYS.companyBudget, { companyId });
   const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
@@ -271,7 +307,7 @@ function ProductProgramEditor({
         )}
       </div>
 
-      {showHistory && revisionHistory.length > 0 && (
+      {showHistory && (
         <div style={{
           border: "1px solid rgba(100, 116, 139, 0.25)",
           borderRadius: 10,
@@ -281,27 +317,33 @@ function ProductProgramEditor({
           background: "rgba(248, 250, 252, 0.5)"
         }}>
           <strong style={{ fontSize: 12, color: "#334155" }}>Revision History</strong>
-          {revisionHistory.map((rev) => (
-            <div key={rev.revisionId} style={{ marginTop: 8, fontSize: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <strong>v{rev.version}</strong>
-                <span style={{ opacity: 0.7 }}>{formatDate(rev.createdAt)}</span>
+          {revisionHistory.length > 0 ? (
+            revisionHistory.map((rev) => (
+              <div key={rev.revisionId} style={{ marginTop: 8, fontSize: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <strong>v{rev.version}</strong>
+                  <span style={{ opacity: 0.7 }}>{formatDate(rev.createdAt)}</span>
+                </div>
+                <div style={{
+                  marginTop: 4,
+                  padding: "6px 8px",
+                  background: "white",
+                  borderRadius: 6,
+                  border: "1px solid rgba(100, 116, 139, 0.15)",
+                  whiteSpace: "pre-wrap",
+                  fontSize: 11,
+                  maxHeight: 60,
+                  overflowY: "hidden"
+                }}>
+                  {rev.content.slice(0, 200)}{rev.content.length > 200 ? "..." : ""}
+                </div>
               </div>
-              <div style={{
-                marginTop: 4,
-                padding: "6px 8px",
-                background: "white",
-                borderRadius: 6,
-                border: "1px solid rgba(100, 116, 139, 0.15)",
-                whiteSpace: "pre-wrap",
-                fontSize: 11,
-                maxHeight: 60,
-                overflowY: "hidden"
-              }}>
-                {rev.content.slice(0, 200)}{rev.content.length > 200 ? "..." : ""}
-              </div>
+            ))
+          ) : (
+            <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+              No history yet.
             </div>
-          ))}
+          )}
         </div>
       )}
 
@@ -436,12 +478,14 @@ export function AutopilotProjectTab({ context }: PluginDetailTabProps) {
         <h3 style={{ marginTop: 0, marginBottom: 16, fontSize: 16 }}>Autopilot Settings</h3>
         <AutopilotSettings
           autopilot={autopilotQuery.data ?? null}
+          companyId={companyId}
           onSave={handleSaveAutopilot}
         />
       </section>
 
       <section style={cardStyle}>
         <ProductProgramEditor
+          companyId={companyId}
           revision={latestRevision}
           revisionHistory={revisionHistory}
           onSave={handleSaveProgram}
@@ -449,11 +493,78 @@ export function AutopilotProjectTab({ context }: PluginDetailTabProps) {
         />
       </section>
 
+      <DeliveryRunSection companyId={companyId} projectId={projectId} />
       <ResearchSection companyId={companyId} projectId={projectId} />
       <IdeasSection companyId={companyId} projectId={projectId} />
       <SwipeSection companyId={companyId} projectId={projectId} />
       <PreferenceSection companyId={companyId} projectId={projectId} />
     </div>
+  );
+}
+
+
+function DeliveryRunSection({ companyId, projectId }: { companyId: string; projectId: string }) {
+  const runsQuery = usePluginData<DeliveryRun[]>(DATA_KEYS.deliveryRuns, { companyId, projectId });
+  const runs = runsQuery.data ?? [];
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(runs[0]?.runId ?? null);
+
+  useEffect(() => {
+    if (!runs.some((run) => run.runId === expandedRunId)) {
+      setExpandedRunId(runs[0]?.runId ?? null);
+    }
+  }, [runs, expandedRunId]);
+
+  return (
+    <section style={cardStyle}>
+      <h3 style={{ marginTop: 0, marginBottom: 14, fontSize: 16 }}>Delivery Runs</h3>
+
+      {runs.length === 0 ? (
+        <p style={{ color: "#94a3b8", fontSize: 13 }}>No delivery runs yet.</p>
+      ) : (
+        <div style={{ display: "grid", gap: 10 }}>
+          {runs.map((run) => {
+            const isExpanded = expandedRunId === run.runId;
+            return (
+              <button
+                key={run.runId}
+                type="button"
+                onClick={() => setExpandedRunId(isExpanded ? null : run.runId)}
+                style={{
+                  ...buttonStyle,
+                  textAlign: "left",
+                  padding: 12,
+                  background: "white"
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <strong style={{ fontSize: 13 }}>Run {run.runId.slice(0, 8)}</strong>
+                    <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                      Workspace: {run.workspacePath}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right", fontSize: 12, color: "#334155" }}>
+                    <div>Status: {run.status}</div>
+                    <div>Port: {run.leasedPort ?? "—"}</div>
+                  </div>
+                </div>
+                {isExpanded && (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(100,116,139,0.15)", fontSize: 12, color: "#475569", display: "grid", gap: 4 }}>
+                    <div><strong>Branch:</strong> {run.branchName}</div>
+                    <div><strong>Idea:</strong> {run.ideaId}</div>
+                    <div><strong>Artifact:</strong> {run.artifactId}</div>
+                    <div><strong>Paused:</strong> {run.paused ? "Yes" : "No"}</div>
+                    {run.pauseReason && <div><strong>Pause reason:</strong> {run.pauseReason}</div>}
+                    <div><strong>Commit:</strong> {run.commitSha ?? "—"}</div>
+                    <div><strong>Completed:</strong> {run.completedAt ? formatDate(run.completedAt) : "—"}</div>
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
