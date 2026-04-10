@@ -59,6 +59,7 @@ import {
   type DeliveryRun,
   type WorkspaceLease,
   type CompanyBudget,
+  type ProductLock,
 } from "./autopilot/constants.js";
 import {
   asIdea,
@@ -96,6 +97,12 @@ import {
   findCompanyBudget,
   listCompanyBudgetEntities,
   upsertCompanyBudget,
+  asProductLock,
+  upsertProductLock,
+  findProductLock,
+  listProductLockEntities,
+  findActiveProductLock,
+  findBlockingLock,
 } from "./autopilot/helpers.js";
 import type {
   ApplyMode,
@@ -2613,6 +2620,24 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
     const entities = await listCompanyBudgetEntities(ctx, companyId);
     return entities.map(asCompanyBudget).filter((entry) => entry.companyId === companyId);
   });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.productLock, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    const projectId = typeof params.projectId === "string" ? params.projectId : "";
+    const lockId = typeof params.lockId === "string" ? params.lockId : "";
+    if (!companyId || !projectId || !lockId) return null;
+    const entity = await findProductLock(ctx, companyId, projectId, lockId);
+    return entity ? asProductLock(entity) : null;
+  });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.productLocks, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    const projectId = typeof params.projectId === "string" ? params.projectId : "";
+    if (!companyId || !projectId) return [];
+    const runId = typeof params.runId === "string" ? params.runId : undefined;
+    const entities = await listProductLockEntities(ctx, companyId, projectId, runId);
+    return entities.map(asProductLock).filter((entry) => entry.companyId === companyId);
+  });
 }
 
 async function registerActionHandlers(ctx: PluginContext): Promise<void> {
@@ -3673,6 +3698,90 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
 
     await upsertPreferenceProfile(ctx, profile);
     return profile;
+  });
+
+  // ─── Product Lock Action Handlers ──────────────────────────────────────────
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.acquireProductLock, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    const runId = typeof params.runId === "string" ? params.runId : "";
+    const targetBranch = typeof params.targetBranch === "string" ? params.targetBranch : "";
+    const lockType = (params.lockType === "product_lock" || params.lockType === "merge_lock")
+      ? params.lockType
+      : "product_lock";
+    const blockReason = typeof params.blockReason === "string" ? params.blockReason : undefined;
+    if (!companyId || !projectId || !runId || !targetBranch) {
+      throw new Error("companyId, projectId, runId, and targetBranch are required");
+    }
+
+    // Check if there's already an active lock on this branch
+    const existingLock = await findBlockingLock(ctx, companyId, projectId, targetBranch, runId);
+    if (existingLock) {
+      throw new Error(
+        `Cannot acquire lock: ${existingLock.lockType} already held by run ${existingLock.runId} on branch ${targetBranch}. Block reason: ${existingLock.blockReason ?? "None"}`
+      );
+    }
+
+    const runEntity = await findDeliveryRun(ctx, companyId, projectId, runId);
+    const run = runEntity ? asDeliveryRun(runEntity) : null;
+
+    const lock: ProductLock = {
+      lockId: randomUUID(),
+      companyId,
+      projectId,
+      runId,
+      lockType,
+      targetBranch,
+      targetPath: run?.workspacePath ?? "",
+      acquiredAt: nowIso(),
+      releasedAt: null,
+      isActive: true,
+      blockReason
+    };
+
+    await upsertProductLock(ctx, lock);
+    return lock;
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.releaseProductLock, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    const lockId = typeof params.lockId === "string" ? params.lockId : "";
+    if (!companyId || !projectId || !lockId) {
+      throw new Error("companyId, projectId, and lockId are required");
+    }
+
+    const lockEntity = await findProductLock(ctx, companyId, projectId, lockId);
+    if (!lockEntity) {
+      throw new Error("Product lock not found");
+    }
+
+    const lock = asProductLock(lockEntity);
+    lock.isActive = false;
+    lock.releasedAt = nowIso();
+    await upsertProductLock(ctx, lock);
+    return lock;
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.checkMergeConflict, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    const runId = typeof params.runId === "string" ? params.runId : "";
+    const targetBranch = typeof params.targetBranch === "string" ? params.targetBranch : "";
+    if (!companyId || !projectId || !runId || !targetBranch) {
+      throw new Error("companyId, projectId, runId, and targetBranch are required");
+    }
+
+    const blockingLock = await findBlockingLock(ctx, companyId, projectId, targetBranch, runId);
+    if (blockingLock) {
+      return {
+        hasConflict: true,
+        conflictReason: `Branch "${targetBranch}" is locked by ${blockingLock.lockType} from run ${blockingLock.runId}. ${blockingLock.blockReason ?? ""}`.trim(),
+        blockingLock
+      };
+    }
+    return { hasConflict: false, conflictReason: null, blockingLock: null };
   });
 }
 
