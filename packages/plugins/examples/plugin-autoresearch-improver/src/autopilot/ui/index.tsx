@@ -20,7 +20,16 @@ import {
   type IdeaStatus,
   type SwipeDecision,
   type DeliveryRun,
-  type CompanyBudget
+  type CompanyBudget,
+  type ConvoyTask,
+  type Checkpoint,
+  type OperatorIntervention,
+  type InterventionType,
+  type LearnerSummary,
+  type KnowledgeEntry,
+  type Digest,
+  type ReleaseHealthCheck,
+  type RollbackAction
 } from "../constants.js";
 
 type ProjectInfo = {
@@ -515,9 +524,15 @@ export function AutopilotProjectTab({ context }: PluginDetailTabProps) {
       </section>
 
       <DeliveryRunSection companyId={companyId} projectId={projectId} />
+      <ConvoyTasksSection companyId={companyId} projectId={projectId} />
+      <CheckpointResumeControls companyId={companyId} projectId={projectId} />
+      <OperatorInterventionControls companyId={companyId} projectId={projectId} />
       <ResearchSection companyId={companyId} projectId={projectId} />
       <IdeasSection companyId={companyId} projectId={projectId} />
       <SwipeSection companyId={companyId} projectId={projectId} />
+      <KnowledgeSection companyId={companyId} projectId={projectId} />
+      <DigestSection companyId={companyId} projectId={projectId} />
+      <ReleaseHealthSection companyId={companyId} projectId={projectId} />
       <PreferenceSection companyId={companyId} projectId={projectId} />
     </div>
   );
@@ -1003,6 +1018,1021 @@ function PreferenceSection({ companyId, projectId }: { companyId: string; projec
 // Note: autopilot is merged into the main plugin, so we use the main plugin's ID
 const AUTOPILOT_PLUGIN_KEY = "paperclip.autoresearch-improver-example";
 const AUTOPILOT_TAB_SLOT_ID = "autopilot-project-tab";
+
+// ─── Convoy Tasks Section ─────────────────────────────────────────────────────
+
+function ConvoyTasksSection({ companyId, projectId }: { companyId: string; projectId: string }) {
+  const runsQuery = usePluginData<DeliveryRun[]>(DATA_KEYS.deliveryRuns, { companyId, projectId });
+  const runs = runsQuery.data ?? [];
+  const selectedRunId = runs[0]?.runId ?? null;
+
+  const tasksQuery = usePluginData<ConvoyTask[]>(
+    DATA_KEYS.convoyTasks,
+    selectedRunId ? { companyId, projectId, runId: selectedRunId } : { companyId, projectId }
+  );
+  const tasks = tasksQuery.data ?? [];
+
+  const statusColor: Record<string, string> = {
+    pending: "#64748b",
+    blocked: "#f97316",
+    running: "#3b82f6",
+    passed: "#22c55e",
+    failed: "#ef4444",
+    skipped: "#a855f7"
+  };
+
+  const statusLabel: Record<string, string> = {
+    pending: "Pending",
+    blocked: "Blocked",
+    running: "Running",
+    passed: "Passed",
+    failed: "Failed",
+    skipped: "Skipped"
+  };
+
+  return (
+    <section style={cardStyle}>
+      <h3 style={{ marginTop: 0, marginBottom: 14, fontSize: 16 }}>Convoy Tasks</h3>
+
+      {runs.length === 0 ? (
+        <p style={{ color: "#94a3b8", fontSize: 13 }}>No delivery runs to show convoy tasks.</p>
+      ) : tasks.length === 0 ? (
+        <p style={{ color: "#94a3b8", fontSize: 13 }}>No convoy tasks yet. Tasks are created when a delivery run is decomposed into convoy mode.</p>
+      ) : (
+        <div style={{ display: "grid", gap: 8 }}>
+          {tasks.map((task) => (
+            <div
+              key={task.taskId}
+              style={{
+                padding: "10px 12px",
+                background: "white",
+                borderRadius: 10,
+                border: `2px solid ${statusColor[task.status] ?? "#e2e8f0"}`,
+                borderLeftWidth: 4,
+                fontSize: 12,
+                display: "grid",
+                gap: 4
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <strong style={{ fontSize: 13, color: "#1e293b" }}>{task.title}</strong>
+                <span style={{
+                  padding: "2px 8px",
+                  borderRadius: 6,
+                  background: `${statusColor[task.status]}20`,
+                  color: statusColor[task.status] ?? "#64748b",
+                  fontWeight: 600,
+                  fontSize: 11
+                }}>
+                  {statusLabel[task.status] ?? task.status}
+                </span>
+              </div>
+              {task.description && (
+                <div style={{ color: "#64748b", fontSize: 12 }}>{task.description}</div>
+              )}
+              {task.dependsOnTaskIds.length > 0 && (
+                <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  <span style={{ fontSize: 11, color: "#94a3b8" }}>Depends on:</span>
+                  {task.dependsOnTaskIds.map((depId) => {
+                    const depTask = tasks.find((t) => t.taskId === depId);
+                    return (
+                      <span
+                        key={depId}
+                        style={{
+                          padding: "1px 6px",
+                          borderRadius: 4,
+                          background: depTask ? `${statusColor[depTask.status] ?? "#e2e8f0"}20` : "rgba(100,116,139,0.1)",
+                          color: depTask ? statusColor[depTask.status] ?? "#64748b" : "#94a3b8",
+                          fontSize: 10,
+                          fontWeight: 500
+                        }}
+                      >
+                        {depTask?.title ?? depId.slice(0, 8)}
+                        {depTask ? ` (${statusLabel[depTask.status] ?? depTask.status})` : " (?)"}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Checkpoint & Resume Controls ───────────────────────────────────────────────
+
+function CheckpointResumeControls({ companyId, projectId }: { companyId: string; projectId: string }) {
+  const runsQuery = usePluginData<DeliveryRun[]>(DATA_KEYS.deliveryRuns, { companyId, projectId });
+  const runs = runsQuery.data ?? [];
+  const activeRun = runs.find((r) => r.status === "running" || r.status === "paused") ?? runs[0] ?? null;
+
+  const checkpointsQuery = usePluginData<Checkpoint[]>(
+    DATA_KEYS.checkpoints,
+    activeRun ? { companyId, projectId, runId: activeRun.runId } : { companyId, projectId }
+  );
+  const checkpoints = checkpointsQuery.data ?? [];
+
+  const createCheckpoint = usePluginAction(ACTION_KEYS.createCheckpoint);
+  const resumeFromCheckpoint = usePluginAction(ACTION_KEYS.resumeFromCheckpoint);
+  const decomposeIntoConvoyTasks = usePluginAction(ACTION_KEYS.decomposeIntoConvoyTasks);
+
+  const [message, setMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleCreateCheckpoint = useCallback(async () => {
+    if (!activeRun) return;
+    setIsLoading(true);
+    setMessage("");
+    try {
+      await createCheckpoint({ companyId, projectId, runId: activeRun.runId });
+      await checkpointsQuery.refresh();
+      setMessage("Checkpoint created.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeRun, companyId, projectId, createCheckpoint, checkpointsQuery]);
+
+  const handleResumeFromCheckpoint = useCallback(async (checkpointId: string) => {
+    if (!activeRun) return;
+    setIsLoading(true);
+    setMessage("");
+    try {
+      await resumeFromCheckpoint({ companyId, projectId, runId: activeRun.runId, checkpointId });
+      await runsQuery.refresh();
+      setMessage("Run resumed from checkpoint.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeRun, companyId, projectId, resumeFromCheckpoint, runsQuery]);
+
+  const handleDecomposeIntoConvoyTasks = useCallback(async () => {
+    if (!activeRun) return;
+    setIsLoading(true);
+    setMessage("");
+    try {
+      // Auto-decompose into 3 tasks: setup, build, test
+      await decomposeIntoConvoyTasks({
+        companyId,
+        projectId,
+        runId: activeRun.runId,
+        artifactId: activeRun.artifactId,
+        tasks: [
+          { title: "Setup workspace", description: "Initialize workspace and dependencies", dependsOnTaskIds: [] },
+          { title: "Build changes", description: "Compile and build the changes", dependsOnTaskIds: [] },
+          { title: "Run tests", description: "Execute test suite", dependsOnTaskIds: [] }
+        ]
+      });
+      setMessage("Convoy tasks created.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeRun, companyId, projectId, decomposeIntoConvoyTasks]);
+
+  return (
+    <section style={cardStyle}>
+      <h3 style={{ marginTop: 0, marginBottom: 14, fontSize: 16 }}>Checkpoint & Resume</h3>
+
+      {runs.length === 0 ? (
+        <p style={{ color: "#94a3b8", fontSize: 13 }}>No delivery runs available.</p>
+      ) : (
+        <div style={{ display: "grid", gap: 12 }}>
+          {activeRun && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <button
+                type="button"
+                style={{ ...buttonStyle, fontSize: 12 }}
+                onClick={handleCreateCheckpoint}
+                disabled={isLoading}
+              >
+                📍 Create Checkpoint
+              </button>
+              <button
+                type="button"
+                style={{ ...buttonStyle, fontSize: 12 }}
+                onClick={handleDecomposeIntoConvoyTasks}
+                disabled={isLoading}
+              >
+                🚚 Decompose into Convoy Tasks
+              </button>
+            </div>
+          )}
+
+          {checkpoints.length > 0 && (
+            <div>
+              <strong style={{ fontSize: 12, color: "#334155" }}>Checkpoints ({checkpoints.length})</strong>
+              <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                {checkpoints.slice(0, 5).map((cp) => (
+                  <div
+                    key={cp.checkpointId}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "8px 10px",
+                      background: "white",
+                      borderRadius: 8,
+                      border: "1px solid rgba(100,116,139,0.2)",
+                      fontSize: 12
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 600, color: "#1e293b" }}>
+                        Checkpoint {cp.checkpointId.slice(0, 8)}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#94a3b8" }}>
+                        {formatDate(cp.createdAt)}
+                        {cp.pauseReason ? ` — ${cp.pauseReason}` : ""}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      style={{ ...buttonStyle, fontSize: 11, padding: "4px 10px" }}
+                      onClick={() => handleResumeFromCheckpoint(cp.checkpointId)}
+                      disabled={isLoading}
+                    >
+                      ▶ Resume
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {message && (
+            <div style={{ fontSize: 12, color: "#166534" }}>{message}</div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Operator Intervention Controls ────────────────────────────────────────────
+
+function OperatorInterventionControls({ companyId, projectId }: { companyId: string; projectId: string }) {
+  const runsQuery = usePluginData<DeliveryRun[]>(DATA_KEYS.deliveryRuns, { companyId, projectId });
+  const runs = runsQuery.data ?? [];
+  const activeRun = runs.find((r) => r.status === "running" || r.status === "paused") ?? runs[0] ?? null;
+
+  const interventionsQuery = usePluginData<OperatorIntervention[]>(
+    DATA_KEYS.operatorInterventions,
+    activeRun ? { companyId, projectId, runId: activeRun.runId } : { companyId, projectId }
+  );
+  const interventions = interventionsQuery.data ?? [];
+
+  const addOperatorNote = usePluginAction(ACTION_KEYS.addOperatorNote);
+  const requestCheckpoint = usePluginAction(ACTION_KEYS.requestCheckpoint);
+  const nudgeRun = usePluginAction(ACTION_KEYS.nudgeRun);
+  const inspectLinkedIssue = usePluginAction(ACTION_KEYS.inspectLinkedIssue);
+
+  const [noteText, setNoteText] = useState("");
+  const [linkedIssueId, setLinkedIssueId] = useState("");
+  const [linkedIssueUrl, setLinkedIssueUrl] = useState("");
+  const [message, setMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleAddNote = useCallback(async () => {
+    if (!activeRun || !noteText.trim()) return;
+    setIsLoading(true);
+    setMessage("");
+    try {
+      await addOperatorNote({ companyId, projectId, runId: activeRun.runId, note: noteText });
+      await interventionsQuery.refresh();
+      setNoteText("");
+      setMessage("Note added.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeRun, noteText, companyId, projectId, addOperatorNote, interventionsQuery]);
+
+  const handleRequestCheckpoint = useCallback(async () => {
+    if (!activeRun) return;
+    setIsLoading(true);
+    setMessage("");
+    try {
+      await requestCheckpoint({ companyId, projectId, runId: activeRun.runId });
+      await interventionsQuery.refresh();
+      setMessage("Checkpoint requested.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeRun, companyId, projectId, requestCheckpoint, interventionsQuery]);
+
+  const handleNudgeRun = useCallback(async () => {
+    if (!activeRun) return;
+    setIsLoading(true);
+    setMessage("");
+    try {
+      await nudgeRun({ companyId, projectId, runId: activeRun.runId, note: noteText || "Operator nudged this run" });
+      await interventionsQuery.refresh();
+      setMessage("Run nudged.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeRun, noteText, companyId, projectId, nudgeRun, interventionsQuery]);
+
+  const handleInspectLinkedIssue = useCallback(async () => {
+    if (!activeRun || !linkedIssueId.trim()) return;
+    setIsLoading(true);
+    setMessage("");
+    try {
+      await inspectLinkedIssue({
+        companyId,
+        projectId,
+        runId: activeRun.runId,
+        linkedIssueId: linkedIssueId,
+        linkedIssueUrl: linkedIssueUrl || undefined
+      });
+      await interventionsQuery.refresh();
+      setMessage("Linked issue inspected.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeRun, linkedIssueId, linkedIssueUrl, companyId, projectId, inspectLinkedIssue, interventionsQuery]);
+
+  const interventionTypeLabel: Record<InterventionType, string> = {
+    note: "📝 Note",
+    checkpoint_request: "📍 Checkpoint Request",
+    nudge: "👆 Nudge",
+    linked_issue_inspection: "🔗 Linked Issue"
+  };
+
+  return (
+    <section style={cardStyle}>
+      <h3 style={{ marginTop: 0, marginBottom: 14, fontSize: 16 }}>Operator Interventions</h3>
+
+      {runs.length === 0 ? (
+        <p style={{ color: "#94a3b8", fontSize: 13 }}>No delivery runs available.</p>
+      ) : (
+        <div style={{ display: "grid", gap: 14 }}>
+          {/* Control buttons */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            <button
+              type="button"
+              style={{ ...buttonStyle, fontSize: 12 }}
+              onClick={handleAddNote}
+              disabled={isLoading || !noteText.trim()}
+            >
+              📝 Add Note
+            </button>
+            <button
+              type="button"
+              style={{ ...buttonStyle, fontSize: 12 }}
+              onClick={handleRequestCheckpoint}
+              disabled={isLoading}
+            >
+              📍 Request Checkpoint
+            </button>
+            <button
+              type="button"
+              style={{ ...buttonStyle, fontSize: 12 }}
+              onClick={handleNudgeRun}
+              disabled={isLoading}
+            >
+              👆 Nudge Run
+            </button>
+            <button
+              type="button"
+              style={{ ...buttonStyle, fontSize: 12 }}
+              onClick={handleInspectLinkedIssue}
+              disabled={isLoading || !linkedIssueId.trim()}
+            >
+              🔗 Inspect Linked Issue
+            </button>
+          </div>
+
+          {/* Note input */}
+          <div>
+            <input
+              style={{ ...inputStyle, fontSize: 12 }}
+              placeholder="Add a note..."
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAddNote()}
+            />
+          </div>
+
+          {/* Linked issue inputs */}
+          <div style={{ display: "grid", gap: 6 }}>
+            <input
+              style={{ ...inputStyle, fontSize: 12 }}
+              placeholder="Linked Issue ID (e.g. ISSUE-123)..."
+              value={linkedIssueId}
+              onChange={(e) => setLinkedIssueId(e.target.value)}
+            />
+            <input
+              style={{ ...inputStyle, fontSize: 12 }}
+              placeholder="Linked Issue URL (optional)..."
+              value={linkedIssueUrl}
+              onChange={(e) => setLinkedIssueUrl(e.target.value)}
+            />
+          </div>
+
+          {message && (
+            <div style={{ fontSize: 12, color: "#166534" }}>{message}</div>
+          )}
+
+          {/* Recent interventions */}
+          {interventions.length > 0 && (
+            <div>
+              <strong style={{ fontSize: 12, color: "#334155" }}>
+                Recent Interventions ({interventions.length})
+              </strong>
+              <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                {interventions.slice(0, 5).map((iv) => (
+                  <div
+                    key={iv.interventionId}
+                    style={{
+                      padding: "8px 10px",
+                      background: "white",
+                      borderRadius: 8,
+                      border: "1px solid rgba(100,116,139,0.15)",
+                      fontSize: 12
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                      <strong style={{ color: "#1e293b" }}>
+                        {interventionTypeLabel[iv.interventionType] ?? iv.interventionType}
+                      </strong>
+                      <span style={{ fontSize: 11, color: "#94a3b8" }}>{formatDate(iv.createdAt)}</span>
+                    </div>
+                    {iv.note && (
+                      <div style={{ color: "#475569", fontSize: 12 }}>{iv.note}</div>
+                    )}
+                    {iv.linkedIssueTitle && (
+                      <div style={{ color: "#64748b", fontSize: 12, marginTop: 2 }}>
+                        Issue: {iv.linkedIssueTitle}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Knowledge Section ────────────────────────────────────────────────────────
+
+function KnowledgeSection({ companyId, projectId }: { companyId: string; projectId: string }) {
+  const knowledgeQuery = usePluginData<KnowledgeEntry[]>(DATA_KEYS.knowledgeEntries, { companyId, projectId });
+  const summariesQuery = usePluginData<LearnerSummary[]>(DATA_KEYS.learnerSummaries, { companyId, projectId });
+  const entries = knowledgeQuery.data ?? [];
+  const summaries = summariesQuery.data ?? [];
+
+  const [showType, setShowType] = useState<"all" | "procedure" | "pattern" | "lesson" | "skill">("all");
+
+  const filteredEntries = showType === "all"
+    ? entries
+    : entries.filter((e) => e.knowledgeType === showType);
+
+  const typeColor: Record<string, string> = {
+    procedure: "#3b82f6",
+    pattern: "#8b5cf6",
+    lesson: "#22c55e",
+    skill: "#f97316"
+  };
+
+  return (
+    <section style={cardStyle}>
+      <h3 style={{ marginTop: 0, marginBottom: 14, fontSize: 16 }}>Knowledge</h3>
+
+      {entries.length === 0 && summaries.length === 0 ? (
+        <p style={{ color: "#94a3b8", fontSize: 13 }}>No knowledge entries yet. Complete a delivery run to generate learner summaries.</p>
+      ) : (
+        <div style={{ display: "grid", gap: 12 }}>
+          {/* Filter tabs */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {(["all", "procedure", "pattern", "lesson", "skill"] as const).map((type) => (
+              <button
+                key={type}
+                type="button"
+                style={{
+                  ...buttonStyle,
+                  fontSize: 11,
+                  padding: "4px 10px",
+                  background: showType === type ? "#0f172a" : "white",
+                  color: showType === type ? "white" : "#64748b"
+                }}
+                onClick={() => setShowType(type)}
+              >
+                {type === "all" ? `All (${entries.length})` : `${type.charAt(0).toUpperCase() + type.slice(1)} (${entries.filter((e) => e.knowledgeType === type).length})`}
+              </button>
+            ))}
+          </div>
+
+          {/* Learner summaries */}
+          {summaries.length > 0 && (
+            <div>
+              <strong style={{ fontSize: 12, color: "#334155" }}>Learner Summaries</strong>
+              <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                {summaries.slice(0, 3).map((s) => (
+                  <div
+                    key={s.summaryId}
+                    style={{
+                      padding: "10px 12px",
+                      background: "white",
+                      borderRadius: 10,
+                      border: "1px solid rgba(100,116,139,0.2)",
+                      fontSize: 12
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, color: "#1e293b" }}>{s.title}</div>
+                    {s.summaryText && (
+                      <div style={{ marginTop: 4, color: "#475569", fontSize: 12 }}>
+                        {s.summaryText.slice(0, 120)}{s.summaryText.length > 120 ? "..." : ""}
+                      </div>
+                    )}
+                    {s.keyLearnings.length > 0 && (
+                      <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {s.keyLearnings.slice(0, 3).map((learning, i) => (
+                          <span
+                            key={i}
+                            style={{
+                              padding: "2px 8px",
+                              borderRadius: 4,
+                              background: "rgba(34,197,94,0.1)",
+                              color: "#166534",
+                              fontSize: 10,
+                              fontWeight: 500
+                            }}
+                          >
+                            {learning}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Knowledge entries */}
+          {filteredEntries.length > 0 && (
+            <div>
+              <strong style={{ fontSize: 12, color: "#334155" }}>Knowledge Entries</strong>
+              <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                {filteredEntries.slice(0, 10).map((entry) => (
+                  <div
+                    key={entry.entryId}
+                    style={{
+                      padding: "10px 12px",
+                      background: "white",
+                      borderRadius: 10,
+                      border: `1px solid ${typeColor[entry.knowledgeType] ?? "#e2e8f0"}30`,
+                      fontSize: 12
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <div style={{ fontWeight: 600, color: "#1e293b", flex: 1 }}>{entry.title}</div>
+                      <span style={{
+                        padding: "2px 8px",
+                        borderRadius: 6,
+                        background: `${typeColor[entry.knowledgeType] ?? "#64748b"}15`,
+                        color: typeColor[entry.knowledgeType] ?? "#64748b",
+                        fontSize: 10,
+                        fontWeight: 600
+                      }}>
+                        {entry.knowledgeType}
+                      </span>
+                    </div>
+                    {entry.content && (
+                      <div style={{ marginTop: 4, color: "#475569", fontSize: 12 }}>
+                        {entry.content.slice(0, 100)}{entry.content.length > 100 ? "..." : ""}
+                      </div>
+                    )}
+                    {entry.reinjectionCommand && (
+                      <div style={{ marginTop: 4, fontSize: 11, color: "#94a3b8", fontFamily: "monospace" }}>
+                        {entry.reinjectionCommand}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Digest Section ────────────────────────────────────────────────────────────
+
+function DigestSection({ companyId, projectId }: { companyId: string; projectId: string }) {
+  const digestsQuery = usePluginData<Digest[]>(DATA_KEYS.digests, { companyId, projectId });
+  const digests = digestsQuery.data ?? [];
+
+  const generateStuckRunDigest = usePluginAction(ACTION_KEYS.generateStuckRunDigest);
+  const generateBudgetAlertDigest = usePluginAction(ACTION_KEYS.generateBudgetAlertDigest);
+
+  const [message, setMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleGenerateStuckRunDigest = useCallback(async () => {
+    setIsLoading(true);
+    setMessage("");
+    try {
+      const result = await generateStuckRunDigest({ companyId, projectId }) as { stuckRunsCount: number };
+      await digestsQuery.refresh();
+      setMessage(result.stuckRunsCount > 0
+        ? `Stuck run digest created for ${result.stuckRunsCount} run(s).`
+        : "No stuck runs detected.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [companyId, projectId, generateStuckRunDigest, digestsQuery]);
+
+  const handleGenerateBudgetAlertDigest = useCallback(async () => {
+    setIsLoading(true);
+    setMessage("");
+    try {
+      await generateBudgetAlertDigest({ companyId, projectId });
+      await digestsQuery.refresh();
+      setMessage("Budget alert digest generated.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [companyId, projectId, generateBudgetAlertDigest, digestsQuery]);
+
+  const priorityColor: Record<string, string> = {
+    low: "#64748b",
+    medium: "#3b82f6",
+    high: "#f97316",
+    critical: "#ef4444"
+  };
+
+  const digestTypeLabel: Record<string, string> = {
+    budget_alert: "💰 Budget Alert",
+    stuck_run: "🚨 Stuck Run",
+    opportunity: "💡 Opportunity",
+    weekly_summary: "📅 Weekly Summary",
+    health_check_failed: "⚠️ Health Check Failed"
+  };
+
+  return (
+    <section style={cardStyle}>
+      <h3 style={{ marginTop: 0, marginBottom: 14, fontSize: 16 }}>Digests & Alerts</h3>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+        <button
+          type="button"
+          style={{ ...buttonStyle, fontSize: 12 }}
+          onClick={handleGenerateStuckRunDigest}
+          disabled={isLoading}
+        >
+          🔍 Check Stuck Runs
+        </button>
+        <button
+          type="button"
+          style={{ ...buttonStyle, fontSize: 12 }}
+          onClick={handleGenerateBudgetAlertDigest}
+          disabled={isLoading}
+        >
+          💰 Generate Budget Alert
+        </button>
+      </div>
+
+      {message && (
+        <div style={{ marginBottom: 10, fontSize: 12, color: "#166534" }}>{message}</div>
+      )}
+
+      {digests.length === 0 ? (
+        <p style={{ color: "#94a3b8", fontSize: 13 }}>No digests yet. Generate a digest to see alerts and opportunities here.</p>
+      ) : (
+        <div style={{ display: "grid", gap: 8 }}>
+          {digests.slice(0, 10).map((digest) => (
+            <div
+              key={digest.digestId}
+              style={{
+                padding: "10px 12px",
+                background: "white",
+                borderRadius: 10,
+                border: `1px solid ${priorityColor[digest.priority] ?? "#e2e8f0"}40`,
+                borderLeftWidth: 4,
+                fontSize: 12
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div style={{ fontWeight: 600, color: "#1e293b", flex: 1 }}>
+                  {digestTypeLabel[digest.digestType] ?? digest.digestType}
+                </div>
+                <span style={{
+                  padding: "2px 8px",
+                  borderRadius: 6,
+                  background: `${priorityColor[digest.priority] ?? "#64748b"}20`,
+                  color: priorityColor[digest.priority] ?? "#64748b",
+                  fontSize: 10,
+                  fontWeight: 700
+                }}>
+                  {digest.priority.toUpperCase()}
+                </span>
+              </div>
+              <div style={{ fontWeight: 600, color: "#334155", marginTop: 4 }}>{digest.title}</div>
+              {digest.summary && (
+                <div style={{ color: "#475569", fontSize: 12, marginTop: 4 }}>
+                  {digest.summary}
+                </div>
+              )}
+              {digest.details.length > 0 && (
+                <div style={{ marginTop: 6, display: "grid", gap: 3 }}>
+                  {digest.details.slice(0, 3).map((detail, i) => (
+                    <div key={i} style={{ fontSize: 11, color: "#64748b", paddingLeft: 8 }}>
+                      • {detail}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ marginTop: 6, fontSize: 11, color: "#94a3b8" }}>
+                {formatDate(digest.createdAt)}
+                {digest.status !== "pending" && ` · ${digest.status}`}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Release Health Section ───────────────────────────────────────────────────
+
+function ReleaseHealthSection({ companyId, projectId }: { companyId: string; projectId: string }) {
+  const runsQuery = usePluginData<DeliveryRun[]>(DATA_KEYS.deliveryRuns, { companyId, projectId });
+  const runs = runsQuery.data ?? [];
+  const completedRun = runs.find((r) => r.status === "completed" || r.status === "failed") ?? runs[0] ?? null;
+
+  const healthChecksQuery = usePluginData<ReleaseHealthCheck[]>(
+    DATA_KEYS.releaseHealthChecks,
+    completedRun ? { companyId, projectId, runId: completedRun.runId } : { companyId, projectId }
+  );
+  const healthChecks = healthChecksQuery.data ?? [];
+
+  const rollbacksQuery = usePluginData<RollbackAction[]>(
+    DATA_KEYS.rollbackActions,
+    completedRun ? { companyId, projectId, runId: completedRun.runId } : { companyId, projectId }
+  );
+  const rollbacks = rollbacksQuery.data ?? [];
+
+  const createReleaseHealthCheck = usePluginAction(ACTION_KEYS.createReleaseHealthCheck);
+  const updateReleaseHealthStatus = usePluginAction(ACTION_KEYS.updateReleaseHealthStatus);
+  const triggerRollback = usePluginAction(ACTION_KEYS.triggerRollback);
+
+  const [message, setMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleCreateHealthCheck = useCallback(async () => {
+    if (!completedRun) return;
+    setIsLoading(true);
+    setMessage("");
+    try {
+      await createReleaseHealthCheck({
+        companyId,
+        projectId,
+        runId: completedRun.runId,
+        checkType: "smoke_test",
+        name: "Smoke Test Check"
+      });
+      await healthChecksQuery.refresh();
+      setMessage("Health check created.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [completedRun, companyId, projectId, createReleaseHealthCheck, healthChecksQuery]);
+
+  const handleUpdateHealthStatus = useCallback(async (checkId: string, status: "passed" | "failed") => {
+    setIsLoading(true);
+    setMessage("");
+    try {
+      await updateReleaseHealthStatus({
+        companyId,
+        projectId,
+        checkId,
+        status,
+        errorMessage: status === "failed" ? "Test failed — see logs for details" : undefined
+      });
+      await healthChecksQuery.refresh();
+      await rollbacksQuery.refresh();
+      setMessage(`Health check marked as ${status}.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [companyId, projectId, updateReleaseHealthStatus, healthChecksQuery, rollbacksQuery]);
+
+  const handleTriggerRollback = useCallback(async (checkId: string) => {
+    if (!completedRun) return;
+    setIsLoading(true);
+    setMessage("");
+    try {
+      await triggerRollback({
+        companyId,
+        projectId,
+        runId: completedRun.runId,
+        checkId
+      });
+      await rollbacksQuery.refresh();
+      setMessage("Rollback triggered.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [completedRun, companyId, projectId, triggerRollback, rollbacksQuery]);
+
+  const statusColor: Record<string, string> = {
+    pending: "#64748b",
+    running: "#3b82f6",
+    passed: "#22c55e",
+    failed: "#ef4444",
+    skipped: "#a855f7"
+  };
+
+  return (
+    <section style={cardStyle}>
+      <h3 style={{ marginTop: 0, marginBottom: 14, fontSize: 16 }}>Release Health</h3>
+
+      {runs.length === 0 ? (
+        <p style={{ color: "#94a3b8", fontSize: 13 }}>No delivery runs available.</p>
+      ) : (
+        <div style={{ display: "grid", gap: 12 }}>
+          {completedRun && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <button
+                type="button"
+                style={{ ...buttonStyle, fontSize: 12 }}
+                onClick={handleCreateHealthCheck}
+                disabled={isLoading}
+              >
+                🏥 Create Health Check
+              </button>
+            </div>
+          )}
+
+          {/* Health checks */}
+          {healthChecks.length > 0 && (
+            <div>
+              <strong style={{ fontSize: 12, color: "#334155" }}>Health Checks ({healthChecks.length})</strong>
+              <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                {healthChecks.slice(0, 5).map((check) => (
+                  <div
+                    key={check.checkId}
+                    style={{
+                      padding: "10px 12px",
+                      background: "white",
+                      borderRadius: 10,
+                      border: `1px solid ${statusColor[check.status] ?? "#e2e8f0"}40`,
+                      fontSize: 12
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ fontWeight: 600, color: "#1e293b" }}>{check.name}</div>
+                      <span style={{
+                        padding: "2px 8px",
+                        borderRadius: 6,
+                        background: `${statusColor[check.status] ?? "#64748b"}20`,
+                        color: statusColor[check.status] ?? "#64748b",
+                        fontSize: 11,
+                        fontWeight: 600
+                      }}>
+                        {check.status}
+                      </span>
+                    </div>
+                    {check.errorMessage && (
+                      <div style={{ marginTop: 4, color: "#ef4444", fontSize: 12 }}>
+                        Error: {check.errorMessage}
+                      </div>
+                    )}
+                    <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {check.status === "pending" && (
+                        <>
+                          <button
+                            type="button"
+                            style={{ ...buttonStyle, fontSize: 11, padding: "4px 10px", color: "#22c55e", borderColor: "rgba(34,197,94,0.3)" }}
+                            onClick={() => handleUpdateHealthStatus(check.checkId, "passed")}
+                            disabled={isLoading}
+                          >
+                            ✓ Mark Passed
+                          </button>
+                          <button
+                            type="button"
+                            style={{ ...buttonStyle, fontSize: 11, padding: "4px 10px", color: "#ef4444", borderColor: "rgba(239,68,68,0.3)" }}
+                            onClick={() => handleUpdateHealthStatus(check.checkId, "failed")}
+                            disabled={isLoading}
+                          >
+                            ✗ Mark Failed
+                          </button>
+                        </>
+                      )}
+                      {check.status === "failed" && (
+                        <button
+                          type="button"
+                          style={{ ...buttonStyle, fontSize: 11, padding: "4px 10px", color: "#f97316", borderColor: "rgba(249,115,22,0.3)" }}
+                          onClick={() => handleTriggerRollback(check.checkId)}
+                          disabled={isLoading}
+                        >
+                          ↩ Trigger Rollback
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Rollback actions */}
+          {rollbacks.length > 0 && (
+            <div>
+              <strong style={{ fontSize: 12, color: "#334155" }}>Rollback Actions</strong>
+              <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                {rollbacks.slice(0, 5).map((rb) => (
+                  <div
+                    key={rb.rollbackId}
+                    style={{
+                      padding: "10px 12px",
+                      background: "rgba(249,115,22,0.05)",
+                      borderRadius: 10,
+                      border: "1px solid rgba(249,115,22,0.2)",
+                      fontSize: 12
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ fontWeight: 600, color: "#1e293b" }}>
+                        {rb.rollbackType === "restore_checkpoint" ? "↩ Restore Checkpoint" :
+                         rb.rollbackType === "revert_commit" ? "↩ Revert Commit" : "↩ Full Rollback"}
+                      </div>
+                      <span style={{
+                        padding: "2px 8px",
+                        borderRadius: 6,
+                        background: rb.status === "completed" ? "rgba(34,197,94,0.15)" :
+                                   rb.status === "in_progress" ? "rgba(59,130,246,0.15)" :
+                                   "rgba(100,116,139,0.1)",
+                        color: rb.status === "completed" ? "#166534" :
+                               rb.status === "in_progress" ? "#1d4ed8" : "#64748b",
+                        fontSize: 11,
+                        fontWeight: 600
+                      }}>
+                        {rb.status}
+                      </span>
+                    </div>
+                    {rb.checkpointId && (
+                      <div style={{ marginTop: 4, fontSize: 11, color: "#64748b" }}>
+                        Checkpoint: {rb.checkpointId.slice(0, 8)}
+                      </div>
+                    )}
+                    {rb.targetCommitSha && (
+                      <div style={{ fontSize: 11, color: "#64748b" }}>
+                        Target commit: {rb.targetCommitSha}
+                      </div>
+                    )}
+                    {rb.errorMessage && (
+                      <div style={{ marginTop: 4, fontSize: 12, color: "#ef4444" }}>
+                        Error: {rb.errorMessage}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {message && (
+            <div style={{ fontSize: 12, color: "#166534" }}>{message}</div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
 
 export function AutopilotProjectSidebarLink({ context }: PluginProjectSidebarItemProps) {
   const projectId = context.entityId;
