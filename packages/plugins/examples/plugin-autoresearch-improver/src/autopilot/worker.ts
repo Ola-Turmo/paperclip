@@ -306,14 +306,17 @@ async function upsertIdea(ctx: PluginContext, idea: Idea): Promise<PluginEntityR
 async function listIdeaEntities(
   ctx: PluginContext,
   companyId: string,
-  projectId: string
+  projectId: string,
+  before?: string
 ): Promise<PluginEntityRecord[]> {
   const entities = await ctx.entities.list({
     entityType: ENTITY_TYPES.idea,
     scopeKind: "project",
     scopeId: projectId,
     limit: 500,
-    offset: 0
+    offset: 0,
+    sort: before ? [{ field: "createdAt", direction: "desc" }] : undefined,
+    where: before ? [{ field: "createdAt", operator: "<", value: before }] : undefined
   });
   return entities.filter((e) => {
     const data = e.data as unknown as Idea;
@@ -509,14 +512,17 @@ async function findDeliveryRun(
 async function listDeliveryRunEntities(
   ctx: PluginContext,
   companyId: string,
-  projectId: string
+  projectId: string,
+  before?: string
 ): Promise<PluginEntityRecord[]> {
   const entities = await ctx.entities.list({
     entityType: ENTITY_TYPES.deliveryRun,
     scopeKind: "project",
     scopeId: projectId,
     limit: 500,
-    offset: 0
+    offset: 0,
+    sort: before ? [{ field: "createdAt", direction: "desc" }] : undefined,
+    where: before ? [{ field: "createdAt", operator: "<", value: before }] : undefined
   });
   return entities.filter((e) => {
     const data = e.data as unknown as DeliveryRun;

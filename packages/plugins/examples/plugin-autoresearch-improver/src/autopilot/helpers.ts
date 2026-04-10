@@ -201,7 +201,8 @@ export async function upsertIdea(ctx: PluginContext, idea: Idea): Promise<Plugin
 export async function listIdeaEntities(
   ctx: PluginContext,
   companyId: string,
-  projectId: string
+  projectId: string,
+  before?: string
 ): Promise<PluginEntityRecord[]> {
   const entities = await ctx.entities.list({
     entityType: ENTITY_TYPES.idea,
@@ -209,6 +210,8 @@ export async function listIdeaEntities(
     scopeId: projectId,
     limit: 500,
     offset: 0,
+    sort: before ? [{ field: "createdAt", direction: "desc" }] : undefined,
+    where: before ? [{ field: "createdAt", operator: "<", value: before }] : undefined,
   });
   return entities.filter((e) => {
     const data = e.data as unknown as Idea;
@@ -412,7 +415,8 @@ export async function findDeliveryRun(
 export async function listDeliveryRunEntities(
   ctx: PluginContext,
   companyId: string,
-  projectId: string
+  projectId: string,
+  before?: string
 ): Promise<PluginEntityRecord[]> {
   const entities = await ctx.entities.list({
     entityType: ENTITY_TYPES.deliveryRun,
@@ -420,6 +424,8 @@ export async function listDeliveryRunEntities(
     scopeId: projectId,
     limit: 500,
     offset: 0,
+    sort: before ? [{ field: "createdAt", direction: "desc" }] : undefined,
+    where: before ? [{ field: "createdAt", operator: "<", value: before }] : undefined,
   });
   return entities.filter((e) => {
     const data = e.data as unknown as DeliveryRun;

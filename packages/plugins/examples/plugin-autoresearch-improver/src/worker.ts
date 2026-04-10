@@ -2493,7 +2493,8 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
     const companyId = typeof params.companyId === "string" ? params.companyId : "";
     const projectId = typeof params.projectId === "string" ? params.projectId : "";
     if (!companyId || !projectId) return [];
-    const entities = await listProductProgramRevisionEntities(ctx, companyId, projectId);
+    const before = typeof params.cursor === "string" ? params.cursor : undefined;
+    const entities = await listProductProgramRevisionEntities(ctx, companyId, projectId, before);
     return entities
       .map(asProductProgramRevision)
       .filter((entry) => entry.companyId === companyId)
@@ -2530,7 +2531,8 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
     const companyId = typeof params.companyId === "string" ? params.companyId : "";
     const projectId = typeof params.projectId === "string" ? params.projectId : "";
     if (!companyId || !projectId) return [];
-    const entities = await listIdeaEntities(ctx, companyId, projectId);
+    const before = typeof params.cursor === "string" ? params.cursor : undefined;
+    const entities = await listIdeaEntities(ctx, companyId, projectId, before);
     return entities.map(asIdea).filter((entry) => entry.companyId === companyId);
   });
 
@@ -2587,7 +2589,8 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
     const companyId = typeof params.companyId === "string" ? params.companyId : "";
     const projectId = typeof params.projectId === "string" ? params.projectId : "";
     if (!companyId || !projectId) return [];
-    const entities = await listDeliveryRunEntities(ctx, companyId, projectId);
+    const before = typeof params.cursor === "string" ? params.cursor : undefined;
+    const entities = await listDeliveryRunEntities(ctx, companyId, projectId, before);
     return entities.map(asDeliveryRun).filter((entry) => entry.companyId === companyId);
   });
 

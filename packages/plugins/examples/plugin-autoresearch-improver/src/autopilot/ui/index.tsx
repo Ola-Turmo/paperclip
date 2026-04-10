@@ -256,7 +256,6 @@ function AutopilotSettings({
             style={buttonStyle}
             disabled={!resolvedCompanyId || !resolvedProjectId}
             onClick={async () => {
-              console.log("[AutopilotSettings] handleResume", { companyId: resolvedCompanyId, projectId: resolvedProjectId, autopilot });
               if (!resolvedCompanyId || !resolvedProjectId) return;
               await resumeAutopilot({ companyId: resolvedCompanyId, projectId: resolvedProjectId });
             }}
@@ -768,43 +767,27 @@ function DeliveryRunSection({ companyId, projectId }: { companyId: string; proje
 
 function ResearchSection({ companyId, projectId }: { companyId: string; projectId: string }) {
   const [researchQuery, setResearchQuery] = useState("");
-  const [isRunning, setIsRunning] = useState(false);
   const [message, setMessage] = useState("");
 
   const startResearchCycle = usePluginAction(ACTION_KEYS.startResearchCycle);
-  const completeResearchCycle = usePluginAction(ACTION_KEYS.completeResearchCycle);
-
   const cyclesQuery = usePluginData<ResearchCycle[]>(DATA_KEYS.researchCycles, { companyId, projectId });
-  const latestCycle = cyclesQuery.data?.[0];
-
-  const findingsQuery = usePluginData<ResearchFinding[]>(
-    DATA_KEYS.researchFindings,
-    latestCycle ? { companyId, projectId, cycleId: latestCycle.cycleId } : { companyId, projectId }
-  );
+  const findingsQuery = usePluginData<ResearchFinding[]>(DATA_KEYS.researchFindings, { companyId, projectId });
+  const latestCycle = cyclesQuery.data?.[0] ?? null;
+  const activeCycle = cyclesQuery.data?.find((cycle) => cycle.status === "running") ?? latestCycle;
+  const activeCycleFindings = findingsQuery.data?.filter((finding) => finding.cycleId === activeCycle?.cycleId) ?? [];
 
   const handleStartResearch = useCallback(async () => {
     if (!researchQuery.trim()) return;
-    setIsRunning(true);
     setMessage("");
     try {
-      const cycle = await startResearchCycle({ companyId, projectId, query: researchQuery }) as { cycleId: string };
-      // Simulate completion after a short delay
-      await completeResearchCycle({
-        companyId,
-        projectId,
-        cycleId: cycle.cycleId,
-        status: "completed",
-        reportContent: `Research completed on: ${researchQuery}`,
-        findingsCount: 3
-      });
+      await startResearchCycle({ companyId, projectId, query: researchQuery });
       await cyclesQuery.refresh();
+      await findingsQuery.refresh();
       setMessage("Research completed successfully.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsRunning(false);
     }
-  }, [companyId, projectId, researchQuery, startResearchCycle, completeResearchCycle, cyclesQuery]);
+  }, [companyId, projectId, researchQuery, startResearchCycle, cyclesQuery, findingsQuery]);
 
   return (
     <section style={cardStyle}>
@@ -822,9 +805,9 @@ function ResearchSection({ companyId, projectId }: { companyId: string; projectI
           type="button"
           style={primaryButtonStyle}
           onClick={handleStartResearch}
-          disabled={isRunning || !researchQuery.trim()}
+          disabled={!researchQuery.trim()}
         >
-          {isRunning ? "Running..." : "Run Research"}
+          Run Research
         </button>
       </div>
 
@@ -832,12 +815,14 @@ function ResearchSection({ companyId, projectId }: { companyId: string; projectI
         <div style={{ marginBottom: 12, fontSize: 13, color: "#166534" }}>{message}</div>
       )}
 
-      {cyclesQuery.data && cyclesQuery.data.length > 0 && (
+      {cyclesQuery.loading ? (
+        <div style={{ fontSize: 13, color: "#64748b" }}>Loading research…</div>
+      ) : cyclesQuery.data && cyclesQuery.data.length > 0 ? (
         <div>
           <strong style={{ fontSize: 13, color: "#334155" }}>
-            Latest Cycle: {latestCycle?.status === "completed" ? "✅ Completed" : latestCycle?.status === "running" ? "🔄 Running" : "⏳ Pending"}
+            Active Cycle: {activeCycle?.status === "completed" ? "✅ Completed" : activeCycle?.status === "running" ? "🔄 Running" : "⏳ Pending"}
           </strong>
-          {latestCycle?.reportContent && (
+          {activeCycle?.reportContent && (
             <div style={{
               marginTop: 8,
               padding: "10px 12px",
@@ -847,28 +832,41 @@ function ResearchSection({ companyId, projectId }: { companyId: string; projectI
               whiteSpace: "pre-wrap",
               border: "1px solid rgba(100,116,139,0.15)"
             }}>
-              {latestCycle.reportContent}
+              {activeCycle.reportContent}
             </div>
           )}
-          {findingsQuery.data && findingsQuery.data.length > 0 && (
-            <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-              <strong style={{ fontSize: 12, color: "#475569" }}>Findings ({findingsQuery.data.length})</strong>
-              {findingsQuery.data.slice(0, 5).map((f: ResearchFinding) => (
-                <div key={f.findingId} style={{
-                  padding: "8px 10px",
-                  background: "white",
-                  borderRadius: 8,
-                  border: "1px solid rgba(100,116,139,0.15)",
-                  fontSize: 12
-                }}>
-                  <strong>{f.title}</strong>
-                  {f.description && <p style={{ margin: "4px 0 0", color: "#64748b" }}>{f.description}</p>}
-                  {f.sourceLabel && <span style={{ fontSize: 11, color: "#94a3b8" }}>Source: {f.sourceLabel}</span>}
+          <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+            <strong style={{ fontSize: 12, color: "#475569" }}>
+              Findings ({activeCycleFindings.length} / {findingsQuery.data?.length ?? 0})
+            </strong>
+            {activeCycleFindings.length > 0 ? activeCycleFindings.slice(0, 5).map((f: ResearchFinding) => (
+              <div key={f.findingId} style={{
+                padding: "8px 10px",
+                background: "white",
+                borderRadius: 8,
+                border: "1px solid rgba(100,116,139,0.15)",
+                fontSize: 12
+              }}>
+                <strong>{f.title}</strong>
+                <div style={{ marginTop: 4, color: "#64748b" }}>{f.description}</div>
+                <div style={{ marginTop: 4, display: "flex", gap: 8, flexWrap: "wrap", color: "#94a3b8" }}>
+                  <span>Confidence: {Math.round(f.confidence * 100)}%</span>
+                  {f.sourceLabel && <span>Source: {f.sourceLabel}</span>}
                 </div>
-              ))}
-            </div>
-          )}
+                {f.evidenceText && (
+                  <div style={{ marginTop: 4, color: "#334155", whiteSpace: "pre-wrap" }}>{f.evidenceText}</div>
+                )}
+              </div>
+            )) : (
+              <div style={{ fontSize: 13, color: "#64748b" }}>No findings for the active cycle yet.</div>
+            )}
+          </div>
+          <div style={{ marginTop: 10, fontSize: 12, color: "#64748b" }}>
+            Report summary: {activeCycle?.reportContent ? "Available from backend" : "No report content yet"}
+          </div>
         </div>
+      ) : (
+        <div style={{ fontSize: 13, color: "#64748b" }}>No research yet</div>
       )}
     </section>
   );
