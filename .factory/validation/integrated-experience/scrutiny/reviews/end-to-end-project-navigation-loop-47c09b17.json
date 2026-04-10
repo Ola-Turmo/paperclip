@@ -1,0 +1,33 @@
+{
+  "featureId": "end-to-end-project-navigation-loop",
+  "reviewedAt": "2026-04-10T12:00:00.000Z",
+  "commitId": "2364db05",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The end-to-end-project-navigation-loop feature is correctly implemented. Autopilot surfaces are wired into Paperclip project navigation via AutopilotProjectSidebarLink (sidebar link) and AutopilotProjectTab (detail tab). All autopilot sections (Settings, Product Program, Delivery Runs, Research, Ideas, Swipe Review, Convoy Tasks, Checkpoint & Resume, Operator Interventions, Knowledge, Digests, Release Health, Preference Profile) are rendered within the same project context. Company/project boundaries are enforced via companyId and projectId passed to all data queries and actions. VAL-CROSS-001 and VAL-CROSS-002 are both PASSED. All 161 plugin tests pass.",
+    "issues": [
+      {
+        "file": "handoff",
+        "line": 5,
+        "severity": "non_blocking",
+        "description": "Commit ID mismatch: handoff.commitId points to '2364db05' which implements closed-loop-operations (learner summaries, knowledge, digests, release-health rollback), NOT the navigation feature. The actual commits implementing navigation are '39628686' (fix: add navigation to AutopilotProjectSidebarLink) and 'a36a4212' (fix: simplify sidebar link navigation). This creates a discovery problem if someone tries to understand the navigation implementation via the handoff's commitId."
+      },
+      {
+        "file": ".factory/services.yaml",
+        "severity": "non_blocking",
+        "description": "Droid-Shield blocks commit of services.yaml due to secret detection (masked DATABASE_URL). This infrastructure file should be committed manually or the secret check should be adjusted. Noted in discoveredIssues."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The handoff references the wrong commit ID (2364db05 instead of a36a4212/39628686). This could cause confusion when tracing the feature's implementation history. The AGENTS.md or handoff template should include a note to verify commit IDs are correct before submitting.",
+      "evidence": "Handoff says commitId: '2364db05' but this commit is 'feat(autopilot): implement learner summaries, knowledge, digests, and release-health rollback'. Navigation was implemented in commits a36a4212 and 39628686."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The end-to-end-project-navigation-loop feature PASSES review. The autopilot plugin is correctly wired into Paperclip project navigation through AutopilotProjectSidebarLink (sidebar link) and AutopilotProjectTab (detail tab). All required sections (research, swipe review, delivery work, knowledge, recovery) are accessible from the same project context. Company boundaries are enforced via companyId/projectId in all data queries. Browser verification and 161 tests confirm functionality. One non-blocking issue: the handoff's commitId points to the wrong commit (closed-loop-operations instead of navigation)."
+}

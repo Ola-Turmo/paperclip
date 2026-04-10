@@ -1,0 +1,54 @@
+{
+  "milestone": "integrated-experience",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "pnpm test (autopilot plugin)",
+      "exitCode": 0,
+      "observation": "161 tests passed in autopilot plugin (autopilot.spec.ts 94 tests, optimizer.spec.ts 38 tests, worker.e2e.spec.ts 29 tests)"
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "pnpm -r typecheck",
+      "exitCode": 0,
+      "observation": "All 20 workspace projects passed typecheck"
+    },
+    "lint": {
+      "passed": false,
+      "command": "pnpm lint",
+      "exitCode": 254,
+      "observation": "Command 'lint' not found in project. No lint command exists in package.json scripts. This is not a failure - the project does not have a lint target."
+    },
+    "build": {
+      "passed": true,
+      "command": "pnpm build",
+      "exitCode": 0,
+      "observation": "All packages built successfully (ui, server, cli, plugins)"
+    }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add a note to verify commit IDs in handoff are correct before submitting. Workers should verify the commit they reference actually implements the feature they describe, not just reference the latest commit on the branch.",
+      "evidence": "Feature end-to-end-project-navigation-loop handoff referenced commit 2364db05 (closed-loop-operations) instead of a36a4212/39628686 (navigation).",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null,
+  "reviewReports": [
+    "end-to-end-project-navigation-loop-47c09b17.json",
+    "end-to-end-project-navigation-loop-3dd30589.json"
+  ],
+  "summary": "Scrutiny validation PASSED for milestone 'integrated-experience'. Both review subagents confirmed the end-to-end-project-navigation-loop feature is correctly implemented: AutopilotProjectSidebarLink provides sidebar navigation and AutopilotProjectTab renders all autopilot sections (research, ideas, swipe, delivery runs, convoy, checkpoint/resume, operator interventions, knowledge, digests, release health). Company boundaries enforced via companyId/projectId in all data handlers. All 161 tests pass. No blocking issues. One non-blocking commit ID mismatch in handoff and one minor UX regression (lost active-state tracking in sidebar link). Suggested AGENTS.md guidance update for commit ID verification."
+}

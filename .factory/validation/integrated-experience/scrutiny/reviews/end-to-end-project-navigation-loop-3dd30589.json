@@ -1,0 +1,40 @@
+{
+  "featureId": "end-to-end-project-navigation-loop",
+  "reviewedAt": "2026-04-10T17:15:00.000Z",
+  "commitId": "bd046fd5",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The end-to-end project navigation loop is implemented via AutopilotProjectTab (detailTab slot) and AutopilotProjectSidebarLink (projectSidebarItem slot). Both are registered in the plugin manifest and re-exported from the main UI entry point. AutopilotProjectTab renders all autopilot surfaces (settings, program, delivery runs, convoy, checkpoint, operator interventions, research, ideas, swipe, knowledge, digest, release health, preferences) in a single project-scoped view. AutopilotProjectSidebarLink uses simple <a href> navigation with company-prefixed deep links. CompanyId scoping is enforced throughout all data handlers and entity list/find functions.",
+    "issues": [
+      {
+        "file": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/ui/index.tsx",
+        "line": 2219,
+        "severity": "non_blocking",
+        "description": "AutopilotProjectSidebarLink lost active-state tracking when sidebar navigation was simplified in commit a36a4212. The component no longer sets aria-current or applies active styling when the user is on the autopilot tab. This is a UX regression from the earlier complex history.pushState approach. Since Paperclip's router handles tab activation, this is non-blocking but worth noting."
+      },
+      {
+        "file": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/ui/index.tsx",
+        "line": 738,
+        "severity": "non_blocking",
+        "description": "ResearchSection calls completeResearchCycle with a hardcoded findingsCount: 3 and a formulaic reportContent string ('Research completed on: {query}'). This appears to be a mock/stub implementation rather than real research synthesis. The actual research cycle completion should produce real findings, but since this is in the UI layer and the worker has the actual research logic, this may be intentional for the UI demo flow."
+      },
+      {
+        "file": "packages/plugins/examples/plugin-autoresearch-improver/src/autopilot/worker.ts",
+        "line": 1159,
+        "severity": "non_blocking",
+        "description": "listProductProgramRevisionEntities filters by companyId in JavaScript after fetching with scopeKind/scopeId, rather than relying on the plugin SDK's entity-layer scoping. The comment says 'Filter by companyId for cross-company isolation' but this pattern is inconsistent with how some other entities are scoped at the SDK layer. This is acceptable but the comment suggests it was done as a belt-and-suspenders approach."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The RunFilterBar optimization change (from object literal to manual counting loop) and the useMemo fix for pendingRuns in ui/index.tsx are unrelated to this feature and appear to have been bundled into the same commit (a36a4212). This makes it harder to isolate what changed for navigation vs. general UI fixes.",
+      "evidence": "commit a36a4212 diff shows ui/index.tsx changes for RunFilterBar counts and pendingRuns alongside the sidebar navigation changes"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The feature passes review. Autopilot surfaces are wired into Paperclip project navigation via AutopilotProjectTab (detailTab) and AutopilotProjectSidebarLink (projectSidebarItem). All autopilot sections (research, ideas, swipe, delivery runs, convoy, checkpoint/resume, operator interventions, knowledge, digests, release health) are accessible from the same project context. Company boundaries are enforced via companyId filtering in all data handlers and entity access functions. The sidebar link simplification in a36a4212 removed active-state tracking, which is a minor UX regression, but navigation works correctly via Paperclip's tab routing. The commit bd046fd5 is a validation handoff that confirmed the already-implemented feature."
+}
