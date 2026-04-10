@@ -35,7 +35,9 @@ export const DATA_KEYS = {
   deliveryRun: "delivery-run",
   deliveryRuns: "delivery-runs",
   workspaceLease: "workspace-lease",
-  companyBudget: "company-budget"
+  workspaceLeases: "workspace-leases",
+  companyBudget: "company-budget",
+  companyBudgets: "company-budgets"
 } as const;
 
 export const ACTION_KEYS = {

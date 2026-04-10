@@ -49,7 +49,54 @@ import {
   type AutopilotProject,
   type ProductProgramRevision,
   type AutomationTier,
+  type ResearchCycle,
+  type ResearchFinding,
+  type Idea,
+  type SwipeEvent,
+  type PreferenceProfile,
+  type IdeaStatus,
+  type PlanningArtifact,
+  type DeliveryRun,
+  type WorkspaceLease,
+  type CompanyBudget,
 } from "./autopilot/constants.js";
+import {
+  asIdea,
+  asSwipeEvent,
+  asPreferenceProfile,
+  asResearchCycle,
+  asResearchFinding,
+  asPlanningArtifact,
+  asDeliveryRun,
+  asWorkspaceLease,
+  asCompanyBudget,
+  isValidSwipeDecision,
+  upsertIdea,
+  upsertSwipeEvent,
+  upsertPreferenceProfile,
+  findPreferenceProfile,
+  upsertResearchCycle,
+  findResearchCycle,
+  listResearchCycleEntities,
+  upsertResearchFinding,
+  listResearchFindingEntities,
+  listIdeaEntities,
+  findIdeaById,
+  findDuplicateIdea,
+  listSwipeEventEntities,
+  upsertPlanningArtifact,
+  findPlanningArtifact,
+  listPlanningArtifactEntities,
+  findDeliveryRun,
+  listDeliveryRunEntities,
+  upsertDeliveryRun,
+  findWorkspaceLease,
+  listWorkspaceLeaseEntities,
+  upsertWorkspaceLease,
+  findCompanyBudget,
+  listCompanyBudgetEntities,
+  upsertCompanyBudget,
+} from "./autopilot/helpers.js";
 import type {
   ApplyMode,
   CommandExecutionResult,
@@ -2445,6 +2492,127 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
       .filter((entry) => entry.companyId === companyId)
       .sort((a, b) => b.version - a.version);
   });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.researchCycle, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    const projectId = typeof params.projectId === "string" ? params.projectId : "";
+    const cycleId = typeof params.cycleId === "string" ? params.cycleId : "";
+    if (!companyId || !projectId || !cycleId) return null;
+    const entity = await findResearchCycle(ctx, companyId, projectId, cycleId);
+    return entity ? asResearchCycle(entity) : null;
+  });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.researchCycles, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    const projectId = typeof params.projectId === "string" ? params.projectId : "";
+    if (!companyId || !projectId) return [];
+    const entities = await listResearchCycleEntities(ctx, companyId, projectId);
+    return entities.map(asResearchCycle).filter((entry) => entry.companyId === companyId);
+  });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.researchFindings, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    const projectId = typeof params.projectId === "string" ? params.projectId : "";
+    if (!companyId || !projectId) return [];
+    const cycleId = typeof params.cycleId === "string" ? params.cycleId : undefined;
+    const entities = await listResearchFindingEntities(ctx, companyId, projectId, cycleId);
+    return entities.map(asResearchFinding).filter((entry) => entry.companyId === companyId);
+  });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.ideas, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    const projectId = typeof params.projectId === "string" ? params.projectId : "";
+    if (!companyId || !projectId) return [];
+    const entities = await listIdeaEntities(ctx, companyId, projectId);
+    return entities.map(asIdea).filter((entry) => entry.companyId === companyId);
+  });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.maybePoolIdeas, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    const projectId = typeof params.projectId === "string" ? params.projectId : "";
+    if (!companyId || !projectId) return [];
+    const entities = await listIdeaEntities(ctx, companyId, projectId);
+    return entities.map(asIdea).filter((entry) => entry.companyId === companyId && entry.status === "maybe");
+  });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.swipeEvents, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    const projectId = typeof params.projectId === "string" ? params.projectId : "";
+    if (!companyId || !projectId) return [];
+    const entities = await listSwipeEventEntities(ctx, companyId, projectId);
+    return entities.map(asSwipeEvent).filter((entry) => entry.companyId === companyId);
+  });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.preferenceProfile, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    const projectId = typeof params.projectId === "string" ? params.projectId : "";
+    if (!companyId || !projectId) return null;
+    return await findPreferenceProfile(ctx, companyId, projectId);
+  });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.planningArtifact, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    const projectId = typeof params.projectId === "string" ? params.projectId : "";
+    const artifactId = typeof params.artifactId === "string" ? params.artifactId : "";
+    if (!companyId || !projectId || !artifactId) return null;
+    const entity = await findPlanningArtifact(ctx, companyId, projectId, artifactId);
+    return entity ? asPlanningArtifact(entity) : null;
+  });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.planningArtifacts, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    const projectId = typeof params.projectId === "string" ? params.projectId : "";
+    if (!companyId || !projectId) return [];
+    const entities = await listPlanningArtifactEntities(ctx, companyId, projectId);
+    return entities.map(asPlanningArtifact).filter((entry) => entry.companyId === companyId);
+  });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.deliveryRun, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    const projectId = typeof params.projectId === "string" ? params.projectId : "";
+    const runId = typeof params.runId === "string" ? params.runId : "";
+    if (!companyId || !projectId || !runId) return null;
+    const entity = await findDeliveryRun(ctx, companyId, projectId, runId);
+    return entity ? asDeliveryRun(entity) : null;
+  });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.deliveryRuns, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    const projectId = typeof params.projectId === "string" ? params.projectId : "";
+    if (!companyId || !projectId) return [];
+    const entities = await listDeliveryRunEntities(ctx, companyId, projectId);
+    return entities.map(asDeliveryRun).filter((entry) => entry.companyId === companyId);
+  });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.workspaceLease, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    const projectId = typeof params.projectId === "string" ? params.projectId : "";
+    const leaseId = typeof params.leaseId === "string" ? params.leaseId : "";
+    if (!companyId || !projectId || !leaseId) return null;
+    const entity = await findWorkspaceLease(ctx, companyId, projectId, leaseId);
+    return entity ? asWorkspaceLease(entity) : null;
+  });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.workspaceLeases, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    const projectId = typeof params.projectId === "string" ? params.projectId : "";
+    if (!companyId || !projectId) return [];
+    const entities = await listWorkspaceLeaseEntities(ctx, companyId, projectId);
+    return entities.map(asWorkspaceLease).filter((entry) => entry.companyId === companyId);
+  });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.companyBudget, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    if (!companyId) return null;
+    return await findCompanyBudget(ctx, companyId);
+  });
+
+  ctx.data.register(AUTOPILOT_DATA_KEYS.companyBudgets, async (params) => {
+    const companyId = typeof params.companyId === "string" ? params.companyId : "";
+    if (!companyId) return [];
+    const entities = await listCompanyBudgetEntities(ctx, companyId);
+    return entities.map(asCompanyBudget).filter((entry) => entry.companyId === companyId);
+  });
 }
 
 async function registerActionHandlers(ctx: PluginContext): Promise<void> {
@@ -2606,6 +2774,251 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
 
     await upsertProductProgramRevision(ctx, revision);
     return revision;
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.createPlanningArtifact, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    const ideaId = typeof params.ideaId === "string" ? params.ideaId : "";
+    if (!companyId || !projectId || !ideaId) {
+      throw new Error("companyId, projectId, and ideaId are required");
+    }
+
+    const autopilotEntity = await findAutopilotProject(ctx, companyId, projectId);
+    const autopilot = autopilotEntity ? asAutopilotProject(autopilotEntity) : null;
+    const automationTier = autopilot?.automationTier ?? "supervised";
+
+    const artifact: PlanningArtifact = {
+      artifactId: randomUUID(),
+      companyId,
+      projectId,
+      ideaId,
+      title: typeof params.title === "string" ? params.title : "Planning Artifact",
+      scope: typeof params.scope === "string" ? params.scope : "",
+      dependencies: Array.isArray(params.dependencies) ? params.dependencies : [],
+      tests: Array.isArray(params.tests) ? params.tests : [],
+      executionMode: (params.executionMode === "convoy") ? "convoy" : "simple",
+      approvalMode: automationTier === "fullauto" ? "auto_approve" : "manual",
+      automationTier,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    };
+
+    await upsertPlanningArtifact(ctx, artifact);
+    return artifact;
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.createDeliveryRun, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    const ideaId = typeof params.ideaId === "string" ? params.ideaId : "";
+    const artifactId = typeof params.artifactId === "string" ? params.artifactId : "";
+    if (!companyId || !projectId) {
+      throw new Error("companyId and projectId are required");
+    }
+
+    const companyBudget = await findCompanyBudget(ctx, companyId);
+    if (companyBudget && companyBudget.paused) {
+      throw new Error("Company autopilot budget is paused: " + (companyBudget.pauseReason ?? "Budget exceeded"));
+    }
+
+    const autopilotEntity = await findAutopilotProject(ctx, companyId, projectId);
+    const autopilot = autopilotEntity ? asAutopilotProject(autopilotEntity) : null;
+    if (autopilot?.paused) {
+      throw new Error("Project autopilot is paused: " + (autopilot.pauseReason ?? "Budget or policy pause"));
+    }
+
+    const automationTier = autopilot?.automationTier ?? "supervised";
+    const runId = randomUUID();
+    const branchName = typeof params.branchName === "string" ? params.branchName : `autopilot-run-${runId.slice(0, 8)}`;
+    const workspacePath = typeof params.workspacePath === "string" ? params.workspacePath : "";
+    const leasedPort = typeof params.leasedPort === "number" ? params.leasedPort : null;
+
+    const lease: WorkspaceLease = {
+      leaseId: randomUUID(),
+      companyId,
+      projectId,
+      runId,
+      workspacePath,
+      branchName,
+      leasedPort,
+      gitRepoRoot: autopilot?.repoUrl ?? null,
+      isActive: true,
+      createdAt: nowIso(),
+      releasedAt: null
+    };
+    await upsertWorkspaceLease(ctx, lease);
+
+    const run: DeliveryRun = {
+      runId,
+      companyId,
+      projectId,
+      ideaId,
+      artifactId,
+      status: "pending",
+      automationTier,
+      branchName,
+      workspacePath,
+      leasedPort,
+      commitSha: null,
+      paused: false,
+      completedAt: null,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
+    };
+
+    await upsertDeliveryRun(ctx, run);
+
+    if (companyBudget) {
+      companyBudget.autopilotUsedMinutes += autopilot?.budgetMinutes ?? 0;
+      companyBudget.updatedAt = nowIso();
+      if (companyBudget.autopilotUsedMinutes >= companyBudget.autopilotBudgetMinutes) {
+        companyBudget.paused = true;
+        companyBudget.pauseReason = "Autopilot budget minutes exceeded";
+      }
+      await upsertCompanyBudget(ctx, companyBudget);
+    }
+
+    return { run, lease };
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.pauseAutopilot, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    if (!companyId || !projectId) {
+      throw new Error("companyId and projectId are required");
+    }
+
+    const existing = await findAutopilotProject(ctx, companyId, projectId);
+    if (!existing) {
+      throw new Error("Autopilot project not found");
+    }
+
+    const autopilot = asAutopilotProject(existing);
+    autopilot.paused = true;
+    autopilot.pauseReason = typeof params.reason === "string" ? params.reason : "Operator paused";
+    autopilot.updatedAt = nowIso();
+
+    await upsertAutopilotProject(ctx, autopilot);
+    return { status: "paused", pauseReason: autopilot.pauseReason };
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.resumeAutopilot, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    if (!companyId || !projectId) {
+      throw new Error("companyId and projectId are required");
+    }
+
+    const existing = await findAutopilotProject(ctx, companyId, projectId);
+    if (!existing) {
+      throw new Error("Autopilot project not found");
+    }
+
+    const autopilot = asAutopilotProject(existing);
+    autopilot.paused = false;
+    autopilot.pauseReason = undefined;
+    autopilot.updatedAt = nowIso();
+
+    await upsertAutopilotProject(ctx, autopilot);
+    return { status: "running", pauseReason: undefined };
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.pauseDeliveryRun, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    const runId = typeof params.runId === "string" ? params.runId : "";
+    if (!companyId || !projectId || !runId) {
+      throw new Error("companyId, projectId, and runId are required");
+    }
+
+    const entity = await findDeliveryRun(ctx, companyId, projectId, runId);
+    if (!entity) {
+      throw new Error("Delivery run not found");
+    }
+
+    const run = asDeliveryRun(entity);
+    run.paused = true;
+    run.pauseReason = typeof params.reason === "string" ? params.reason : "Operator paused";
+    run.status = "paused";
+    run.updatedAt = nowIso();
+
+    await upsertDeliveryRun(ctx, run);
+    return { status: "paused", pauseReason: run.pauseReason };
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.resumeDeliveryRun, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    const runId = typeof params.runId === "string" ? params.runId : "";
+    if (!companyId || !projectId || !runId) {
+      throw new Error("companyId, projectId, and runId are required");
+    }
+
+    const entity = await findDeliveryRun(ctx, companyId, projectId, runId);
+    if (!entity) {
+      throw new Error("Delivery run not found");
+    }
+
+    const run = asDeliveryRun(entity);
+    run.paused = false;
+    run.pauseReason = undefined;
+    run.status = "running";
+    run.updatedAt = nowIso();
+
+    await upsertDeliveryRun(ctx, run);
+    return { status: "running", pauseReason: undefined };
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.updateCompanyBudget, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    if (!companyId) {
+      throw new Error("companyId is required");
+    }
+
+    const existing = await findCompanyBudget(ctx, companyId);
+    const budgetId = existing?.budgetId ?? randomUUID();
+
+    const budget: CompanyBudget = {
+      budgetId,
+      companyId,
+      totalBudgetMinutes: typeof params.totalBudgetMinutes === "number" ? params.totalBudgetMinutes : (existing?.totalBudgetMinutes ?? 0),
+      usedBudgetMinutes: typeof params.usedBudgetMinutes === "number" ? params.usedBudgetMinutes : (existing?.usedBudgetMinutes ?? 0),
+      autopilotBudgetMinutes: typeof params.autopilotBudgetMinutes === "number" ? params.autopilotBudgetMinutes : (existing?.autopilotBudgetMinutes ?? 0),
+      autopilotUsedMinutes: typeof params.autopilotUsedMinutes === "number" ? params.autopilotUsedMinutes : (existing?.autopilotUsedMinutes ?? 0),
+      paused: params.paused === true || (existing?.paused ?? false),
+      pauseReason: typeof params.pauseReason === "string" ? params.pauseReason : existing?.pauseReason,
+      updatedAt: nowIso()
+    };
+
+    await upsertCompanyBudget(ctx, budget);
+    return budget;
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.checkBudgetAndPauseIfNeeded, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    if (!companyId || !projectId) {
+      throw new Error("companyId and projectId are required");
+    }
+
+    const autopilotEntity = await findAutopilotProject(ctx, companyId, projectId);
+    if (!autopilotEntity) return { paused: false, reason: null };
+
+    const autopilot = asAutopilotProject(autopilotEntity);
+    const companyBudget = await findCompanyBudget(ctx, companyId);
+
+    if (companyBudget && companyBudget.autopilotUsedMinutes >= companyBudget.autopilotBudgetMinutes) {
+      if (!companyBudget.paused) {
+        companyBudget.paused = true;
+        companyBudget.pauseReason = "Company-wide autopilot budget minutes exceeded";
+        companyBudget.updatedAt = nowIso();
+        await upsertCompanyBudget(ctx, companyBudget);
+      }
+      return { paused: true, reason: companyBudget.pauseReason ?? "Budget exceeded" };
+    }
+
+    return { paused: autopilot.paused, reason: autopilot.pauseReason ?? null };
   });
 
   ctx.actions.register(ACTION_KEYS.saveOptimizer, async (params) => {
@@ -2910,6 +3323,356 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
       ? params.remote.trim()
       : undefined;
     return await deleteProposalBranch(ctx, optimizer, run, remote);
+  });
+
+  // ─── Research Action Handlers ───────────────────────────────────────────────
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.startResearchCycle, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    const query = typeof params.query === "string" ? params.query : "";
+    if (!companyId || !projectId) {
+      throw new Error("companyId and projectId are required");
+    }
+
+    const cycle: ResearchCycle = {
+      cycleId: randomUUID(),
+      companyId,
+      projectId,
+      status: "running",
+      query,
+      findingsCount: 0,
+      startedAt: nowIso(),
+    };
+
+    await upsertResearchCycle(ctx, cycle);
+    return cycle;
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.completeResearchCycle, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    const cycleId = typeof params.cycleId === "string" ? params.cycleId : "";
+    if (!companyId || !projectId || !cycleId) {
+      throw new Error("companyId, projectId, and cycleId are required");
+    }
+
+    const entity = await findResearchCycle(ctx, companyId, projectId, cycleId);
+    if (!entity) {
+      throw new Error("Research cycle not found");
+    }
+
+    const cycle = asResearchCycle(entity);
+    if (cycle.companyId !== companyId) {
+      throw new Error("Research cycle not found");
+    }
+
+    cycle.status = params.status === "failed" ? "failed" : "completed";
+    cycle.reportContent =
+      typeof params.reportContent === "string" ? params.reportContent : cycle.reportContent;
+    cycle.findingsCount =
+      typeof params.findingsCount === "number" ? params.findingsCount : cycle.findingsCount;
+    cycle.completedAt = nowIso();
+    if (typeof params.error === "string") cycle.error = params.error;
+
+    await upsertResearchCycle(ctx, cycle);
+    return cycle;
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.addResearchFinding, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    const cycleId = typeof params.cycleId === "string" ? params.cycleId : "";
+    if (!companyId || !projectId || !cycleId) {
+      throw new Error("companyId, projectId, and cycleId are required");
+    }
+
+    const finding: ResearchFinding = {
+      findingId: randomUUID(),
+      companyId,
+      projectId,
+      cycleId,
+      title: typeof params.title === "string" ? params.title : "Untitled Finding",
+      description: typeof params.description === "string" ? params.description : "",
+      sourceUrl: typeof params.sourceUrl === "string" ? params.sourceUrl : undefined,
+      sourceLabel: typeof params.sourceLabel === "string" ? params.sourceLabel : undefined,
+      evidenceText: typeof params.evidenceText === "string" ? params.evidenceText : undefined,
+      confidence:
+        typeof params.confidence === "number"
+          ? Math.max(0, Math.min(1, params.confidence))
+          : 0.5,
+      createdAt: nowIso(),
+    };
+
+    await upsertResearchFinding(ctx, finding);
+    return finding;
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.generateIdeas, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    const cycleId = typeof params.cycleId === "string" ? params.cycleId : undefined;
+    if (!companyId || !projectId) {
+      throw new Error("companyId and projectId are required");
+    }
+
+    const ideasRaw = Array.isArray(params.ideas) ? params.ideas : [];
+    const created: Idea[] = [];
+
+    for (const raw of ideasRaw) {
+      const title = typeof raw.title === "string" ? raw.title : "Untitled Idea";
+      const description = typeof raw.description === "string" ? raw.description : "";
+      const rationale = typeof raw.rationale === "string" ? raw.rationale : "";
+      const sourceReferences = Array.isArray(raw.sourceReferences) ? raw.sourceReferences : [];
+      const score =
+        typeof raw.score === "number" ? Math.max(0, Math.min(100, raw.score)) : 50;
+
+      // Check for duplicates
+      const duplicate = await findDuplicateIdea(
+        ctx,
+        companyId,
+        projectId,
+        title,
+        description
+      );
+      if (duplicate && duplicate.similarity >= 0.9) {
+        // Near-exact duplicate - suppress with annotation
+        const idea: Idea = {
+          ideaId: randomUUID(),
+          companyId,
+          projectId,
+          cycleId,
+          title: title + " [Possible Duplicate]",
+          description,
+          rationale,
+          sourceReferences,
+          score: Math.floor(score * 0.9),
+          status: "active",
+          duplicateOfIdeaId: duplicate.idea.ideaId,
+          duplicateAnnotated: true,
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+        };
+        await upsertIdea(ctx, idea);
+        created.push(idea);
+      } else if (duplicate && duplicate.similarity >= 0.75) {
+        // Lower similarity - annotate
+        const idea: Idea = {
+          ideaId: randomUUID(),
+          companyId,
+          projectId,
+          cycleId,
+          title: title + " [Review Duplicate]",
+          description,
+          rationale,
+          sourceReferences,
+          score,
+          status: "active",
+          duplicateOfIdeaId: duplicate.idea.ideaId,
+          duplicateAnnotated: true,
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+        };
+        await upsertIdea(ctx, idea);
+        created.push(idea);
+      } else {
+        // New idea, no duplicate
+        const idea: Idea = {
+          ideaId: randomUUID(),
+          companyId,
+          projectId,
+          cycleId,
+          title,
+          description,
+          rationale,
+          sourceReferences,
+          score,
+          status: "active",
+          duplicateAnnotated: false,
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+        };
+        await upsertIdea(ctx, idea);
+        created.push(idea);
+      }
+    }
+
+    // Apply preference profile ordering if available
+    const profile = await findPreferenceProfile(ctx, companyId, projectId);
+    if (profile) {
+      created.sort((a, b) => {
+        const aWeight = a.score * (profile.yesCount + profile.nowCount + 1);
+        const bWeight = b.score * (profile.yesCount + profile.nowCount + 1);
+        return bWeight - aWeight;
+      });
+    }
+
+    return created;
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.recordSwipe, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    const ideaId = typeof params.ideaId === "string" ? params.ideaId : "";
+    const decision = isValidSwipeDecision(params.decision) ? params.decision : "pass";
+    if (!companyId || !projectId || !ideaId) {
+      throw new Error("companyId, projectId, and ideaId are required");
+    }
+
+    // Record the swipe event
+    const swipe: SwipeEvent = {
+      swipeId: randomUUID(),
+      companyId,
+      projectId,
+      ideaId,
+      decision,
+      createdAt: nowIso(),
+    };
+    await upsertSwipeEvent(ctx, swipe);
+
+    // Update the idea status based on decision
+    const idea = await findIdeaById(ctx, companyId, projectId, ideaId);
+    if (!idea) {
+      throw new Error("Idea not found");
+    }
+
+    let newStatus: IdeaStatus = idea.status;
+    if (decision === "pass") {
+      newStatus = "rejected";
+    } else if (decision === "maybe") {
+      newStatus = "maybe";
+    } else if (decision === "yes" || decision === "now") {
+      newStatus = "approved";
+    }
+
+    idea.status = newStatus;
+    idea.updatedAt = nowIso();
+    await upsertIdea(ctx, idea);
+
+    // Update the preference profile
+    const existingProfile = await findPreferenceProfile(ctx, companyId, projectId);
+    const profileId = existingProfile?.profileId ?? randomUUID();
+    const profile: PreferenceProfile = {
+      profileId,
+      companyId,
+      projectId,
+      passCount: existingProfile?.passCount ?? 0,
+      maybeCount: existingProfile?.maybeCount ?? 0,
+      yesCount: existingProfile?.yesCount ?? 0,
+      nowCount: existingProfile?.nowCount ?? 0,
+      lastUpdated: nowIso(),
+    };
+
+    if (decision === "pass") profile.passCount++;
+    else if (decision === "maybe") profile.maybeCount++;
+    else if (decision === "yes") profile.yesCount++;
+    else if (decision === "now") profile.nowCount++;
+
+    await upsertPreferenceProfile(ctx, profile);
+
+    // Auto-create planning artifact and delivery run for approved ideas
+    let planningArtifact: PlanningArtifact | null = null;
+    let deliveryRun: DeliveryRun | null = null;
+
+    if (decision === "yes" || decision === "now") {
+      // Create planning artifact
+      const autopilotEntity = await findAutopilotProject(ctx, companyId, projectId);
+      const autopilot = autopilotEntity ? asAutopilotProject(autopilotEntity) : null;
+      const automationTier = autopilot?.automationTier ?? "supervised";
+
+      planningArtifact = {
+        artifactId: randomUUID(),
+        companyId,
+        projectId,
+        ideaId,
+        title: idea.title,
+        scope: idea.description || "",
+        dependencies: [],
+        tests: [],
+        executionMode: "simple",
+        approvalMode: automationTier === "fullauto" ? "auto_approve" : "manual",
+        automationTier,
+        createdAt: nowIso(),
+        updatedAt: nowIso()
+      };
+      await upsertPlanningArtifact(ctx, planningArtifact);
+
+      // Create delivery run
+      const companyBudget = await findCompanyBudget(ctx, companyId);
+      if (companyBudget && companyBudget.paused) {
+        // Budget paused but still created the artifact
+      } else if (autopilot?.paused) {
+        // Autopilot paused but still created the artifact
+      } else {
+        const runId = randomUUID();
+        const branchName = `autopilot-run-${runId.slice(0, 8)}`;
+
+        const lease: WorkspaceLease = {
+          leaseId: randomUUID(),
+          companyId,
+          projectId,
+          runId,
+          workspacePath: autopilot?.workspaceId ?? "",
+          branchName,
+          leasedPort: null,
+          gitRepoRoot: autopilot?.repoUrl ?? null,
+          isActive: true,
+          createdAt: nowIso(),
+          releasedAt: null
+        };
+        await upsertWorkspaceLease(ctx, lease);
+
+        deliveryRun = {
+          runId,
+          companyId,
+          projectId,
+          ideaId,
+          artifactId: planningArtifact.artifactId,
+          status: "pending",
+          automationTier,
+          branchName,
+          workspacePath: autopilot?.workspaceId ?? "",
+          leasedPort: null,
+          commitSha: null,
+          paused: false,
+          completedAt: null,
+          createdAt: nowIso(),
+          updatedAt: nowIso()
+        };
+        await upsertDeliveryRun(ctx, deliveryRun);
+      }
+    }
+
+    return { swipe, idea, profile, planningArtifact, deliveryRun };
+  });
+
+  ctx.actions.register(AUTOPILOT_ACTION_KEYS.updatePreferenceProfile, async (params) => {
+    const companyId = isValidCompanyId(params.companyId) ? params.companyId : "";
+    const projectId = isValidProjectId(params.projectId) ? params.projectId : "";
+    if (!companyId || !projectId) {
+      throw new Error("companyId and projectId are required");
+    }
+
+    const existing = await findPreferenceProfile(ctx, companyId, projectId);
+    const profileId = existing?.profileId ?? randomUUID();
+
+    const profile: PreferenceProfile = {
+      profileId,
+      companyId,
+      projectId,
+      passCount:
+        typeof params.passCount === "number" ? params.passCount : (existing?.passCount ?? 0),
+      maybeCount:
+        typeof params.maybeCount === "number" ? params.maybeCount : (existing?.maybeCount ?? 0),
+      yesCount:
+        typeof params.yesCount === "number" ? params.yesCount : (existing?.yesCount ?? 0),
+      nowCount:
+        typeof params.nowCount === "number" ? params.nowCount : (existing?.nowCount ?? 0),
+      lastUpdated: nowIso(),
+    };
+
+    await upsertPreferenceProfile(ctx, profile);
+    return profile;
   });
 }
 
