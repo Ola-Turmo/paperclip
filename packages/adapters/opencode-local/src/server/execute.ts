@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult } from "@paperclipai/adapter-utils";
@@ -50,16 +49,26 @@ function resolveOpenCodeBiller(env: Record<string, string>, provider: string | n
   return inferOpenAiCompatibleBiller(env, null) ?? provider ?? "unknown";
 }
 
-function claudeSkillsHome(): string {
-  return path.join(os.homedir(), ".claude", "skills");
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function openCodeSkillsHome(config: Record<string, unknown>): string {
+  const env = asRecord(config.env) ?? {};
+  const configuredHome = asString(env.HOME, "").trim();
+  const home = configuredHome || process.env.HOME || process.cwd();
+  return path.join(path.resolve(home), ".opencode", "skills");
 }
 
 async function ensureOpenCodeSkillsInjected(
   onLog: AdapterExecutionContext["onLog"],
+  config: Record<string, unknown>,
   skillsEntries: Array<{ key: string; runtimeName: string; source: string }>,
   desiredSkillNames?: string[],
 ) {
-  const skillsHome = claudeSkillsHome();
+  const skillsHome = openCodeSkillsHome(config);
   await fs.mkdir(skillsHome, { recursive: true });
   const desiredSet = new Set(desiredSkillNames ?? skillsEntries.map((entry) => entry.key));
   const selectedEntries = skillsEntries.filter((entry) => desiredSet.has(entry.key));
@@ -124,6 +133,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const desiredOpenCodeSkillNames = resolvePaperclipDesiredSkillNames(config, openCodeSkillEntries);
   await ensureOpenCodeSkillsInjected(
     onLog,
+    config,
     openCodeSkillEntries,
     desiredOpenCodeSkillNames,
   );
