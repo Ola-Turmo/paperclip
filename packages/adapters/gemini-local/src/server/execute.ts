@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
@@ -77,8 +76,17 @@ function renderApiAccessNote(env: Record<string, string>): string {
   ].join("\n");
 }
 
-function geminiSkillsHome(): string {
-  return path.join(os.homedir(), ".gemini", "skills");
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function geminiSkillsHome(config: Record<string, unknown>): string {
+  const env = asRecord(config.env) ?? {};
+  const configuredHome = asString(env.HOME, "").trim();
+  const home = configuredHome || process.env.HOME || process.cwd();
+  return path.join(path.resolve(home), ".gemini", "skills");
 }
 
 /**
@@ -88,6 +96,7 @@ function geminiSkillsHome(): string {
  */
 async function ensureGeminiSkillsInjected(
   onLog: AdapterExecutionContext["onLog"],
+  config: Record<string, unknown>,
   skillsEntries: Array<{ key: string; runtimeName: string; source: string }>,
   desiredSkillNames?: string[],
 ): Promise<void> {
@@ -95,7 +104,7 @@ async function ensureGeminiSkillsInjected(
   const selectedEntries = skillsEntries.filter((entry) => desiredSet.has(entry.key));
   if (selectedEntries.length === 0) return;
 
-  const skillsHome = geminiSkillsHome();
+  const skillsHome = geminiSkillsHome(config);
   try {
     await fs.mkdir(skillsHome, { recursive: true });
   } catch (err) {
@@ -165,7 +174,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
   const geminiSkillEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
   const desiredGeminiSkillNames = resolvePaperclipDesiredSkillNames(config, geminiSkillEntries);
-  await ensureGeminiSkillsInjected(onLog, geminiSkillEntries, desiredGeminiSkillNames);
+  await ensureGeminiSkillsInjected(onLog, config, geminiSkillEntries, desiredGeminiSkillNames);
 
   const envConfig = parseObject(config.env);
   const hasExplicitApiKey =

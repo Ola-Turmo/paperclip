@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult } from "@paperclipai/adapter-utils";
@@ -29,9 +28,6 @@ import { ensurePiModelConfiguredAndAvailable } from "./models.js";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
-const PAPERCLIP_SESSIONS_DIR = path.join(os.homedir(), ".pi", "paperclips");
-const PI_AGENT_SKILLS_DIR = path.join(os.homedir(), ".pi", "agent", "skills");
-
 function firstNonEmptyLine(text: string): string {
   return (
     text
@@ -39,6 +35,26 @@ function firstNonEmptyLine(text: string): string {
       .map((line) => line.trim())
       .find(Boolean) ?? ""
   );
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function resolvePiHome(config: Record<string, unknown>): string {
+  const env = asRecord(config.env) ?? {};
+  const configuredHome = asString(env.HOME, "").trim();
+  return path.resolve(configuredHome || process.env.HOME || process.cwd());
+}
+
+function resolvePiSessionsDir(config: Record<string, unknown>): string {
+  return path.join(resolvePiHome(config), ".pi", "paperclips");
+}
+
+function resolvePiAgentSkillsDir(config: Record<string, unknown>): string {
+  return path.join(resolvePiHome(config), ".pi", "agent", "skills");
 }
 
 function parseModelProvider(model: string | null): string | null {
@@ -57,38 +73,40 @@ function parseModelId(model: string | null): string | null {
 
 async function ensurePiSkillsInjected(
   onLog: AdapterExecutionContext["onLog"],
+  config: Record<string, unknown>,
   skillsEntries: Array<{ key: string; runtimeName: string; source: string }>,
   desiredSkillNames?: string[],
 ) {
   const desiredSet = new Set(desiredSkillNames ?? skillsEntries.map((entry) => entry.key));
   const selectedEntries = skillsEntries.filter((entry) => desiredSet.has(entry.key));
   if (selectedEntries.length === 0) return;
-  await fs.mkdir(PI_AGENT_SKILLS_DIR, { recursive: true });
+  const piAgentSkillsDir = resolvePiAgentSkillsDir(config);
+  await fs.mkdir(piAgentSkillsDir, { recursive: true });
   const removedSkills = await removeMaintainerOnlySkillSymlinks(
-    PI_AGENT_SKILLS_DIR,
+    piAgentSkillsDir,
     selectedEntries.map((entry) => entry.runtimeName),
   );
   for (const skillName of removedSkills) {
     await onLog(
       "stderr",
-      `[paperclip] Removed maintainer-only Pi skill "${skillName}" from ${PI_AGENT_SKILLS_DIR}\n`,
+      `[paperclip] Removed maintainer-only Pi skill "${skillName}" from ${piAgentSkillsDir}\n`,
     );
   }
 
   for (const entry of selectedEntries) {
-    const target = path.join(PI_AGENT_SKILLS_DIR, entry.runtimeName);
+    const target = path.join(piAgentSkillsDir, entry.runtimeName);
 
     try {
       const result = await ensurePaperclipSkillSymlink(entry.source, target);
       if (result === "skipped") continue;
       await onLog(
         "stderr",
-        `[paperclip] ${result === "repaired" ? "Repaired" : "Injected"} Pi skill "${entry.runtimeName}" into ${PI_AGENT_SKILLS_DIR}\n`,
+        `[paperclip] ${result === "repaired" ? "Repaired" : "Injected"} Pi skill "${entry.runtimeName}" into ${piAgentSkillsDir}\n`,
       );
     } catch (err) {
       await onLog(
         "stderr",
-        `[paperclip] Failed to inject Pi skill "${entry.runtimeName}" into ${PI_AGENT_SKILLS_DIR}: ${err instanceof Error ? err.message : String(err)}\n`,
+        `[paperclip] Failed to inject Pi skill "${entry.runtimeName}" into ${piAgentSkillsDir}: ${err instanceof Error ? err.message : String(err)}\n`,
       );
     }
   }
@@ -98,14 +116,15 @@ function resolvePiBiller(env: Record<string, string>, provider: string | null): 
   return inferOpenAiCompatibleBiller(env, null) ?? provider ?? "unknown";
 }
 
-async function ensureSessionsDir(): Promise<string> {
-  await fs.mkdir(PAPERCLIP_SESSIONS_DIR, { recursive: true });
-  return PAPERCLIP_SESSIONS_DIR;
+async function ensureSessionsDir(config: Record<string, unknown>): Promise<string> {
+  const sessionsDir = resolvePiSessionsDir(config);
+  await fs.mkdir(sessionsDir, { recursive: true });
+  return sessionsDir;
 }
 
-function buildSessionPath(agentId: string, timestamp: string): string {
+function buildSessionPath(config: Record<string, unknown>, agentId: string, timestamp: string): string {
   const safeTimestamp = timestamp.replace(/[:.]/g, "-");
-  return path.join(PAPERCLIP_SESSIONS_DIR, `${safeTimestamp}-${agentId}.jsonl`);
+  return path.join(resolvePiSessionsDir(config), `${safeTimestamp}-${agentId}.jsonl`);
 }
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
@@ -142,12 +161,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
   
   // Ensure sessions directory exists
-  await ensureSessionsDir();
+  await ensureSessionsDir(config);
   
   // Inject skills
   const piSkillEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
   const desiredPiSkillNames = resolvePaperclipDesiredSkillNames(config, piSkillEntries);
-  await ensurePiSkillsInjected(onLog, piSkillEntries, desiredPiSkillNames);
+  await ensurePiSkillsInjected(onLog, config, piSkillEntries, desiredPiSkillNames);
 
   // Build environment
   const envConfig = parseObject(config.env);
@@ -239,7 +258,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const canResumeSession =
     runtimeSessionId.length > 0 &&
     (runtimeSessionCwd.length === 0 || path.resolve(runtimeSessionCwd) === path.resolve(cwd));
-  const sessionPath = canResumeSession ? runtimeSessionId : buildSessionPath(agent.id, new Date().toISOString());
+  const sessionPath = canResumeSession ? runtimeSessionId : buildSessionPath(config, agent.id, new Date().toISOString());
   
   if (runtimeSessionId && !canResumeSession) {
     await onLog(
@@ -356,7 +375,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     args.push("--session", sessionFile);
 
     // Add Paperclip skills directory so Pi can load the paperclip skill
-    args.push("--skill", PI_AGENT_SKILLS_DIR);
+    args.push("--skill", resolvePiAgentSkillsDir(config));
 
     if (extraArgs.length > 0) args.push(...extraArgs);
     
@@ -495,7 +514,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       "stdout",
       `[paperclip] Pi session "${runtimeSessionId}" is unavailable; retrying with a fresh session.\n`,
     );
-    const newSessionPath = buildSessionPath(agent.id, new Date().toISOString());
+    const newSessionPath = buildSessionPath(config, agent.id, new Date().toISOString());
     try {
       await fs.writeFile(newSessionPath, "", { flag: "wx" });
     } catch (err) {
