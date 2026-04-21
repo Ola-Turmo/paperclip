@@ -1653,6 +1653,15 @@ export function companySkillService(db: Db) {
     return row ? toCompanySkill(row) : null;
   }
 
+  async function getBySlug(companyId: string, slug: string) {
+    const row = await db
+      .select()
+      .from(companySkills)
+      .where(and(eq(companySkills.companyId, companyId), eq(companySkills.slug, slug)))
+      .then((rows) => rows[0] ?? null);
+    return row ? toCompanySkill(row) : null;
+  }
+
   async function usage(companyId: string, key: string): Promise<CompanySkillUsageAgent[]> {
     const skills = await listFull(companyId);
     const agentRows = await agents.list(companyId);
@@ -2298,7 +2307,7 @@ export function companySkillService(db: Db) {
   async function upsertImportedSkills(companyId: string, imported: ImportedSkill[]): Promise<CompanySkill[]> {
     const out: CompanySkill[] = [];
     for (const skill of imported) {
-      const existing = await getByKey(companyId, skill.key);
+      const existing = await getByKey(companyId, skill.key) ?? await getBySlug(companyId, skill.slug);
       const existingMeta = existing ? getSkillMeta(existing) : {};
       const incomingMeta = skill.metadata && isPlainRecord(skill.metadata) ? skill.metadata : {};
       const incomingOwner = asString(incomingMeta.owner);
