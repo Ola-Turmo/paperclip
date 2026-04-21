@@ -60,7 +60,7 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
         />
         <span className="text-muted-foreground ml-1">{verb} </span>
         {name && <span className="font-medium">{name}</span>}
-        {entityTitle && <span className="text-muted-foreground ml-1">— {entityTitle}</span>}
+        {entityTitle && <span className="text-muted-foreground ml-1">| {entityTitle}</span>}
       </p>
       <span className="text-xs text-muted-foreground shrink-0 pt-0.5">{timeAgo(event.createdAt)}</span>
     </div>
