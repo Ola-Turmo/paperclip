@@ -60,7 +60,13 @@ async function resolveGitHubToken(hostname: string) {
     const hostsRaw = await readGitHubHostsFile();
     cachedGitHubTokens = hostsRaw ? parseGitHubTokens(hostsRaw) : new Map();
   }
-  return cachedGitHubTokens.get(hostname.toLowerCase()) ?? null;
+  const normalized = hostname.toLowerCase();
+  return (
+    cachedGitHubTokens.get(normalized)
+    ?? (normalized === "api.github.com" ? cachedGitHubTokens.get("github.com") : null)
+    ?? (normalized === "raw.githubusercontent.com" ? cachedGitHubTokens.get("github.com") : null)
+    ?? null
+  );
 }
 
 export async function ghFetch(url: string, init?: RequestInit): Promise<Response> {
