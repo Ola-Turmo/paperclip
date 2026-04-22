@@ -1658,9 +1658,9 @@ export function pluginLoader(
    * `error` in the database when activation fails.
    */
   async function activatePlugin(plugin: PluginRecord): Promise<PluginLoadResult> {
-    const manifest = plugin.manifestJson;
-    const pluginId = plugin.id;
-    const pluginKey = plugin.pluginKey;
+    let currentPlugin = plugin;
+    const pluginId = currentPlugin.id;
+    const pluginKey = currentPlugin.pluginKey;
 
     const registered: PluginLoadResult["registered"] = {
       worker: false,
@@ -1692,8 +1692,31 @@ export function pluginLoader(
     } = runtimeServices;
 
     try {
+      if (currentPlugin.packagePath && existsSync(currentPlugin.packagePath)) {
+        const pkgJson = await readPackageJson(currentPlugin.packagePath);
+        const manifestPath = pkgJson ? resolveManifestPath(currentPlugin.packagePath, pkgJson) : null;
+        const refreshedManifest = manifestPath && existsSync(manifestPath)
+          ? await loadManifestFromPath(manifestPath)
+          : null;
+        if (refreshedManifest) {
+          const manifestChanged =
+            JSON.stringify(currentPlugin.manifestJson) !== JSON.stringify(refreshedManifest)
+            || currentPlugin.version !== refreshedManifest.version;
+          if (manifestChanged) {
+            const updated = await registry.update(currentPlugin.id, {
+              version: refreshedManifest.version,
+              manifest: refreshedManifest,
+            });
+            if (updated) {
+              currentPlugin = updated as PluginRecord;
+            }
+          }
+        }
+      }
+
+      const manifest = currentPlugin.manifestJson;
       log.info(
-        { pluginId, pluginKey, version: plugin.version },
+        { pluginId, pluginKey, version: currentPlugin.version },
         "plugin-loader: activating plugin",
       );
 
@@ -1828,13 +1851,13 @@ export function pluginLoader(
         {
           pluginId,
           pluginKey,
-          version: plugin.version,
+          version: currentPlugin.version,
           registered,
         },
         "plugin-loader: plugin activated successfully",
       );
 
-      return { plugin, success: true, registered };
+      return { plugin: currentPlugin, success: true, registered };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
 
@@ -1858,7 +1881,7 @@ export function pluginLoader(
       }
 
       return {
-        plugin,
+        plugin: currentPlugin,
         success: false,
         error: errorMessage,
         registered,
