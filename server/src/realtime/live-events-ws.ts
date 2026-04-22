@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import type { Duplex } from "node:stream";
 import { and, eq, isNull } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agentApiKeys, companyMemberships, instanceUserRoles } from "@paperclipai/db";
+import { agentApiKeys, authUsers, companyMemberships, instanceUserRoles } from "@paperclipai/db";
 import type { DeploymentMode } from "@paperclipai/shared";
 import type { BetterAuthSessionResult } from "../auth/better-auth.js";
 import { logger } from "../middleware/logger.js";
@@ -50,6 +50,10 @@ interface IncomingMessageWithContext extends IncomingMessage {
   paperclipUpgradeContext?: UpgradeContext;
 }
 
+const TAILSCALE_AUTOLOGIN_ENABLED = process.env.PAPERCLIP_TAILSCALE_AUTOLOGIN_ENABLED === "true";
+const TAILSCALE_AUTOLOGIN_USER_EMAIL = process.env.PAPERCLIP_TAILSCALE_AUTOLOGIN_USER_EMAIL?.trim().toLowerCase() || null;
+const TAILSCALE_AUTOLOGIN_PROXY_TOKEN = process.env.PAPERCLIP_TAILSCALE_AUTOLOGIN_PROXY_TOKEN?.trim() || null;
+
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
@@ -92,6 +96,69 @@ function headersFromIncomingMessage(req: IncomingMessage): Headers {
   return headers;
 }
 
+async function resolveTailscaleAutologinUpgradeContext(
+  db: Db,
+  req: IncomingMessage,
+  companyId: string,
+): Promise<UpgradeContext | null> {
+  if (!TAILSCALE_AUTOLOGIN_ENABLED || !TAILSCALE_AUTOLOGIN_USER_EMAIL || !TAILSCALE_AUTOLOGIN_PROXY_TOKEN) {
+    return null;
+  }
+
+  const requestToken = req.headers["x-paperclip-tailscale-autologin"];
+  const rawToken = Array.isArray(requestToken) ? requestToken[0] : requestToken;
+  const token = rawToken?.trim();
+  if (!token || token !== TAILSCALE_AUTOLOGIN_PROXY_TOKEN) {
+    return null;
+  }
+
+  const user = await db
+    .select({
+      id: authUsers.id,
+      email: authUsers.email,
+    })
+    .from(authUsers)
+    .where(eq(authUsers.email, TAILSCALE_AUTOLOGIN_USER_EMAIL))
+    .then((rows) => rows[0] ?? null);
+
+  if (!user) {
+    logger.warn(
+      { autoLoginEmail: TAILSCALE_AUTOLOGIN_USER_EMAIL, url: req.url },
+      "Tailscale autologin websocket user was not found",
+    );
+    return null;
+  }
+
+  const [roleRow, memberships] = await Promise.all([
+    db
+      .select({ id: instanceUserRoles.id })
+      .from(instanceUserRoles)
+      .where(and(eq(instanceUserRoles.userId, user.id), eq(instanceUserRoles.role, "instance_admin")))
+      .then((rows) => rows[0] ?? null),
+    db
+      .select({ companyId: companyMemberships.companyId })
+      .from(companyMemberships)
+      .where(
+        and(
+          eq(companyMemberships.principalType, "user"),
+          eq(companyMemberships.principalId, user.id),
+          eq(companyMemberships.status, "active"),
+        ),
+      ),
+  ]);
+
+  const hasCompanyMembership = memberships.some((row) => row.companyId === companyId);
+  if (!roleRow && !hasCompanyMembership) {
+    return null;
+  }
+
+  return {
+    companyId,
+    actorType: "board",
+    actorId: user.id,
+  };
+}
+
 async function authorizeUpgrade(
   db: Db,
   req: IncomingMessage,
@@ -122,7 +189,9 @@ async function authorizeUpgrade(
 
     const session = await opts.resolveSessionFromHeaders(headersFromIncomingMessage(req));
     const userId = session?.user?.id;
-    if (!userId) return null;
+    if (!userId) {
+      return resolveTailscaleAutologinUpgradeContext(db, req, companyId);
+    }
 
     const [roleRow, memberships] = await Promise.all([
       db
