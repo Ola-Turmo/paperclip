@@ -61,6 +61,7 @@ describe("codex execute", () => {
     await fs.mkdir(workspace, { recursive: true });
     await fs.mkdir(sharedCodexHome, { recursive: true });
     await fs.writeFile(path.join(sharedCodexHome, "auth.json"), '{"token":"shared"}\n', "utf8");
+    await fs.writeFile(path.join(sharedCodexHome, ".credentials.json"), '{"mcp":"oauth"}\n', "utf8");
     await fs.writeFile(path.join(sharedCodexHome, "config.toml"), 'model = "codex-mini-latest"\n', "utf8");
     await writeFakeCodexCommand(commandPath);
 
@@ -114,9 +115,12 @@ describe("codex execute", () => {
       expect(capture.codexHome).toBe(managedCodexHome);
 
       const managedAuth = path.join(managedCodexHome, "auth.json");
+      const managedCredentials = path.join(managedCodexHome, ".credentials.json");
       const managedConfig = path.join(managedCodexHome, "config.toml");
       expect((await fs.lstat(managedAuth)).isSymbolicLink()).toBe(true);
       expect(await fs.realpath(managedAuth)).toBe(await fs.realpath(path.join(sharedCodexHome, "auth.json")));
+      expect((await fs.lstat(managedCredentials)).isFile()).toBe(true);
+      expect(await fs.readFile(managedCredentials, "utf8")).toBe('{"mcp":"oauth"}\n');
       expect((await fs.lstat(managedConfig)).isFile()).toBe(true);
       expect(await fs.readFile(managedConfig, "utf8")).toBe('model = "codex-mini-latest"\n');
       await expect(fs.lstat(path.join(sharedCodexHome, "companies", "company-1"))).rejects.toThrow();
@@ -748,6 +752,7 @@ describe("codex execute", () => {
     await fs.mkdir(workspace, { recursive: true });
     await fs.mkdir(sharedCodexHome, { recursive: true });
     await fs.writeFile(path.join(sharedCodexHome, "auth.json"), '{"token":"shared"}\n', "utf8");
+    await fs.writeFile(path.join(sharedCodexHome, ".credentials.json"), '{"mcp":"oauth"}\n', "utf8");
     await fs.writeFile(path.join(sharedCodexHome, "config.toml"), 'model = "codex-mini-latest"\n', "utf8");
     await writeFakeCodexCommand(commandPath);
 
@@ -812,10 +817,13 @@ describe("codex execute", () => {
       );
 
       const isolatedAuth = path.join(isolatedCodexHome, "auth.json");
+      const isolatedCredentials = path.join(isolatedCodexHome, ".credentials.json");
       const isolatedConfig = path.join(isolatedCodexHome, "config.toml");
 
       expect((await fs.lstat(isolatedAuth)).isSymbolicLink()).toBe(true);
       expect(await fs.realpath(isolatedAuth)).toBe(await fs.realpath(path.join(sharedCodexHome, "auth.json")));
+      expect((await fs.lstat(isolatedCredentials)).isFile()).toBe(true);
+      expect(await fs.readFile(isolatedCredentials, "utf8")).toBe('{"mcp":"oauth"}\n');
       expect((await fs.lstat(isolatedConfig)).isFile()).toBe(true);
       expect(await fs.readFile(isolatedConfig, "utf8")).toBe('model = "codex-mini-latest"\n');
       expect((await fs.lstat(homeSkill)).isSymbolicLink()).toBe(true);
