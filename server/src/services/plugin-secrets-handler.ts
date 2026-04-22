@@ -35,7 +35,7 @@
 
 import { eq, and, desc } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { companySecrets, companySecretVersions, pluginConfig } from "@paperclipai/db";
+import { companySecrets, companySecretVersions, pluginConfig, pluginState } from "@paperclipai/db";
 import type { SecretProvider } from "@paperclipai/shared";
 import { getSecretProvider } from "../secrets/provider-registry.js";
 import { pluginRegistryService } from "./plugin-registry.js";
@@ -158,6 +158,16 @@ export function extractSecretRefsFromConfig(
   }
 
   walkAll(configJson);
+  return refs;
+}
+
+function extractSecretRefsFromStateValues(rows: Array<{ valueJson: unknown }>): Set<string> {
+  const refs = new Set<string>();
+  for (const row of rows) {
+    for (const ref of extractSecretRefsFromConfig(row.valueJson)) {
+      refs.add(ref);
+    }
+  }
   return refs;
 }
 
@@ -288,18 +298,25 @@ export function createPluginSecretsHandler(
       // ---------------------------------------------------------------
       const now = Date.now();
       if (!cachedAllowedRefs || now > cachedAllowedRefsExpiry) {
-        const [configRow, plugin] = await Promise.all([
+        const [configRow, plugin, stateRows] = await Promise.all([
           db
             .select()
             .from(pluginConfig)
             .where(eq(pluginConfig.pluginId, pluginId))
             .then((rows) => rows[0] ?? null),
           registry.getById(pluginId),
+          db
+            .select({ valueJson: pluginState.valueJson })
+            .from(pluginState)
+            .where(eq(pluginState.pluginId, pluginId)),
         ]);
 
         const schema = (plugin?.manifestJson as unknown as Record<string, unknown> | null)
           ?.instanceConfigSchema as Record<string, unknown> | undefined;
         cachedAllowedRefs = extractSecretRefsFromConfig(configRow?.configJson, schema);
+        for (const ref of extractSecretRefsFromStateValues(stateRows)) {
+          cachedAllowedRefs.add(ref);
+        }
         cachedAllowedRefsExpiry = now + CONFIG_CACHE_TTL_MS;
       }
 
