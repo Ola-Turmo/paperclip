@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { Request, RequestHandler } from "express";
 import { and, eq, isNull } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agentApiKeys, agents, companyMemberships, instanceUserRoles } from "@paperclipai/db";
+import { agentApiKeys, agents, authUsers, companyMemberships, instanceUserRoles } from "@paperclipai/db";
 import { verifyLocalAgentJwt } from "../agent-auth-jwt.js";
 import type { DeploymentMode } from "@paperclipai/shared";
 import type { BetterAuthSessionResult } from "../auth/better-auth.js";
@@ -13,9 +13,99 @@ function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
+const TAILSCALE_AUTOLOGIN_ENABLED = process.env.PAPERCLIP_TAILSCALE_AUTOLOGIN_ENABLED === "true";
+const TAILSCALE_AUTOLOGIN_USER_EMAIL = process.env.PAPERCLIP_TAILSCALE_AUTOLOGIN_USER_EMAIL?.trim().toLowerCase() || null;
+const TAILSCALE_AUTOLOGIN_PROXY_TOKEN = process.env.PAPERCLIP_TAILSCALE_AUTOLOGIN_PROXY_TOKEN?.trim() || null;
+
 interface ActorMiddlewareOptions {
   deploymentMode: DeploymentMode;
   resolveSession?: (req: Request) => Promise<BetterAuthSessionResult | null>;
+}
+
+async function resolveBoardActorForUser(
+  db: Db,
+  input: {
+    userId: string;
+    userName?: string | null;
+    userEmail?: string | null;
+    runId?: string;
+    source: "session";
+  },
+) {
+  const [roleRow, memberships] = await Promise.all([
+    db
+      .select({ id: instanceUserRoles.id })
+      .from(instanceUserRoles)
+      .where(and(eq(instanceUserRoles.userId, input.userId), eq(instanceUserRoles.role, "instance_admin")))
+      .then((rows) => rows[0] ?? null),
+    db
+      .select({
+        companyId: companyMemberships.companyId,
+        membershipRole: companyMemberships.membershipRole,
+        status: companyMemberships.status,
+      })
+      .from(companyMemberships)
+      .where(
+        and(
+          eq(companyMemberships.principalType, "user"),
+          eq(companyMemberships.principalId, input.userId),
+          eq(companyMemberships.status, "active"),
+        ),
+      ),
+  ]);
+
+  return {
+    type: "board" as const,
+    userId: input.userId,
+    userName: input.userName ?? null,
+    userEmail: input.userEmail ?? null,
+    companyIds: memberships.map((row) => row.companyId),
+    memberships,
+    isInstanceAdmin: Boolean(roleRow),
+    runId: input.runId ?? undefined,
+    source: input.source,
+  };
+}
+
+async function resolveTailscaleAutologinActor(
+  db: Db,
+  req: Request,
+  runIdHeader?: string,
+) {
+  if (!TAILSCALE_AUTOLOGIN_ENABLED || !TAILSCALE_AUTOLOGIN_USER_EMAIL || !TAILSCALE_AUTOLOGIN_PROXY_TOKEN) {
+    return null;
+  }
+
+  const requestToken = req.header("x-paperclip-tailscale-autologin")?.trim();
+  if (!requestToken || requestToken !== TAILSCALE_AUTOLOGIN_PROXY_TOKEN) {
+    return null;
+  }
+
+  const user = await db
+    .select({
+      id: authUsers.id,
+      email: authUsers.email,
+      name: authUsers.name,
+    })
+    .from(authUsers)
+    .where(eq(authUsers.email, TAILSCALE_AUTOLOGIN_USER_EMAIL))
+    .then((rows) => rows[0] ?? null);
+
+  if (!user) {
+    logger.warn(
+      { autoLoginEmail: TAILSCALE_AUTOLOGIN_USER_EMAIL, method: req.method, url: req.originalUrl },
+      "Tailscale autologin user was not found",
+    );
+    return null;
+  }
+
+  return resolveBoardActorForUser(db, {
+    userId: user.id,
+    userName: user.name ?? null,
+    userEmail: user.email ?? null,
+    runId: runIdHeader,
+    source: "session",
+  });
 }
 
 export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHandler {
@@ -48,39 +138,20 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
           );
         }
         if (session?.user?.id) {
-          const userId = session.user.id;
-          const [roleRow, memberships] = await Promise.all([
-            db
-              .select({ id: instanceUserRoles.id })
-              .from(instanceUserRoles)
-              .where(and(eq(instanceUserRoles.userId, userId), eq(instanceUserRoles.role, "instance_admin")))
-              .then((rows) => rows[0] ?? null),
-            db
-              .select({
-                companyId: companyMemberships.companyId,
-                membershipRole: companyMemberships.membershipRole,
-                status: companyMemberships.status,
-              })
-              .from(companyMemberships)
-              .where(
-                and(
-                  eq(companyMemberships.principalType, "user"),
-                  eq(companyMemberships.principalId, userId),
-                  eq(companyMemberships.status, "active"),
-                ),
-              ),
-          ]);
-          req.actor = {
-            type: "board",
-            userId,
+          req.actor = await resolveBoardActorForUser(db, {
+            userId: session.user.id,
             userName: session.user.name ?? null,
             userEmail: session.user.email ?? null,
-            companyIds: memberships.map((row) => row.companyId),
-            memberships,
-            isInstanceAdmin: Boolean(roleRow),
             runId: runIdHeader ?? undefined,
             source: "session",
-          };
+          });
+          next();
+          return;
+        }
+
+        const autoLoginActor = await resolveTailscaleAutologinActor(db, req, runIdHeader ?? undefined);
+        if (autoLoginActor) {
+          req.actor = autoLoginActor;
           next();
           return;
         }
