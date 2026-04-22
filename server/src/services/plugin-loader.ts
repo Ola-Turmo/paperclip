@@ -148,6 +148,15 @@ export interface PluginLoaderOptions {
   localPluginDir?: string;
 
   /**
+   * Optional migration database handle used by custom host branches that run
+   * plugin-specific migrations during local-path activation.
+   *
+   * The base loader does not consume this directly, but keeping it in the
+   * options shape preserves compatibility with host code that passes it.
+   */
+  migrationDb?: Db;
+
+  /**
    * Whether to scan the local filesystem directory for plugins.
    * Defaults to true.
    */
