@@ -179,4 +179,60 @@ describe("GET /health", () => {
       },
     });
   });
+
+  it("treats an already-provisioned instance as ready even without an instance admin row", async () => {
+    const selectMock = vi
+      .fn()
+      .mockImplementationOnce(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn().mockResolvedValue([{ count: 0 }]),
+        })),
+      }))
+      .mockImplementationOnce(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn().mockResolvedValue([{ count: 1 }]),
+        })),
+      }))
+      .mockImplementationOnce(() => ({
+        from: vi.fn().mockResolvedValue([{ count: 3 }]),
+      }))
+      .mockImplementationOnce(() => ({
+        from: vi.fn().mockResolvedValue([{ count: 1 }]),
+      }));
+    const db = {
+      execute: vi.fn().mockResolvedValue([{ "?column?": 1 }]),
+      select: selectMock,
+    } as unknown as Db;
+    const app = express();
+    app.use((req, _res, next) => {
+      (req as any).actor = { type: "board", userId: "user-1", source: "session" };
+      next();
+    });
+    app.use(
+      "/health",
+      healthRoutes(db, {
+        deploymentMode: "authenticated",
+        deploymentExposure: "private",
+        authReady: true,
+        companyDeletionEnabled: true,
+      }),
+    );
+
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      status: "ok",
+      version: serverVersion,
+      deploymentMode: "authenticated",
+      deploymentExposure: "private",
+      authReady: true,
+      bootstrapStatus: "ready",
+      bootstrapInviteActive: false,
+      features: {
+        companyDeletionEnabled: true,
+      },
+    });
+    expect(selectMock).toHaveBeenCalledTimes(4);
+  });
 });

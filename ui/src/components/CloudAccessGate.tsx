@@ -1,9 +1,15 @@
+import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { accessApi } from "@/api/access";
 import { authApi } from "@/api/auth";
 import { healthApi } from "@/api/health";
 import { queryKeys } from "@/lib/queryKeys";
+import {
+  isTailscaleAutologinHost,
+  TAILSCALE_AUTH_GRACE_WINDOW_MS,
+  TAILSCALE_AUTH_RETRY_INTERVAL_MS,
+} from "@/lib/tailscale-autologin";
 
 function BootstrapPendingPage({ hasActiveInvite = false }: { hasActiveInvite?: boolean }) {
   return (
@@ -42,6 +48,7 @@ function NoBoardAccessPage() {
 
 export function CloudAccessGate() {
   const location = useLocation();
+  const [tailscaleAuthGraceExpired, setTailscaleAuthGraceExpired] = useState(false);
   const healthQuery = useQuery({
     queryKey: queryKeys.health,
     queryFn: () => healthApi.get(),
@@ -58,11 +65,21 @@ export function CloudAccessGate() {
   });
 
   const isAuthenticatedMode = healthQuery.data?.deploymentMode === "authenticated";
+  const isTailscaleHost =
+    typeof window !== "undefined" && isTailscaleAutologinHost(window.location.hostname);
   const sessionQuery = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
     enabled: isAuthenticatedMode,
     retry: false,
+    refetchInterval: ({ state }) =>
+      isAuthenticatedMode &&
+      isTailscaleHost &&
+      !state.data &&
+      !tailscaleAuthGraceExpired
+        ? TAILSCALE_AUTH_RETRY_INTERVAL_MS
+        : false,
+    refetchIntervalInBackground: true,
   });
 
   const boardAccessQuery = useQuery({
@@ -72,9 +89,25 @@ export function CloudAccessGate() {
     retry: false,
   });
 
+  useEffect(() => {
+    if (!isAuthenticatedMode || !isTailscaleHost || sessionQuery.data) {
+      setTailscaleAuthGraceExpired(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setTailscaleAuthGraceExpired(true);
+    }, TAILSCALE_AUTH_GRACE_WINDOW_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [isAuthenticatedMode, isTailscaleHost, sessionQuery.data]);
+
   if (
     healthQuery.isLoading ||
     (isAuthenticatedMode && sessionQuery.isLoading) ||
+    (isAuthenticatedMode && isTailscaleHost && !sessionQuery.data && !tailscaleAuthGraceExpired) ||
     (isAuthenticatedMode && !!sessionQuery.data && boardAccessQuery.isLoading)
   ) {
     return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading...</div>;

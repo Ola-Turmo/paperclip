@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { BlockList } from "node:net";
 import type { Request, RequestHandler } from "express";
 import { and, eq, isNull } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
@@ -16,6 +17,9 @@ function hashToken(token: string) {
 const TAILSCALE_AUTOLOGIN_ENABLED = process.env.PAPERCLIP_TAILSCALE_AUTOLOGIN_ENABLED === "true";
 const TAILSCALE_AUTOLOGIN_USER_EMAIL = process.env.PAPERCLIP_TAILSCALE_AUTOLOGIN_USER_EMAIL?.trim().toLowerCase() || null;
 const TAILSCALE_AUTOLOGIN_PROXY_TOKEN = process.env.PAPERCLIP_TAILSCALE_AUTOLOGIN_PROXY_TOKEN?.trim() || null;
+const TAILSCALE_SOURCE_RANGES = new BlockList();
+TAILSCALE_SOURCE_RANGES.addSubnet("100.64.0.0", 10, "ipv4");
+TAILSCALE_SOURCE_RANGES.addSubnet("fd7a:115c:a1e0::", 48, "ipv6");
 
 interface ActorMiddlewareOptions {
   deploymentMode: DeploymentMode;
@@ -72,12 +76,23 @@ async function resolveTailscaleAutologinActor(
   req: Request,
   runIdHeader?: string,
 ) {
-  if (!TAILSCALE_AUTOLOGIN_ENABLED || !TAILSCALE_AUTOLOGIN_USER_EMAIL || !TAILSCALE_AUTOLOGIN_PROXY_TOKEN) {
+  if (!TAILSCALE_AUTOLOGIN_ENABLED || !TAILSCALE_AUTOLOGIN_USER_EMAIL) {
     return null;
   }
 
   const requestToken = req.header("x-paperclip-tailscale-autologin")?.trim();
-  if (!requestToken || requestToken !== TAILSCALE_AUTOLOGIN_PROXY_TOKEN) {
+  const forwardedFor = req.header("x-forwarded-for");
+  const firstForwardedIp = forwardedFor?.split(",")[0]?.trim() || null;
+  const forwardedForTrustedTailnetIp =
+    firstForwardedIp && TAILSCALE_SOURCE_RANGES.check(firstForwardedIp)
+      ? firstForwardedIp
+      : null;
+  const hasValidProxyToken =
+    Boolean(TAILSCALE_AUTOLOGIN_PROXY_TOKEN) &&
+    Boolean(requestToken) &&
+    requestToken === TAILSCALE_AUTOLOGIN_PROXY_TOKEN;
+
+  if (!hasValidProxyToken && !forwardedForTrustedTailnetIp) {
     return null;
   }
 

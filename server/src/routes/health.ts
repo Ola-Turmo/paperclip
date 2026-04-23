@@ -1,7 +1,14 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import { and, count, eq, gt, inArray, isNull, sql } from "drizzle-orm";
-import { heartbeatRuns, instanceUserRoles, invites } from "@paperclipai/db";
+import {
+  authUsers,
+  companies,
+  companyMemberships,
+  heartbeatRuns,
+  instanceUserRoles,
+  invites,
+} from "@paperclipai/db";
 import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
 import { readPersistedDevServerStatus, toDevServerHealthStatus } from "../dev-server-status.js";
 import { logger } from "../middleware/logger.js";
@@ -68,7 +75,29 @@ export function healthRoutes(
         .from(instanceUserRoles)
         .where(sql`${instanceUserRoles.role} = 'instance_admin'`)
         .then((rows) => Number(rows[0]?.count ?? 0));
-      bootstrapStatus = roleCount > 0 ? "ready" : "bootstrap_pending";
+      if (roleCount > 0) {
+        bootstrapStatus = "ready";
+      } else {
+        const [activeMembershipCount, companyCount, userCount] = await Promise.all([
+          db
+            .select({ count: count() })
+            .from(companyMemberships)
+            .where(eq(companyMemberships.status, "active"))
+            .then((rows) => Number(rows[0]?.count ?? 0)),
+          db
+            .select({ count: count() })
+            .from(companies)
+            .then((rows) => Number(rows[0]?.count ?? 0)),
+          db
+            .select({ count: count() })
+            .from(authUsers)
+            .then((rows) => Number(rows[0]?.count ?? 0)),
+        ]);
+
+        bootstrapStatus = activeMembershipCount > 0 || companyCount > 0 || userCount > 0
+          ? "ready"
+          : "bootstrap_pending";
+      }
 
       if (bootstrapStatus === "bootstrap_pending") {
         const now = new Date();
