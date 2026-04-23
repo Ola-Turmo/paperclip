@@ -6,6 +6,23 @@ import { testEnvironment } from "@paperclipai/adapter-codex-local/server";
 
 const itWindows = process.platform === "win32" ? it : it.skip;
 
+async function writeFakeCodexWrapper(root: string, body: string, exitCode = 0): Promise<string> {
+  const binDir = path.join(root, "bin");
+  const commandPath = path.join(binDir, process.platform === "win32" ? "codex.cmd" : "codex");
+  await fs.mkdir(binDir, { recursive: true });
+
+  if (process.platform === "win32") {
+    const lines = ["@echo off", ...body.split(/\r?\n/).filter(Boolean), `exit /b ${exitCode}`, ""].join("\r\n");
+    await fs.writeFile(commandPath, lines, "utf8");
+  } else {
+    const script = `#!/bin/sh\n${body}\nexit ${exitCode}\n`;
+    await fs.writeFile(commandPath, script, "utf8");
+    await fs.chmod(commandPath, 0o755);
+  }
+
+  return commandPath;
+}
+
 describe("codex_local environment diagnostics", () => {
   beforeEach(() => {
     vi.stubEnv("OPENAI_API_KEY", "");
@@ -135,6 +152,45 @@ describe("codex_local environment diagnostics", () => {
 
       expect(result.status).toBe("pass");
       expect(result.checks.some((check) => check.code === "codex_hello_probe_passed")).toBe(true);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a platform dependency error when Codex is missing its host-specific package", async () => {
+    const root = path.join(
+      os.tmpdir(),
+      `paperclip-codex-missing-platform-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    );
+    const cwd = path.join(root, "workspace");
+    const stderrLine = "Error: Missing optional dependency @openai/codex-linux-x64. Reinstall Codex.";
+
+    try {
+      const commandPath = await writeFakeCodexWrapper(
+        root,
+        process.platform === "win32" ? `>&2 echo ${stderrLine}` : `echo '${stderrLine}' 1>&2`,
+        1,
+      );
+
+      const result = await testEnvironment({
+        companyId: "company-1",
+        adapterType: "codex_local",
+        config: {
+          command: commandPath,
+          cwd,
+          env: {
+            OPENAI_API_KEY: "test-key",
+          },
+        },
+      });
+
+      expect(result.status).toBe("fail");
+      expect(result.checks).toContainEqual(
+        expect.objectContaining({
+          code: "codex_platform_dependency_missing",
+          level: "error",
+        }),
+      );
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

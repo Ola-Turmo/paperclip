@@ -50,6 +50,8 @@ function summarizeProbeDetail(stdout: string, stderr: string, parsedError: strin
 
 const CODEX_AUTH_REQUIRED_RE =
   /(?:not\s+logged\s+in|login\s+required|authentication\s+required|unauthorized|invalid(?:\s+or\s+missing)?\s+api(?:[_\s-]?key)?|openai[_\s-]?api[_\s-]?key|api[_\s-]?key.*required|please\s+run\s+`?codex\s+login`?)/i;
+const CODEX_PLATFORM_DEPENDENCY_MISSING_RE =
+  /missing optional dependency\s+@openai\/codex-[a-z0-9-]+/i;
 
 export async function testEnvironment(
   ctx: AdapterEnvironmentTestContext,
@@ -188,7 +190,15 @@ export async function testEnvironment(
             ? {}
             : {
                 hint: "Try the probe manually (`codex exec --json -` then prompt: Respond with hello) to inspect full output.",
-              }),
+            }),
+        });
+      } else if (CODEX_PLATFORM_DEPENDENCY_MISSING_RE.test(authEvidence)) {
+        checks.push({
+          code: "codex_platform_dependency_missing",
+          level: "error",
+          message: "Codex CLI install is missing its platform-specific package.",
+          ...(detail ? { detail } : {}),
+          hint: "Reinstall Codex and ensure the platform package exists for this host (for example `@openai/codex-linux-x64` on Linux x64).",
         });
       } else if (CODEX_AUTH_REQUIRED_RE.test(authEvidence)) {
         checks.push({

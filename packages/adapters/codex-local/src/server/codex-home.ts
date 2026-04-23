@@ -20,7 +20,12 @@ export function resolveSharedCodexHomeDir(
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   const fromEnv = nonEmpty(env.CODEX_HOME);
-  return fromEnv ? path.resolve(fromEnv) : path.join(os.homedir(), ".codex");
+  if (fromEnv) return path.resolve(fromEnv);
+
+  const paperclipHome = nonEmpty(env.PAPERCLIP_HOME);
+  if (paperclipHome) return path.resolve(paperclipHome, ".codex");
+
+  return path.join(os.homedir(), ".codex");
 }
 
 function isWorktreeMode(env: NodeJS.ProcessEnv): boolean {

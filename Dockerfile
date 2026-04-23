@@ -48,6 +48,7 @@ ARG USER_GID=1000
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
+  && node -e "const { execSync } = require('node:child_process'); const globalRoot = execSync('npm root -g', { encoding: 'utf8' }).trim(); const codexVersion = require(globalRoot + '/@openai/codex/package.json').version; const platformByArch = { x64: 'linux-x64', arm64: 'linux-arm64' }; const codexPlatform = platformByArch[process.arch]; if (!codexPlatform) { console.error('Unsupported Codex platform arch:', process.arch); process.exit(1); } const packageSpec = '@openai/codex-' + codexPlatform + '@npm:@openai/codex@' + codexVersion + '-' + codexPlatform; execSync('npm install -g --omit=dev ' + packageSpec, { stdio: 'inherit' });" \
   && apt-get update \
   && apt-get install -y --no-install-recommends openssh-client jq \
   && rm -rf /var/lib/apt/lists/* \

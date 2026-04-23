@@ -43,7 +43,11 @@ Paperclip currently applies that only when the selected model is `gpt-5.4`. On o
 
 ## Managed `CODEX_HOME`
 
-When Paperclip is running inside a managed worktree instance (`PAPERCLIP_IN_WORKTREE=true`), the adapter instead uses a worktree-isolated `CODEX_HOME` under the Paperclip instance so Codex skills, sessions, logs, and other runtime state do not leak across checkouts. It seeds that isolated home from the user's main Codex home for shared auth/config continuity.
+When Paperclip is running inside a managed worktree instance (`PAPERCLIP_IN_WORKTREE=true`), the adapter instead uses a worktree-isolated `CODEX_HOME` under the Paperclip instance so Codex skills, sessions, logs, and other runtime state do not leak across checkouts. It seeds that isolated home from the shared Codex home for auth/config continuity in this order:
+
+1. `CODEX_HOME`, when explicitly set
+2. `PAPERCLIP_HOME/.codex`, when `PAPERCLIP_HOME` is set
+3. `~/.codex`
 
 ## Manual Local CLI
 
@@ -69,3 +73,4 @@ The environment test checks:
 - Working directory is absolute and available (auto-created if missing and permitted)
 - Authentication signal (`OPENAI_API_KEY` presence)
 - A live hello probe (`codex exec --json -` with prompt `Respond with hello.`) to verify the CLI can actually run
+- A platform-package diagnostic when the Codex install is missing its host-specific package (for example `@openai/codex-linux-x64`)
