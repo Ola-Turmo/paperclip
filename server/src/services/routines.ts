@@ -150,6 +150,17 @@ function normalizeWebhookTimestampMs(rawTimestamp: string) {
   return parsed > 1e12 ? parsed : parsed * 1000;
 }
 
+function normalizeDbDate(value: unknown): Date | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === "string" || typeof value === "number") {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return null;
+}
+
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -1581,13 +1592,14 @@ export function routineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeup
 
       let triggered = 0;
       for (const row of due) {
-        if (!row.trigger.nextRunAt || !row.trigger.cronExpression || !row.trigger.timezone) continue;
+        const triggerNextRunAt = normalizeDbDate(row.trigger.nextRunAt);
+        if (!triggerNextRunAt || !row.trigger.cronExpression || !row.trigger.timezone) continue;
 
         let runCount = 1;
         let claimedNextRunAt = nextCronTickInTimeZone(row.trigger.cronExpression, row.trigger.timezone, now);
 
         if (row.routine.catchUpPolicy === "enqueue_missed_with_cap") {
-          let cursor: Date | null = row.trigger.nextRunAt;
+          let cursor: Date | null = triggerNextRunAt;
           runCount = 0;
           while (cursor && cursor <= now && runCount < MAX_CATCH_UP_RUNS) {
             runCount += 1;
@@ -1606,7 +1618,8 @@ export function routineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeup
             and(
               eq(routineTriggers.id, row.trigger.id),
               eq(routineTriggers.enabled, true),
-              eq(routineTriggers.nextRunAt, row.trigger.nextRunAt),
+              // Avoid exact timestamp equality; Postgres keeps microseconds while JS Dates do not.
+              lte(routineTriggers.nextRunAt, now),
             ),
           )
           .returning({ id: routineTriggers.id })

@@ -37,6 +37,7 @@ function hasOwn(record: Record<string, unknown>, key: string) {
 }
 
 function defaultTimeoutSecForAdapter(adapterType: string) {
+  if (adapterType === "hermes_local") return 900;
   return adapterType === "openclaw_gateway" ? 120 : 0;
 }
 

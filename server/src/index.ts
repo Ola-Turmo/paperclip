@@ -688,6 +688,26 @@ export async function startServer(): Promise<StartedServer> {
       .catch((err) => {
         logger.error({ err }, "startup heartbeat recovery failed");
       });
+
+    const tickRoutineScheduler = () => {
+      void routines
+        .tickScheduledTriggers(new Date())
+        .then((result) => {
+          if (result.triggered > 0) {
+            logger.info({ ...result }, "routine scheduler tick enqueued runs");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "routine scheduler tick failed");
+        });
+    };
+
+    // Routine schedules are the proactive company operating loop. Keep them
+    // independent from heartbeat recovery so due routines are picked up soon
+    // after deploy and are not delayed by unrelated heartbeat maintenance.
+    setTimeout(tickRoutineScheduler, Math.min(5000, config.heartbeatSchedulerIntervalMs));
+    setInterval(tickRoutineScheduler, config.heartbeatSchedulerIntervalMs);
+
     setInterval(() => {
       void heartbeat
         .tickTimers(new Date())
@@ -698,17 +718,6 @@ export async function startServer(): Promise<StartedServer> {
         })
         .catch((err) => {
           logger.error({ err }, "heartbeat timer tick failed");
-        });
-
-      void routines
-        .tickScheduledTriggers(new Date())
-        .then((result) => {
-          if (result.triggered > 0) {
-            logger.info({ ...result }, "routine scheduler tick enqueued runs");
-          }
-        })
-        .catch((err) => {
-          logger.error({ err }, "routine scheduler tick failed");
         });
   
       // Periodically reap orphaned runs and make sure persisted queued work is
