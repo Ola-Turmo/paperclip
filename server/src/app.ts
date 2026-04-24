@@ -128,6 +128,37 @@ function buildEventIntakeDiscovery(companyId?: string) {
   };
 }
 
+function buildCompanyOperationsDiscovery(companyId: string) {
+  return {
+    status: "discovery_only",
+    note: "This compatibility response prevents agent dead ends. Use the API endpoints below; do not keep probing public UI-style paths.",
+    apiBase: "/api",
+    endpoints: {
+      company: `/api/companies/${companyId}`,
+      issues: `/api/companies/${companyId}/issues`,
+      agents: `/api/companies/${companyId}/agents`,
+      goals: `/api/companies/${companyId}/goals`,
+      projects: `/api/companies/${companyId}/projects`,
+      executionWorkspaces: `/api/companies/${companyId}/execution-workspaces?summary=true`,
+      assets: `/api/assets?companyId=${companyId}`,
+      plugins: `/api/companies/${companyId}/plugins`,
+      connectors: `/api/companies/${companyId}/connectors`,
+      integrations: `/api/companies/${companyId}/integrations`,
+      webhooks: `/api/companies/${companyId}/connectors`,
+    },
+    hosting: {
+      status: "external_provider_or_plugin",
+      guidance:
+        "Use Cloudflare/Vercel/GitHub provider tooling or company plugin skills for live hosting work; record missing credentials as connector tasks instead of blocking.",
+    },
+    domains: {
+      status: "external_provider",
+      guidance:
+        "Use Cloudflare discovery plus registrar-specific credentials. Do not assume Paperclip has a first-party domain registry API.",
+    },
+  };
+}
+
 export async function createApp(
   db: Db,
   opts: {
@@ -209,6 +240,29 @@ export async function createApp(
       "/ingress",
       "/ingest",
       "/intake",
+      "/hosting",
+      "/sites",
+      "/deployments",
+      "/assets",
+      "/domains",
+      "/api/docs",
+      "/api/openapi.json",
+      "/api/swagger.json",
+      "/api/routines",
+      "/api/webhooks",
+      "/api/webhooks/ingress",
+      "/api/webhook-targets",
+      "/api/webhook-ingress",
+      "/api/webhook-ingress/:lane",
+      "/api/events/ingress",
+      "/api/ingress",
+      "/api/ingest",
+      "/api/intake",
+      "/api/hosting",
+      "/api/sites",
+      "/api/deployments",
+      "/api/assets",
+      "/api/domains",
     ],
     (req, res) => {
       res.json({
@@ -229,6 +283,14 @@ export async function createApp(
       "/companies/:companyId/intake",
       "/companies/:companyId/events",
       "/companies/:companyId/plugin-routes",
+      "/api/companies/:companyId/webhooks",
+      "/api/companies/:companyId/webhook-targets",
+      "/api/companies/:companyId/webhook-endpoints",
+      "/api/companies/:companyId/webhook-ingress",
+      "/api/companies/:companyId/ingress",
+      "/api/companies/:companyId/intake",
+      "/api/companies/:companyId/events",
+      "/api/companies/:companyId/plugin-routes",
     ],
     (req, res) => {
       const companyId = req.params.companyId as string;
@@ -240,11 +302,63 @@ export async function createApp(
     },
   );
 
-  app.get("/comments", (req, res) => {
+  app.get(
+    [
+      "/companies/:companyId/workspaces",
+      "/companies/:companyId/execution-workspaces",
+      "/companies/:companyId/hosting",
+      "/companies/:companyId/sites",
+      "/companies/:companyId/deployments",
+      "/companies/:companyId/assets",
+      "/companies/:companyId/domains",
+      "/api/companies/:companyId/workspaces",
+      "/api/companies/:companyId/hosting",
+      "/api/companies/:companyId/sites",
+      "/api/companies/:companyId/deployments",
+      "/api/companies/:companyId/assets",
+      "/api/companies/:companyId/domains",
+    ],
+    (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      res.json({
+        ...buildCompanyOperationsDiscovery(companyId),
+        requestedPath: req.path,
+      });
+    },
+  );
+
+  app.get(["/comments", "/api/comments"], (req, res) => {
     res.status(400).json({
       error: "Issue comments are scoped by issue id.",
       endpoint: "/api/issues/{issueId}/comments",
       receivedIssueId: typeof req.query.issueId === "string" ? req.query.issueId : null,
+    });
+  });
+
+  app.get(["/issues/:issueId/artifacts", "/api/issues/:issueId/artifacts"], (req, res) => {
+    const issueId = req.params.issueId as string;
+    res.json({
+      status: "discovery_only",
+      note: "Paperclip issue artifacts are exposed as documents and work products through API routes.",
+      requestedPath: req.path,
+      endpoints: {
+        issue: `/api/issues/${issueId}`,
+        documents: `/api/issues/${issueId}/documents`,
+        workProducts: `/api/issues/${issueId}/work-products`,
+        comments: `/api/issues/${issueId}/comments`,
+      },
+    });
+  });
+
+  app.get(["/work-products", "/api/work-products"], (req, res) => {
+    const issueId = typeof req.query.issueId === "string" ? req.query.issueId : null;
+    res.json({
+      status: "discovery_only",
+      note: "Work products are scoped under an issue in the Paperclip API.",
+      requestedPath: req.path,
+      receivedIssueId: issueId,
+      endpoint: issueId ? `/api/issues/${issueId}/work-products` : "/api/issues/{issueId}/work-products",
     });
   });
 

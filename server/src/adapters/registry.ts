@@ -69,13 +69,19 @@ import {
   agentConfigurationDoc as piAgentConfigurationDoc,
 } from "@paperclipai/adapter-pi-local";
 import {
-  execute as hermesExecute,
-  testEnvironment as hermesTestEnvironment,
   sessionCodec as hermesSessionCodec,
   listSkills as hermesListSkills,
   syncSkills as hermesSyncSkills,
   detectModel as detectModelFromHermes,
 } from "hermes-paperclip-adapter/server";
+import {
+  execute as hermesGatewayExecute,
+  testEnvironment as hermesGatewayTestEnvironment,
+} from "./hermes-gateway.js";
+import {
+  execute as omxGatewayExecute,
+  testEnvironment as omxGatewayTestEnvironment,
+} from "./omx-gateway.js";
 import {
   agentConfigurationDoc as hermesAgentConfigurationDoc,
   models as hermesModels,
@@ -231,9 +237,68 @@ const piLocalAdapter: ServerAdapterModule = {
   agentConfigurationDoc: piAgentConfigurationDoc,
 };
 
-// hermes-paperclip-adapter v0.2.0 predates the authToken field; cast is
-// intentional until hermes ships a matching AdapterExecutionContext type.
-const executeHermesLocal = hermesExecute as unknown as ServerAdapterModule["execute"];
+const executeOmxLocal = omxGatewayExecute as unknown as ServerAdapterModule["execute"];
+
+const omxLocalAdapter: ServerAdapterModule = {
+  type: "omx_local",
+  execute: async (ctx) => {
+    if (!ctx.authToken) return executeOmxLocal(ctx);
+
+    const existingConfig = (ctx.agent.adapterConfig ?? {}) as Record<string, unknown>;
+    const existingEnv =
+      typeof existingConfig.env === "object" && existingConfig.env !== null && !Array.isArray(existingConfig.env)
+        ? (existingConfig.env as Record<string, string>)
+        : {};
+    const explicitApiKey =
+      typeof existingEnv.PAPERCLIP_API_KEY === "string" && existingEnv.PAPERCLIP_API_KEY.trim().length > 0;
+    const promptTemplate =
+      typeof existingConfig.promptTemplate === "string" && existingConfig.promptTemplate.trim().length > 0
+        ? existingConfig.promptTemplate
+        : "";
+    const authGuardPrompt = [
+      "Paperclip API safety rule:",
+      "Use Authorization: Bearer $PAPERCLIP_API_KEY on every Paperclip API request.",
+      "Use X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID on every Paperclip API request that writes or mutates data, including comments and issue updates.",
+      "Never use a board, browser, or local-board session for Paperclip API writes.",
+    ].join("\n");
+
+    const patchedConfig: Record<string, unknown> = {
+      ...existingConfig,
+      env: {
+        ...existingEnv,
+        ...(!explicitApiKey ? { PAPERCLIP_API_KEY: ctx.authToken } : {}),
+        PAPERCLIP_RUN_ID: ctx.runId,
+      },
+    };
+
+    if (promptTemplate) {
+      patchedConfig.promptTemplate = `${authGuardPrompt}\n\n${promptTemplate}`;
+    }
+
+    const patchedCtx = {
+      ...ctx,
+      agent: {
+        ...ctx.agent,
+        adapterConfig: patchedConfig,
+      },
+    };
+
+    return executeOmxLocal(patchedCtx);
+  },
+  testEnvironment: (ctx) => omxGatewayTestEnvironment(ctx as never),
+  models: codexModels,
+  listModels: listCodexModels,
+  supportsLocalAgentJwt: true,
+  supportsInstructionsBundle: true,
+  instructionsPathKey: "instructionsFilePath",
+  requiresMaterializedRuntimeSkills: false,
+  agentConfigurationDoc: codexAgentConfigurationDoc,
+  getQuotaWindows: codexGetQuotaWindows,
+};
+
+// Hermes runs through the T3 gateway, but we keep the existing authToken
+// patching wrapper so Paperclip run credentials still flow into adapter config.
+const executeHermesLocal = hermesGatewayExecute as unknown as ServerAdapterModule["execute"];
 
 const hermesLocalAdapter: ServerAdapterModule = {
   type: "hermes_local",
@@ -269,7 +334,7 @@ const hermesLocalAdapter: ServerAdapterModule = {
     };
 
     // Only inject the auth guard into promptTemplate when a custom template already exists.
-    // When no custom template is set, Hermes uses its built-in default heartbeat/task prompt —
+    // When no custom template is set, Hermes uses its built-in default heartbeat/task prompt;
     // overwriting it with only the auth guard text would strip the assigned issue/workflow instructions.
     if (promptTemplate) {
       patchedConfig.promptTemplate = `${authGuardPrompt}\n\n${promptTemplate}`;
@@ -285,7 +350,7 @@ const hermesLocalAdapter: ServerAdapterModule = {
 
     return executeHermesLocal(patchedCtx);
   },
-  testEnvironment: (ctx) => hermesTestEnvironment(normalizeHermesConfig(ctx) as never),
+  testEnvironment: (ctx) => hermesGatewayTestEnvironment(normalizeHermesConfig(ctx) as never),
   sessionCodec: hermesSessionCodec,
   listSkills: hermesListSkills,
   syncSkills: hermesSyncSkills,
@@ -312,6 +377,7 @@ function registerBuiltInAdapters() {
   for (const adapter of [
     claudeLocalAdapter,
     codexLocalAdapter,
+    omxLocalAdapter,
     openCodeLocalAdapter,
     piLocalAdapter,
     cursorLocalAdapter,
@@ -334,7 +400,7 @@ registerBuiltInAdapters();
 // ServerAdapterModule. The host fills in sessionManagement.
 // ---------------------------------------------------------------------------
 
-/** Cached sync wrapper — the store is a simple JSON file read, safe to call frequently. */
+/** Cached sync wrapper; the store is a simple JSON file read, safe to call frequently. */
 function getDisabledAdapterTypesFromStore(): string[] {
   return getDisabledAdapterTypes();
 }
@@ -437,7 +503,7 @@ export function listServerAdapters(): ServerAdapterModule[] {
 
 /**
  * List adapters excluding those that are disabled in settings.
- * Used for menus and agent creation flows — disabled adapters remain
+ * Used for menus and agent creation flows; disabled adapters remain
  * functional for existing agents but hidden from selection.
  */
 export function listEnabledServerAdapters(): ServerAdapterModule[] {
@@ -470,12 +536,12 @@ export async function detectAdapterModel(
 /**
  * Pause or resume an external override for a builtin adapter type.
  *
- * - `paused = true`  → subsequent calls to `getServerAdapter(type)` return
+ * - `paused = true`: subsequent calls to `getServerAdapter(type)` return
  *   the builtin fallback instead of the external adapter.  Already-running
  *   agent sessions are unaffected (they hold a reference to the module they
  *   started with).
  *
- * - `paused = false` → the external adapter is active again.
+ * - `paused = false`: the external adapter is active again.
  *
  * Returns `true` if the state actually changed, `false` if the type is not
  * an override or was already in the requested state.
@@ -485,12 +551,12 @@ export function setOverridePaused(type: string, paused: boolean): boolean {
   const wasPaused = pausedOverrides.has(type);
   if (paused && !wasPaused) {
     pausedOverrides.add(type);
-    console.log(`[paperclip] Override paused for "${type}" — builtin adapter restored`);
+    console.log(`[paperclip] Override paused for "${type}"; builtin adapter restored`);
     return true;
   }
   if (!paused && wasPaused) {
     pausedOverrides.delete(type);
-    console.log(`[paperclip] Override resumed for "${type}" — external adapter active`);
+    console.log(`[paperclip] Override resumed for "${type}"; external adapter active`);
     return true;
   }
   return false;
