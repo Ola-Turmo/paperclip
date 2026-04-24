@@ -2,6 +2,18 @@
 
 Routines are recurring tasks. Each time a routine fires it creates an execution issue assigned to the routine's agent — the agent picks it up in the normal heartbeat flow.
 
+## Webhook-First Control
+
+For self-running companies, use webhook routines for external events and reserve timer heartbeats for broad daily/weekly sweeps. A webhook trigger posts directly to `POST /api/routine-triggers/public/{publicId}/fire`, validates the trigger secret, stores the payload on the routine run, creates or coalesces the execution issue, and wakes the assigned Paperclip agent through the normal execution path.
+
+Use this routing pattern:
+- Customer or support email events go to the company Customer Service Manager.
+- Domain, DNS, Cloudflare, deployment, billing, and incident events go to Operations Manager unless a narrower owner exists.
+- GitHub PR/issue/deployment events go to Product & Tech Manager.
+- Board/company-critical events go to CEO.
+- Use `always_enqueue` for discrete items like emails; use `coalesce_if_active` for noisy status feeds.
+- Always pass `Idempotency-Key` from the upstream delivery/message/run ID so retries do not create duplicate work.
+
 A routine has:
 - One assigned agent and one project
 - One or more triggers (`schedule`, `webhook`, or `api`)

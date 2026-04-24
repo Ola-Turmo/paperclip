@@ -166,10 +166,10 @@ const SESSIONED_LOCAL_ADAPTERS = new Set([
   "codex_local",
   "cursor",
   "gemini_local",
-  "hermes_local",
   "opencode_local",
   "pi_local",
 ]);
+const REMOTE_RUNTIME_GATEWAY_ADAPTERS = new Set(["hermes_local", "omx_local"]);
 const INLINE_BASE64_IMAGE_DATA_RE = /("type":"image","source":\{"type":"base64","data":")([A-Za-z0-9+/=]{1024,})(")/g;
 
 type RuntimeConfigSecretResolver = Pick<
@@ -1659,6 +1659,7 @@ function isSameTaskScope(left: string | null, right: string | null) {
 }
 
 function isTrackedLocalChildProcessAdapter(adapterType: string) {
+  if (REMOTE_RUNTIME_GATEWAY_ADAPTERS.has(adapterType)) return false;
   return SESSIONED_LOCAL_ADAPTERS.has(adapterType);
 }
 
@@ -1724,6 +1725,10 @@ function buildProcessLossMessage(run: {
     return `Process lost -- process group ${run.processGroupId} is no longer running`;
   }
   return "Process lost -- server may have restarted";
+}
+
+function buildRuntimeGatewayOwnershipLossMessage(adapterType: string) {
+  return `Runtime gateway run lost -- server no longer tracks ${adapterType} execution`;
 }
 
 function truncateDisplayId(value: string | null | undefined, max = 128) {
@@ -3757,8 +3762,9 @@ export function heartbeatService(db: Db) {
       .then((rows) => rows[0] ?? null);
   }
 
-  async function reapOrphanedRuns(opts?: { staleThresholdMs?: number }) {
+  async function reapOrphanedRuns(opts?: { staleThresholdMs?: number; remoteGatewayStaleThresholdMs?: number }) {
     const staleThresholdMs = opts?.staleThresholdMs ?? 0;
+    const remoteGatewayStaleThresholdMs = opts?.remoteGatewayStaleThresholdMs ?? staleThresholdMs;
     const now = new Date();
 
     // Find all runs stuck in "running" state (queued runs are legitimately waiting; resumeQueuedRuns handles them)
@@ -3775,15 +3781,24 @@ export function heartbeatService(db: Db) {
     const reaped: string[] = [];
 
     for (const { run, adapterType, adapterConfig } of activeRuns) {
+      const tracksLocalChild = isTrackedLocalChildProcessAdapter(adapterType);
+      const tracksRemoteRuntimeGateway = REMOTE_RUNTIME_GATEWAY_ADAPTERS.has(adapterType);
       if (runningProcesses.has(run.id) || activeRunExecutions.has(run.id)) continue;
 
-      // Apply staleness threshold to avoid false positives
-      if (staleThresholdMs > 0) {
+      // Apply staleness threshold to avoid false positives. Remote Hermes/T3
+      // gateway turns can legitimately run much longer than the local child
+      // process orphan threshold, and they do not always leave local process
+      // metadata behind.
+      const effectiveStaleThresholdMs = tracksRemoteRuntimeGateway ? remoteGatewayStaleThresholdMs : staleThresholdMs;
+      if (effectiveStaleThresholdMs > 0) {
         const refTime = run.updatedAt ? new Date(run.updatedAt).getTime() : 0;
-        if (now.getTime() - refTime < staleThresholdMs) continue;
+        if (now.getTime() - refTime < effectiveStaleThresholdMs) continue;
       }
 
-      const tracksLocalChild = isTrackedLocalChildProcessAdapter(adapterType);
+      if (!tracksLocalChild && !tracksRemoteRuntimeGateway && !run.processPid && !run.processGroupId) {
+        continue;
+      }
+
       const processPidAlive = tracksLocalChild && run.processPid && isProcessAlive(run.processPid);
       const processGroupAlive = tracksLocalChild && run.processGroupId && isProcessGroupAlive(run.processGroupId);
       if (processPidAlive) {
@@ -3817,26 +3832,32 @@ export function heartbeatService(db: Db) {
         });
       }
 
+      const isRemoteGatewayOwnershipLoss = tracksRemoteRuntimeGateway && !run.processPid && !run.processGroupId;
       const shouldRetry = tracksLocalChild && (!!run.processPid || !!run.processGroupId) && (run.processLossRetryCount ?? 0) < 1;
-      const baseMessage = buildProcessLossMessage(run, descendantOnlyCleanup ? { descendantOnly: true } : undefined);
+      const finalStatus = isRemoteGatewayOwnershipLoss ? "cancelled" : "failed";
+      const errorCode = isRemoteGatewayOwnershipLoss ? "runtime_execution_lost" : "process_lost";
+      const baseMessage = isRemoteGatewayOwnershipLoss
+        ? buildRuntimeGatewayOwnershipLossMessage(adapterType)
+        : buildProcessLossMessage(run, descendantOnlyCleanup ? { descendantOnly: true } : undefined);
+      const finalMessage = shouldRetry ? `${baseMessage}; retrying once` : baseMessage;
 
-      let finalizedRun = await setRunStatus(run.id, "failed", {
-        error: shouldRetry ? `${baseMessage}; retrying once` : baseMessage,
-        errorCode: "process_lost",
+      let finalizedRun = await setRunStatus(run.id, finalStatus, {
+        error: finalMessage,
+        errorCode,
         finishedAt: now,
         resultJson: mergeRunStopMetadataForAgent(
           { adapterType, adapterConfig },
-          "failed",
+          isRemoteGatewayOwnershipLoss ? "cancelled" : "failed",
           {
             resultJson: parseObject(run.resultJson),
-            errorCode: "process_lost",
-            errorMessage: shouldRetry ? `${baseMessage}; retrying once` : baseMessage,
+            errorCode,
+            errorMessage: finalMessage,
           },
         ),
       });
       await setWakeupStatus(run.wakeupRequestId, "failed", {
         finishedAt: now,
-        error: shouldRetry ? `${baseMessage}; retrying once` : baseMessage,
+        error: finalMessage,
       });
       if (!finalizedRun) finalizedRun = await getRun(run.id);
       if (!finalizedRun) continue;
@@ -3855,7 +3876,7 @@ export function heartbeatService(db: Db) {
       await appendRunEvent(finalizedRun, await nextRunEventSeq(finalizedRun.id), {
         eventType: "lifecycle",
         stream: "system",
-        level: "error",
+        level: isRemoteGatewayOwnershipLoss ? "warn" : "error",
         message: shouldRetry
           ? `${baseMessage}; queued retry ${retriedRun?.id ?? ""}`.trim()
           : baseMessage,
@@ -3867,7 +3888,7 @@ export function heartbeatService(db: Db) {
         },
       });
 
-      await finalizeAgentStatus(run.agentId, "failed");
+      await finalizeAgentStatus(run.agentId, isRemoteGatewayOwnershipLoss ? "cancelled" : "failed");
       await startNextQueuedRunForAgent(run.agentId);
       runningProcesses.delete(run.id);
       reaped.push(run.id);

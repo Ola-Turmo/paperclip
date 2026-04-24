@@ -39,6 +39,7 @@ import { accessRoutes } from "./routes/access.js";
 import { pluginRoutes } from "./routes/plugins.js";
 import { adapterRoutes } from "./routes/adapters.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
+import { assertCompanyAccess } from "./routes/authz.js";
 import { applyUiBranding } from "./ui-branding.js";
 import { logger } from "./middleware/logger.js";
 import { DEFAULT_LOCAL_PLUGIN_DIR, pluginLoader } from "./services/plugin-loader.js";
@@ -101,6 +102,30 @@ export function shouldEnablePrivateHostnameGuard(opts: {
     opts.deploymentExposure === "private" &&
     (opts.deploymentMode === "local_trusted" || opts.deploymentMode === "authenticated")
   );
+}
+
+function buildEventIntakeDiscovery(companyId?: string) {
+  const companyPrefix = companyId ? `/api/companies/${companyId}` : "/api/companies/{companyId}";
+  return {
+    status: "discovery_only",
+    note: "Paperclip event intake is managed by routine webhook triggers. This discovery response intentionally does not expose bearer secrets.",
+    apiBase: "/api",
+    endpoints: {
+      routines: `${companyPrefix}/routines`,
+      connectors: `${companyPrefix}/connectors`,
+      integrations: `${companyPrefix}/integrations`,
+      routineTriggerFire: "/api/routine-triggers/public/{publicId}/fire",
+      issueComments: "/api/issues/{issueId}/comments",
+      plugins: `${companyPrefix}/plugins`,
+    },
+    configuredLanes: ["customer/email", "operations/domain_incident", "product/github_deployment"],
+    secretInventory: {
+      runtimePath: "/data/paperclip/webhook-ingress-20260424T090721Z/endpoints.json",
+      hostBackupPath: "/srv/backups/paperclip/webhook-ingress-20260424T090721Z/endpoints.json",
+    },
+    operatingRule:
+      "Use webhooks plus the daily CEO sweep. Do not re-enable timer heartbeats unless the issue documents a concrete reason.",
+  };
 }
 
 export async function createApp(
@@ -168,6 +193,60 @@ export async function createApp(
     app.all("/api/auth/{*authPath}", opts.betterAuthHandler);
   }
   app.use(llmRoutes(db));
+
+  app.get(
+    [
+      "/docs",
+      "/openapi.json",
+      "/swagger.json",
+      "/routines",
+      "/webhooks",
+      "/webhooks/ingress",
+      "/webhook-targets",
+      "/webhook-ingress",
+      "/webhook-ingress/:lane",
+      "/events/ingress",
+      "/ingress",
+      "/ingest",
+      "/intake",
+    ],
+    (req, res) => {
+      res.json({
+        ...buildEventIntakeDiscovery(),
+        requestedPath: req.path,
+        requestedLane: typeof req.params.lane === "string" ? req.params.lane : null,
+      });
+    },
+  );
+
+  app.get(
+    [
+      "/companies/:companyId/webhooks",
+      "/companies/:companyId/webhook-targets",
+      "/companies/:companyId/webhook-endpoints",
+      "/companies/:companyId/webhook-ingress",
+      "/companies/:companyId/ingress",
+      "/companies/:companyId/intake",
+      "/companies/:companyId/events",
+      "/companies/:companyId/plugin-routes",
+    ],
+    (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      res.json({
+        ...buildEventIntakeDiscovery(companyId),
+        requestedPath: req.path,
+      });
+    },
+  );
+
+  app.get("/comments", (req, res) => {
+    res.status(400).json({
+      error: "Issue comments are scoped by issue id.",
+      endpoint: "/api/issues/{issueId}/comments",
+      receivedIssueId: typeof req.query.issueId === "string" ? req.query.issueId : null,
+    });
+  });
 
   // Mount API routes
   const api = Router();

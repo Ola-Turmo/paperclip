@@ -711,10 +711,12 @@ export async function startServer(): Promise<StartedServer> {
           logger.error({ err }, "routine scheduler tick failed");
         });
   
-      // Periodically reap orphaned runs (5-min staleness threshold) and make sure
-      // persisted queued work is still being driven forward.
+      // Periodically reap orphaned runs and make sure persisted queued work is
+      // still being driven forward. Local child processes use a short orphan
+      // threshold, while remote Hermes/T3 gateway turns get a longer window to
+      // avoid cancelling legitimate long-running agent work.
       void heartbeat
-        .reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000 })
+        .reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000, remoteGatewayStaleThresholdMs: 45 * 60 * 1000 })
         .then(() => heartbeat.promoteDueScheduledRetries())
         .then(async (promotion) => {
           await heartbeat.resumeQueuedRuns();
