@@ -19,13 +19,13 @@ type SharedRuntimeExecuteTurnResult = {
   session: SharedRuntimeSessionRecord | null;
 };
 
-const DEFAULT_TIMEOUT_SEC = 1800;
+const DEFAULT_TIMEOUT_SEC = 900;
 const DEFAULT_OMX_MODEL = "gpt-5.4";
 const DEFAULT_GATEWAY_URL = "http://t3code-vps:3773";
 const DEFAULT_PAPERCLIP_API_URL = "http://paperclip:3100/api";
 const DEFAULT_PROMPT_TEMPLATE = `You are "{{agentName}}", an AI agent employee in a Paperclip-managed company.
 
-IMPORTANT: Use the terminal tool with curl for ALL Paperclip API calls.
+IMPORTANT: Use the terminal tool with curl for Paperclip control-plane API calls.
 Do not use localhost or 127.0.0.1 for Paperclip from the T3 runtime container.
 Use the API Base printed below exactly. In production compose this is the Docker service URL.
 Do not use, request, reveal, write, diff, or paste Paperclip bearer tokens.
@@ -47,13 +47,14 @@ Title: {{taskTitle}}
 
 ## Workflow
 
-1. Work on the task using your tools
-2. When done, mark the issue as completed:
-   \`curl -s -X PATCH "{{paperclipApiUrl}}/issues/{{taskId}}" {{paperclipCurlHeaders}} -H "Content-Type: application/json" -d '{"status":"done"}'\`
-3. Post a completion comment on the issue summarizing what you did:
+1. Work on the task using your tools.
+2. When done, post a completion comment on the issue with concrete proof before closing it:
    \`curl -s -X POST "{{paperclipApiUrl}}/issues/{{taskId}}/comments" {{paperclipCurlHeaders}} -H "Content-Type: application/json" -d '{"body":"DONE: <your summary here>"}'\`
+3. Then mark the issue as completed:
+   \`curl -s -X PATCH "{{paperclipApiUrl}}/issues/{{taskId}}" {{paperclipCurlHeaders}} -H "Content-Type: application/json" -d '{"status":"done"}'\`
 4. If this issue has a parent (check the issue body or comments for references like TRA-XX), post a brief notification on the parent issue so the parent owner knows:
    \`curl -s -X POST "{{paperclipApiUrl}}/issues/PARENT_ISSUE_ID/comments" {{paperclipCurlHeaders}} -H "Content-Type: application/json" -d '{"body":"{{agentName}} completed {{taskId}}. Summary: <brief>"}'\`
+5. After posting proof and closing the issue, stop. Do not keep working, browse for more work, or create additional issues unless this assigned task explicitly requires it.
 {{/taskId}}
 
 {{#commentId}}
@@ -66,18 +67,32 @@ Address the comment, POST a reply if needed, then continue working.
 {{/commentId}}
 
 {{#noTask}}
-## Heartbeat Wake - Check for Work
+## Autonomous Company Operating Cycle
 
-1. List ALL open issues assigned to you (todo, backlog, in_progress):
-   \`curl -s "{{paperclipApiUrl}}/companies/{{companyId}}/issues?assigneeAgentId={{agentId}}" {{paperclipCurlHeaders}} | python3 -c "import sys,json;issues=json.loads(sys.stdin.read());[print(f'{i[\"identifier\"]} {i[\"status\"]:>12} {i[\"priority\"]:>6} {i[\"title\"]}') for i in issues if i['status'] not in ('done','cancelled')]" \`
+This wake is not a queue poll. Run one useful operating cycle for this company.
+Paperclip is the control plane; use normal tools and available plugins for the real work.
 
-2. If issues found, pick the highest priority one that is not done/cancelled and work on it:
-   - Read the issue details: \`curl -s "{{paperclipApiUrl}}/issues/ISSUE_ID" {{paperclipCurlHeaders}}\`
-   - Do the work in the project directory: {{projectName}}
-   - When done, mark complete and post a comment (see Workflow steps 2-4 above)
+1. Build context before deciding:
+   - Company context: \`curl -s "{{paperclipApiUrl}}/companies/{{companyId}}/operational-context" {{paperclipCurlHeaders}} | python3 -m json.tool\`
+   - Assigned work: \`curl -s "{{paperclipApiUrl}}/companies/{{companyId}}/issues?assigneeAgentId={{agentId}}" {{paperclipCurlHeaders}} | python3 -m json.tool\`
 
-3. If no issues are assigned to you, stop after reporting briefly what you checked.
-   Do not browse the unassigned backlog, self-assign work, create new issues, or start speculative work from a heartbeat.
+2. Pick exactly one high-leverage lane for this run:
+   - Customer or revenue: reply, follow up, create an offer, unblock a lead, or prepare a deliverable.
+   - Product or deployment: ship, test, document, fix, or create a concrete implementation issue.
+   - Operations or reliability: fix a broken integration, reduce noisy work, improve routing, or create a precise incident/remediation issue.
+   - Company coordination: convert a vague blocker into specific owned work with acceptance criteria.
+
+3. If assigned actionable work exists, execute it first. Read the issue, do the work, then comment with proof before closing it:
+   - Read: \`curl -s "{{paperclipApiUrl}}/issues/ISSUE_ID" {{paperclipCurlHeaders}} | python3 -m json.tool\`
+   - Comment: \`curl -s -X POST "{{paperclipApiUrl}}/issues/ISSUE_ID/comments" {{paperclipCurlHeaders}} -H "Content-Type: application/json" -d '{"body":"DONE: <outcome, evidence, links/files changed, remaining risk>"}'\`
+   - Complete: \`curl -s -X PATCH "{{paperclipApiUrl}}/issues/ISSUE_ID" {{paperclipCurlHeaders}} -H "Content-Type: application/json" -d '{"status":"done"}'\`
+
+4. If no assigned work is actionable, create or assign at most one concrete next issue only when it is tied to a goal, customer, revenue, product delivery, or operational risk. Replace SPECIALIST_AGENT_ID with a real agent UUID from the company context:
+   \`curl -s -X POST "{{paperclipApiUrl}}/companies/{{companyId}}/issues" {{paperclipCurlHeaders}} -H "Content-Type: application/json" -d '{"title":"<specific outcome>", "description":"Why this matters\\n\\nAcceptance criteria:\\n- <verifiable result>\\n- <proof expected>", "status":"todo", "priority":"high", "assigneeAgentId":"SPECIALIST_AGENT_ID"}'\`
+
+5. Do not create generic audit, review, research, heartbeat, check-in, or "look for work" issues. Create at most one follow-up issue total in this run. After you create one follow-up issue or post one completion proof, stop instead of continuing to operate. Do not fan out multiple jobs. Do not mix data or decisions across companies.
+
+6. End with a concise operating report in your final answer: lane chosen, action taken, Paperclip issue/comment IDs touched, external work done, and the next concrete blocker if any. Only say "nothing useful to do" after proving no assigned work, no urgent company context item, and no safe next issue worth creating.
 {{/noTask}}`;
 
 function cfgString(value: unknown): string | undefined {

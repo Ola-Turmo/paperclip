@@ -4432,15 +4432,16 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
 
     const retryRun = await db.transaction(async (tx) => {
       await tx.execute(
-        sql`select id from issues where company_id = ${run.companyId} and execution_run_id = ${run.id} for update`,
+        sql`select id from issues where company_id = ${run.companyId} and id = ${issueId} for update`,
       );
 
       const issue = await tx
-        .select({ id: issues.id })
+        .select({ id: issues.id, status: issues.status })
         .from(issues)
-        .where(and(eq(issues.companyId, run.companyId), eq(issues.executionRunId, run.id)))
+        .where(and(eq(issues.companyId, run.companyId), eq(issues.id, issueId)))
         .then((rows) => rows[0] ?? null);
       if (!issue) return null;
+      if (issue.status === "cancelled") return null;
 
       const wakeupRequest = await tx
         .insert(agentWakeupRequests)
@@ -4492,6 +4493,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       await tx
         .update(issues)
         .set({
+          status: issue.status === "done" ? "in_progress" : undefined,
+          completedAt: issue.status === "done" ? null : undefined,
           executionRunId: queuedRun.id,
           executionAgentNameKey: normalizeAgentNameKey(agent.name),
           executionLockedAt: now,
