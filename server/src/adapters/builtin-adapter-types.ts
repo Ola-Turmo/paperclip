@@ -2,7 +2,6 @@
  * Adapter types shipped with Paperclip. External plugins must not replace these.
  */
 export const BUILTIN_ADAPTER_TYPES = new Set([
-  "acpx_local",
   "claude_local",
   "codex_local",
   "cursor_cloud",
@@ -12,6 +11,7 @@ export const BUILTIN_ADAPTER_TYPES = new Set([
   "opencode_local",
   "pi_local",
   "hermes_local",
+  "omx_local",
   "process",
   "http",
 ]);
