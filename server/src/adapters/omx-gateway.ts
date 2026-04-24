@@ -28,14 +28,14 @@ const DEFAULT_PROMPT_TEMPLATE = `You are "{{agentName}}", an AI agent employee i
 IMPORTANT: Use the terminal tool with curl for ALL Paperclip API calls.
 Do not use localhost or 127.0.0.1 for Paperclip from the T3 runtime container.
 Use the API Base printed below exactly. In production compose this is the Docker service URL.
-Never write, print, diff, or paste the Paperclip bearer token into files, comments, logs, or final answers.
-Use the provided curl headers only in direct API commands.
+Do not use, request, reveal, write, diff, or paste Paperclip bearer tokens.
+Use only the provided run auth header in direct API commands.
 
 Your Paperclip identity:
   Agent ID: {{agentId}}
   Company ID: {{companyId}}
   API Base: {{paperclipApiUrl}}
-  Curl headers: {{paperclipCurlHeaders}}
+  Run auth header: {{paperclipCurlHeaders}}
 
 {{#taskId}}
 ## Assigned Task
@@ -76,12 +76,8 @@ Address the comment, POST a reply if needed, then continue working.
    - Do the work in the project directory: {{projectName}}
    - When done, mark complete and post a comment (see Workflow steps 2-4 above)
 
-3. If no issues assigned to you, check for unassigned issues:
-   \`curl -s "{{paperclipApiUrl}}/companies/{{companyId}}/issues?status=backlog" {{paperclipCurlHeaders}} | python3 -c "import sys,json;issues=json.loads(sys.stdin.read());[print(f'{i[\"identifier\"]} {i[\"title\"]}') for i in issues if not i.get('assigneeAgentId')]" \`
-   If you find a relevant issue, assign it to yourself:
-   \`curl -s -X PATCH "{{paperclipApiUrl}}/issues/ISSUE_ID" {{paperclipCurlHeaders}} -H "Content-Type: application/json" -d '{"assigneeAgentId":"{{agentId}}","status":"todo"}'\`
-
-4. If truly nothing to do, report briefly what you checked.
+3. If no issues are assigned to you, stop after reporting briefly what you checked.
+   Do not browse the unassigned backlog, self-assign work, create new issues, or start speculative work from a heartbeat.
 {{/noTask}}`;
 
 function cfgString(value: unknown): string | undefined {
@@ -176,32 +172,21 @@ function resolveGatewayTokenHeaders(config: Record<string, unknown>, env: Record
 
 function buildPaperclipAuthPrompt(config: Record<string, unknown>): string {
   const env = getResolvedEnv(config);
-  const apiKey = cfgString(env.PAPERCLIP_API_KEY);
   const runId = cfgString(env.PAPERCLIP_RUN_ID);
-  if (!apiKey) return "";
+  if (!runId) return "";
 
   const lines = [
     "Paperclip API safety rule:",
-    `Use Authorization: Bearer ${apiKey} on every Paperclip API request.`,
-    ...(runId
-      ? [
-          `Use X-Paperclip-Run-Id: ${runId} on every Paperclip API request that writes or mutates data, including comments and issue updates.`,
-        ]
-      : []),
+    `Use X-Paperclip-Run-Id: ${runId} on every Paperclip API request.`,
+    "Do not use Authorization bearer tokens for Paperclip API calls from this runtime.",
     "Never use a board, browser, or local-board session for Paperclip API writes.",
-    "Never write, print, diff, or paste this bearer token into files, issue comments, logs, or final answers.",
   ];
 
   return `${lines.join("\n")}\n\n`;
 }
 
 function buildPaperclipCurlHeaders(config: Record<string, unknown>, runId: string): string {
-  const env = getResolvedEnv(config);
-  const apiKey = cfgString(env.PAPERCLIP_API_KEY);
   const headers = [];
-  if (apiKey) {
-    headers.push(`-H "Authorization: Bearer ${apiKey}"`);
-  }
   if (runId) {
     headers.push(`-H "X-Paperclip-Run-Id: ${runId}"`);
   }
@@ -369,8 +354,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     );
   }
 
+  const companyId = ctx.agent?.companyId || "global";
+  const agentId = ctx.agent?.id || "unknown-agent";
   const ownerKind = taskId ? "paperclip_issue" : "paperclip_agent_run";
-  const ownerId = taskId || ctx.runId || ctx.agent?.id || "paperclip";
+  const ownerId = taskId || `${companyId}:${agentId}`;
   await ctx.onLog(
     "stdout",
     `[omx-gateway] Executing via T3 runtime gateway (${gatewayUrl}) with model=${model}\n`,
