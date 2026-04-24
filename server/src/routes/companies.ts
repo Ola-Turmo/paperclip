@@ -1,5 +1,7 @@
 import { Router, type Request } from "express";
+import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
+import { pluginCompanySettings, plugins } from "@paperclipai/db";
 import {
   DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION,
   companyPortabilityExportSchema,
@@ -132,6 +134,184 @@ export function companyRoutes(db: Db, storage?: StorageService) {
       return;
     }
     res.json(company);
+  });
+
+  router.get("/:companyId/plugins", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const rows = await db
+      .select({
+        id: plugins.id,
+        pluginKey: plugins.pluginKey,
+        packageName: plugins.packageName,
+        version: plugins.version,
+        status: plugins.status,
+        manifestJson: plugins.manifestJson,
+        companyEnabled: pluginCompanySettings.enabled,
+        companySettings: pluginCompanySettings.settingsJson,
+        companyLastError: pluginCompanySettings.lastError,
+        lastError: plugins.lastError,
+        updatedAt: plugins.updatedAt,
+      })
+      .from(plugins)
+      .leftJoin(
+        pluginCompanySettings,
+        and(eq(pluginCompanySettings.pluginId, plugins.id), eq(pluginCompanySettings.companyId, companyId)),
+      );
+    res.json(
+      rows.map((row) => ({
+        id: row.id,
+        pluginKey: row.pluginKey,
+        packageName: row.packageName,
+        version: row.version,
+        status: row.status,
+        enabledForCompany: row.companyEnabled ?? row.status === "ready",
+        displayName: typeof row.manifestJson?.displayName === "string" ? row.manifestJson.displayName : row.pluginKey,
+        categories: row.manifestJson?.categories ?? [],
+        capabilities: row.manifestJson?.capabilities ?? {},
+        settings: row.companySettings ?? {},
+        lastError: row.companyLastError ?? row.lastError ?? null,
+        updatedAt: row.updatedAt,
+      })),
+    );
+  });
+
+  router.get("/:companyId/plugin-registry", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    res.json({
+      endpoint: `/api/companies/${companyId}/plugins`,
+      note: "Use the company plugins endpoint for installed plugin inventory and company enablement state.",
+    });
+  });
+
+  router.get("/:companyId/connectors", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    res.json({
+      status: "discovery_only",
+      note: "This compatibility endpoint prevents agent dead ends. Use the listed first-party endpoints and company secrets instead of guessing connector routes.",
+      connectors: [
+        {
+          key: "plugins",
+          status: "available",
+          endpoint: `/api/companies/${companyId}/plugins`,
+          purpose: "Installed plugin inventory and company enablement state.",
+        },
+        {
+          key: "zapier",
+          status: "requires_company_runtime_mapping",
+          endpoint: `/api/companies/${companyId}/zapier`,
+          purpose: "Gmail, Calendar, and other Zapier ZDK-backed app coverage once company credentials are mapped.",
+        },
+        {
+          key: "agent_mail",
+          status: "external_mailbox_runtime",
+          endpoint: `/api/companies/${companyId}/agent-mail/messages`,
+          purpose: "AgentMail mailbox discovery shim; use company secrets/runtime bridge for live mailbox access.",
+        },
+        {
+          key: "webhook_intake",
+          status: "configured",
+          purpose: "Event-driven Paperclip wakeups for customer/email, operations/domain incidents, and product/GitHub/deployment events.",
+          secretInventory: {
+            runtimePath: "/data/paperclip/webhook-ingress-20260424T090721Z/endpoints.json",
+            hostBackupPath: "/srv/backups/paperclip/webhook-ingress-20260424T090721Z/endpoints.json",
+          },
+        },
+      ],
+    });
+  });
+
+  router.get("/:companyId/integrations", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    res.json({
+      status: "partial_runtime_connected",
+      note: "Paperclip should prefer webhook-triggered work over timer polling. This endpoint is an agent-safe integration map and intentionally does not expose secrets.",
+      integrations: [
+        {
+          key: "paperclip_webhook_intake",
+          status: "configured",
+          channels: ["customer/email", "operations/domain_incident", "product/github_deployment"],
+          verification: "Check routine_runs where source='webhook' and linked_issue_id is present.",
+        },
+        {
+          key: "cloudflare",
+          status: "external_provider",
+          recommendedEvents: ["Email Routing or agentic-inbox inbound mail", "Worker/Pages deploy events", "DNS/domain incidents", "deliverability alerts"],
+        },
+        {
+          key: "github",
+          status: "external_provider",
+          recommendedEvents: ["push", "pull_request", "workflow_run", "deployment_status", "issues"],
+        },
+        {
+          key: "zapier",
+          status: "requires_company_runtime_mapping",
+          endpoint: `/api/companies/${companyId}/zapier`,
+          recommendedEvents: ["new Gmail message", "new Calendar event", "updated Calendar event"],
+        },
+      ],
+    });
+  });
+
+  router.get("/:companyId/zapier", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    res.json({
+      connected: false,
+      provider: "zapier",
+      status: "not_configured_in_company_api",
+      note: "Use company skills/secrets or the Zapier ZDK runtime bridge when configured; this endpoint exists so agents can discover the current state without a 404.",
+      requiredForFullCoverage: ["Gmail connection", "Google Calendar connection", "company-scoped runtime credential mapping"],
+    });
+  });
+
+  router.get("/:companyId/agent-mail/messages", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    res.json([]);
+  });
+
+  router.get("/:companyId/adapters", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    res.json([
+      {
+        type: "hermes_local",
+        provider: "custom:minimax-token-plan",
+        model: "MiniMax-M2.7",
+        status: "preferred",
+        note: "Paperclip production agents should use Hermes via the local T3 runtime gateway.",
+      },
+    ]);
+  });
+
+  router.get("/:companyId/operational-context", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const company = await svc.getById(companyId);
+    if (!company) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    res.json({
+      company,
+      apiBase: process.env.PAPERCLIP_API_URL ?? null,
+      apiHints: {
+        issues: `/api/companies/${companyId}/issues`,
+        agents: `/api/companies/${companyId}/agents`,
+        goals: `/api/companies/${companyId}/goals`,
+        skills: `/api/companies/${companyId}/skills`,
+        plugins: `/api/companies/${companyId}/plugins`,
+        connectors: `/api/companies/${companyId}/connectors`,
+        integrations: `/api/companies/${companyId}/integrations`,
+        zapier: `/api/companies/${companyId}/zapier`,
+        adapters: `/api/companies/${companyId}/adapters`,
+      },
+      operatingRule: "Continue company work through available Paperclip APIs; document exact missing credentials instead of stopping on unavailable external services.",
+    });
   });
 
   router.get("/:companyId/feedback-traces", async (req, res) => {

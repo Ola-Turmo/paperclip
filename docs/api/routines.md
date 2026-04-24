@@ -5,6 +5,21 @@ summary: Recurring task scheduling, triggers, and run history
 
 Routines are recurring tasks that fire on a schedule, webhook, or API call and create a heartbeat run for the assigned agent.
 
+## Webhook-First Automation Pattern
+
+Prefer webhook triggers over frequent timer heartbeats when an external system can notify Paperclip directly. This keeps agents idle until there is real company work and carries the event payload into the execution issue.
+
+Recommended event-ingress setup:
+
+| Source | Trigger kind | Signing mode | Idempotency key |
+|--------|--------------|--------------|-----------------|
+| Agentic Inbox / AgentMail email received | `webhook` | `bearer` or `hmac_sha256` | Provider message ID |
+| GitHub push / issue / PR | `webhook` | `github_hmac` | Delivery ID |
+| Cloudflare alert / deployment / queue | `webhook` | `hmac_sha256` when available, otherwise `bearer` | Event ID |
+| Zapier / app automation | `webhook` | `bearer` | Zap run ID or upstream record ID |
+
+Webhook payloads can include a top-level `variables` object or top-level keys matching routine variables. Use `concurrencyPolicy: "coalesce_if_active"` for noisy summary-style events and `always_enqueue` for discrete events like customer emails where each message needs its own issue. Always send `Idempotency-Key` when the upstream provider can retry.
+
 ## List Routines
 
 ```
