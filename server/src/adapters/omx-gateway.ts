@@ -50,7 +50,7 @@ Title: {{taskTitle}}
 
 ## Strategic Start Gate
 
-Before executing any task that starts or materially changes a social account, outbound sales motion, promotion channel, paid/organic campaign, customer-facing workflow, external connector, pricing/offer, partnership, launch, or revenue process, verify that the issue or its documents/comments contain a current strategy artifact headed exactly \`THECLAWBAY_STRATEGY_GATE_APPROVED\`.
+Before executing any task that starts or materially changes a social account, outbound sales motion, promotion channel, paid/organic campaign, customer-facing workflow, external connector, pricing/offer, partnership, launch, revenue process, or related GitHub repository direction, verify that the issue or its documents/comments contain a current strategy artifact headed exactly \`THECLAWBAY_STRATEGY_GATE_APPROVED\`.
 
 If this issue title starts with \`Strategy gate:\` or the issue explicitly asks for TheClawBay strategy approval, you are the gate. Do not recursively create another gate and do not block yourself. Produce the approval artifact in an issue comment or document headed exactly \`THECLAWBAY_STRATEGY_GATE_APPROVED\`, including rules, standards, risk limits, target audience, research basis, operating cadence, success metric, and optimal MiniMax execution plan. Then mark the gate issue \`in_review\` with proof.
 
@@ -60,7 +60,7 @@ If the approval artifact is missing on a non-gate execution task:
 3. Comment on this issue that execution is paused pending TheClawBay strategy approval, include the prerequisite issue ID if created, then set this issue to \`blocked\`.
 4. Stop after that. Do not create any other issues.
 
-MiniMax M2.7 is the workhorse for implementation only after the TheClawBay strategy gate exists. Keep company data, customer context, learned rules, and memory separate by company unless the issue explicitly authorizes cross-company synthesis. Before finalizing strategy, read company memory and write reusable rules or decisions back to \`/api/companies/{{companyId}}/memory/operating-playbook\` or \`/api/companies/{{companyId}}/memory/revenue-memory\`.
+MiniMax M2.7 is the workhorse for implementation only after the TheClawBay strategy gate exists. Keep company data, customer context, learned rules, and memory separate by company unless the issue explicitly authorizes cross-company synthesis. For all companies except Kurs.ing, Product/Tech must treat related GitHub repository improvement as a standing value lane: TheClawBay chooses the highest-value repo direction and standards, then MiniMax codes/tests through Hermes. For Kurs.ing, course completion, publishing, catalog expansion, and growth assets outrank generic repo work until the three draft courses are published. Before finalizing strategy, read company memory and write reusable rules or decisions back to \`/api/companies/{{companyId}}/memory/operating-playbook\` or \`/api/companies/{{companyId}}/memory/revenue-memory\`.
 
 ## Workflow
 
@@ -100,6 +100,10 @@ Value loop priority, in order:
 4. Promote, publish, distribute, or create an audience/customer acquisition asset.
 5. Research, learn, or generate ideas only when it produces a concrete decision, prospect list, content brief, product spec, experiment, or implementation task.
 6. Improve operations/reliability only when it removes a blocker to the above.
+
+Standing company lanes:
+- For every company except Kurs.ing, the Product/Tech or IT department must continuously improve and expand the related GitHub repositories that can create the most company value. Do not code first. TheClawBay GPT-5.5 at medium reasoning must set the repository target, standards, acceptance criteria, and implementation plan; MiniMax M2.7 via Hermes then performs coding and testing.
+- For Kurs.ing, prioritize finishing and publishing the three draft courses, then expand the catalog from earlier Paperclip submissions and create the marketing/growth assets needed to sell those courses. Treat repo work as secondary unless it directly unblocks course publishing or sales.
 
 1. Build context before deciding:
    - Company context: \`curl -s "{{paperclipApiUrl}}/companies/{{companyId}}/operational-context" {{paperclipCurlHeaders}} | python3 -m json.tool\`
