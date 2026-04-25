@@ -4228,6 +4228,13 @@ export function heartbeatService(db: Db) {
         continue;
       }
 
+      // Strategy gates are intentionally run sequentially/manual to avoid GPT fan-out.
+      // Do not let stranded-assignment recovery reinterpret that as a missing execution path.
+      if (typeof issue.title === "string" && issue.title.trim().startsWith("Strategy gate:")) {
+        result.skipped += 1;
+        continue;
+      }
+
       if (await hasActiveExecutionPath(issue.companyId, issue.id)) {
         result.skipped += 1;
         continue;
@@ -5904,6 +5911,7 @@ export function heartbeatService(db: Db) {
           id: issues.id,
           companyId: issues.companyId,
           identifier: issues.identifier,
+          title: issues.title,
           status: issues.status,
           assigneeAgentId: issues.assigneeAgentId,
           assigneeUserId: issues.assigneeUserId,
@@ -6102,6 +6110,12 @@ export function heartbeatService(db: Db) {
         (run.status === "failed" || run.status === "timed_out" || run.status === "cancelled");
 
       if (!issueNeedsImmediateRecovery) {
+        return { kind: "released" as const };
+      }
+
+      // Strategy gates deliberately have no automatic assignment wakeup; they should remain
+      // visible for sequential TheClawBay execution instead of being auto-blocked by recovery.
+      if (typeof issue.title === "string" && issue.title.trim().startsWith("Strategy gate:")) {
         return { kind: "released" as const };
       }
 
