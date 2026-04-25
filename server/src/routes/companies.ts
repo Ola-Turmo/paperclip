@@ -1,7 +1,7 @@
 import { Router, type Request } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { pluginCompanySettings, plugins } from "@paperclipai/db";
+import { issues, pluginCompanySettings, plugins } from "@paperclipai/db";
 import {
   DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION,
   companyPortabilityExportSchema,
@@ -13,6 +13,8 @@ import {
   feedbackVoteValueSchema,
   updateCompanyBrandingSchema,
   updateCompanySchema,
+  issueDocumentKeySchema,
+  upsertIssueDocumentSchema,
 } from "@paperclipai/shared";
 import { badRequest, forbidden } from "../errors.js";
 import { validate } from "../middleware/validate.js";
@@ -23,6 +25,7 @@ import {
   companyPortabilityService,
   companyService,
   feedbackService,
+  documentService,
   logActivity,
 } from "../services/index.js";
 import type { StorageService } from "../storage/types.js";
@@ -36,6 +39,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
   const access = accessService(db);
   const budgets = budgetService(db);
   const feedback = feedbackService(db);
+  const documentsSvc = documentService(db);
 
   function parseBooleanQuery(value: unknown) {
     return value === true || value === "true" || value === "1";
@@ -87,6 +91,58 @@ export function companyRoutes(db: Db, storage?: StorageService) {
     if (actorAgent.role !== "ceo") {
       throw forbidden(`Only CEO agents can manage company ${capability}`);
     }
+  }
+
+  async function ensureCompanyMemoryIssue(companyId: string) {
+    const existing = await db
+      .select({ id: issues.id, identifier: issues.identifier, title: issues.title, updatedAt: issues.updatedAt })
+      .from(issues)
+      .where(
+        and(
+          eq(issues.companyId, companyId),
+          eq(issues.originKind, "company_memory"),
+          eq(issues.originId, companyId),
+        ),
+      )
+      .orderBy(desc(issues.updatedAt))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+    if (existing) return existing;
+
+    const [created] = await db
+      .insert(issues)
+      .values({
+        companyId,
+        title: "[System] Company Memory",
+        description:
+          "Durable company memory for agent learning, operating rules, decisions, experiments, and reusable playbooks. Keep company data isolated unless an issue explicitly authorizes cross-company synthesis.",
+        status: "in_review",
+        priority: "low",
+        originKind: "company_memory",
+        originId: companyId,
+        originFingerprint: "company_memory",
+        createdByUserId: "system",
+      })
+      .returning({ id: issues.id, identifier: issues.identifier, title: issues.title, updatedAt: issues.updatedAt });
+    return created;
+  }
+
+  async function getCompanyMemoryPayload(companyId: string) {
+    const memoryIssue = await ensureCompanyMemoryIssue(companyId);
+    const docs = await documentsSvc.listIssueDocuments(memoryIssue.id, { includeSystem: true });
+    return {
+      issue: memoryIssue,
+      documents: docs,
+      readHint: `/api/companies/${companyId}/memory`,
+      writeHint: `/api/companies/${companyId}/memory/{key}`,
+      requiredKeys: ["operating-playbook", "learning-log", "revenue-memory", "agent-handoff"],
+      rules: [
+        "Keep memory company-scoped unless explicit cross-company synthesis is authorized.",
+        "Store only reusable facts, decisions, customer/revenue learnings, failed experiments, successful playbooks, and next constraints.",
+        "Do not store secrets. Store the name of the needed credential or connector, not the credential value.",
+        "Update memory after meaningful work before closing the run.",
+      ],
+    };
   }
 
   router.get("/", async (req, res) => {
@@ -326,6 +382,59 @@ export function companyRoutes(db: Db, storage?: StorageService) {
     ]);
   });
 
+  router.get("/:companyId/memory", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const company = await svc.getById(companyId);
+    if (!company) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    res.json(await getCompanyMemoryPayload(companyId));
+  });
+
+  router.put("/:companyId/memory/:key", validate(upsertIssueDocumentSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const company = await svc.getById(companyId);
+    if (!company) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    const keyParsed = issueDocumentKeySchema.safeParse(String(req.params.key ?? "").trim().toLowerCase());
+    if (!keyParsed.success) {
+      res.status(400).json({ error: "Invalid memory key", details: keyParsed.error.issues });
+      return;
+    }
+    const actor = getActorInfo(req);
+    const memoryIssue = await ensureCompanyMemoryIssue(companyId);
+    const existing = await documentsSvc.getIssueDocumentByKey(memoryIssue.id, keyParsed.data);
+    const result = await documentsSvc.upsertIssueDocument({
+      issueId: memoryIssue.id,
+      key: keyParsed.data,
+      title: req.body.title ?? null,
+      format: req.body.format,
+      body: req.body.body,
+      changeSummary: req.body.changeSummary ?? null,
+      baseRevisionId: existing ? req.body.baseRevisionId ?? existing.latestRevisionId ?? null : null,
+      createdByAgentId: actor.agentId ?? null,
+      createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      createdByRunId: actor.runId ?? null,
+    });
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: result.created ? "company.memory_created" : "company.memory_updated",
+      entityType: "issue",
+      entityId: memoryIssue.id,
+      details: { key: result.document.key, documentId: result.document.id, title: result.document.title },
+    });
+    res.json({ ...result, memoryIssue });
+  });
+
   router.get("/:companyId/operational-context", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
@@ -334,8 +443,10 @@ export function companyRoutes(db: Db, storage?: StorageService) {
       res.status(404).json({ error: "Company not found" });
       return;
     }
+    const memory = await getCompanyMemoryPayload(companyId);
     res.json({
       company,
+      memory,
       apiBase: process.env.PAPERCLIP_API_URL ?? null,
       apiHints: {
         issues: `/api/companies/${companyId}/issues`,
@@ -349,6 +460,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
         integrations: `/api/companies/${companyId}/integrations`,
         zapier: `/api/companies/${companyId}/zapier`,
         adapters: `/api/companies/${companyId}/adapters`,
+        memory: `/api/companies/${companyId}/memory`,
       },
       externalSurfaceHints: {
         hosting: "Use Cloudflare/Vercel/GitHub provider tooling or company plugin skills; Paperclip exposes discovery hints, not a universal hosting provider API.",
@@ -356,7 +468,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
         deployments: "Use GitHub/Cloudflare/Vercel deployment webhooks and issue evidence. Do not poll missing UI-style routes.",
         domains: "Use Cloudflare plus registrar credentials. Keep registrar-specific blockers separate from owned Paperclip work.",
       },
-      operatingRule: "Continue company work through available Paperclip APIs; document exact missing credentials instead of stopping on unavailable external services.",
+      operatingRule: "Continue company work through available Paperclip APIs; document exact missing credentials instead of stopping on unavailable external services. Update company memory after meaningful work so future agents improve instead of relearning.",
     });
   });
 
