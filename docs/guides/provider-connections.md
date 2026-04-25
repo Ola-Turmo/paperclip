@@ -70,3 +70,35 @@ Zapier and Composio are not interchangeable:
 - Zapier is the durable integration/workflow layer for standard SaaS connections and Zapier app surfaces.
 - Composio is the company-scoped agent tool layer for direct action/search/trigger/proxy workflows.
 - Both must be invoked through `paperclip-connections` from Paperclip so policy, company isolation, and audit assumptions stay intact.
+
+## Payment Provider Routing
+
+Payment providers are market-scoped, not interchangeable:
+
+- `KUR`, `LOV`, and `PER` target Norway and must use Stripe for payments.
+- `AII`, `EMD`, `GAT`, `PAR`, and `TRT` do not primarily target Norway and must use Suby for payments.
+
+Inspect payment scope:
+
+```bash
+paperclip-connections stripe --company KUR -- env
+paperclip-connections suby --company GAT -- env
+paperclip-connections policy show --provider stripe --company LOV
+paperclip-connections policy show --provider suby --company TRT
+```
+
+Suby API reference for agents:
+
+```bash
+paperclip-connections suby --company GAT -- docs
+```
+
+Suby live actions require a company-scoped API key in the configured env var, for example `PAPERCLIP_GAT_SUBY_API_KEY`. Generate the key in Suby dashboard settings and store it once; the dashboard only shows merchant API keys once. Do not rotate an existing Suby merchant API key from automation without a dedicated approval issue.
+
+Suby workflow rules:
+
+- Products use `POST https://api.suby.fi/api/product/create`.
+- One-time payments use `POST https://api.suby.fi/api/payment/create`.
+- Subscriptions use `POST https://api.suby.fi/api/subscription/create`.
+- Webhooks must verify `X-Webhook-Signature` using the configured webhook secret before changing access, revenue, or customer state.
+- Refunds, subscription cancellation, key rotation, and destructive payment operations require a dedicated approval issue.

@@ -80,6 +80,11 @@ Composio CLI:
   paperclip-connections composio --company {company} -- search "send email" --toolkits gmail --limit 5
   paperclip-connections composio --company {company} -- execute GMAIL_SEND_EMAIL --dry-run --get-schema
 
+Payments:
+  paperclip-connections stripe --company {company} -- env
+  paperclip-connections suby --company {company} -- env
+  paperclip-connections suby --company {company} -- docs
+
 Grant a new toolkit/class scope:
   paperclip-connections scope grant --provider composio --company {company} --classes identity,catalog,connection-read,credentials-mutate,action-run,workflow-run --toolkits gmail,github,slack
 ''')
@@ -99,7 +104,7 @@ def main():
     sc = sub.add_parser('scope')
     scsub = sc.add_subparsers(dest='scope_cmd', required=True)
     gr = scsub.add_parser('grant')
-    gr.add_argument('--provider', required=True, choices=['cloudflare', 'zapier', 'stripe', 'composio'])
+    gr.add_argument('--provider', required=True, choices=['cloudflare', 'zapier', 'stripe', 'composio', 'suby'])
     gr.add_argument('--company', required=True, choices=COMPANIES)
     gr.add_argument('--classes')
     gr.add_argument('--toolkits')
@@ -110,7 +115,7 @@ def main():
     qs = sub.add_parser('quickstart')
     qs.add_argument('--company', required=True, choices=COMPANIES)
 
-    for provider in ['zapier', 'composio', 'cloudflare', 'stripe']:
+    for provider in ['zapier', 'composio', 'cloudflare', 'stripe', 'suby']:
         sp = sub.add_parser(provider)
         sp.add_argument('--company', required=True, choices=COMPANIES)
         sp.add_argument('provider_args', nargs=argparse.REMAINDER)

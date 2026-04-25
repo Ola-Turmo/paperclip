@@ -327,19 +327,42 @@
         "cliVersion": "1.37.4",
         "configMode": "copied-local-config",
         "detectedProjectName": "default",
-        "detectedDisplayName": "kurs.ing"
+        "detectedDisplayName": "kurs.ing",
+        "policy": "Norway-target-market companies use Stripe for payments",
+        "countryRule": "Use Stripe for companies whose primary target market includes Norway; do not route non-Norway companies to Stripe by default."
       },
       "companies": {
         "PER": {
-          "mode": "deny",
-          "allowedOperations": [],
+          "mode": "required-own-account",
+          "allowedOperations": [
+            "env",
+            "identity",
+            "whoami",
+            "list-products",
+            "list-prices",
+            "list-customers",
+            "list-payment-links",
+            "list-subscriptions",
+            "list-invoices"
+          ],
           "forbiddenUsecases": [
-            "Do not use the Kurs.ing Stripe account from Personal"
+            "No refunds, disputes, payout, transfer, or key-rotation actions without a dedicated approval issue",
+            "No live-mode experiments without operator approval",
+            "Do not use another company Stripe account; each Norway-targeting company needs its own Stripe credential unless explicitly approved"
+          ],
+          "marketRule": "Norway target market -> Stripe payments",
+          "apiKeyEnv": "PAPERCLIP_PER_STRIPE_API_KEY",
+          "futureOperations": [
+            "create-payment-link",
+            "create-checkout-session",
+            "create-customer-portal-session"
           ]
         },
         "KUR": {
           "mode": "owner",
           "allowedOperations": [
+            "env",
+            "identity",
             "whoami",
             "list-products",
             "list-prices",
@@ -355,50 +378,77 @@
           ],
           "forbiddenUsecases": [
             "No refunds, disputes, payout, transfer, or key-rotation actions without a dedicated approval issue",
-            "No use of live mode for experiments without operator approval"
-          ]
+            "No live-mode experiments without operator approval",
+            "Do not use another company Stripe account; each Norway-targeting company needs its own Stripe credential unless explicitly approved"
+          ],
+          "marketRule": "Norway target market -> Stripe payments",
+          "apiKeyEnv": "PAPERCLIP_KUR_STRIPE_API_KEY"
         },
         "GAT": {
-          "mode": "deny-until-own-account",
+          "mode": "deny-market-rule-use-suby",
           "allowedOperations": [],
           "forbiddenUsecases": [
-            "No use of the Kurs.ing Stripe account for Gatareba.ge"
-          ]
+            "No Stripe payments for GAT by default; use the company Suby scope instead"
+          ],
+          "marketRule": "Non-Norway target market -> use Suby, not Stripe"
         },
         "LOV": {
-          "mode": "deny-until-own-account",
-          "allowedOperations": [],
+          "mode": "required-own-account",
+          "allowedOperations": [
+            "env",
+            "identity",
+            "whoami",
+            "list-products",
+            "list-prices",
+            "list-customers",
+            "list-payment-links",
+            "list-subscriptions",
+            "list-invoices"
+          ],
           "forbiddenUsecases": [
-            "No use of the Kurs.ing Stripe account for Lovkode.no"
+            "No refunds, disputes, payout, transfer, or key-rotation actions without a dedicated approval issue",
+            "No live-mode experiments without operator approval",
+            "Do not use another company Stripe account; each Norway-targeting company needs its own Stripe credential unless explicitly approved"
+          ],
+          "marketRule": "Norway target market -> Stripe payments",
+          "apiKeyEnv": "PAPERCLIP_LOV_STRIPE_API_KEY",
+          "futureOperations": [
+            "create-payment-link",
+            "create-checkout-session",
+            "create-customer-portal-session"
           ]
         },
         "PAR": {
-          "mode": "deny-until-own-account",
+          "mode": "deny-market-rule-use-suby",
           "allowedOperations": [],
           "forbiddenUsecases": [
-            "No use of the Kurs.ing Stripe account for Parallel Company AI"
-          ]
+            "No Stripe payments for PAR by default; use the company Suby scope instead"
+          ],
+          "marketRule": "Non-Norway target market -> use Suby, not Stripe"
         },
         "EMD": {
-          "mode": "deny-until-own-account",
+          "mode": "deny-market-rule-use-suby",
           "allowedOperations": [],
           "forbiddenUsecases": [
-            "No use of the Kurs.ing Stripe account for EmDash Sidecar SaaS"
-          ]
+            "No Stripe payments for EMD by default; use the company Suby scope instead"
+          ],
+          "marketRule": "Non-Norway target market -> use Suby, not Stripe"
         },
         "TRT": {
-          "mode": "deny-until-own-account",
+          "mode": "deny-market-rule-use-suby",
           "allowedOperations": [],
           "forbiddenUsecases": [
-            "No use of the Kurs.ing Stripe account for TRT.ge"
-          ]
+            "No Stripe payments for TRT by default; use the company Suby scope instead"
+          ],
+          "marketRule": "Non-Norway target market -> use Suby, not Stripe"
         },
         "AII": {
-          "mode": "deny-until-own-account",
+          "mode": "deny-market-rule-use-suby",
           "allowedOperations": [],
           "forbiddenUsecases": [
-            "No use of the Kurs.ing Stripe account for AI Influencer & Spokesperson Company"
-          ]
+            "No Stripe payments for AII by default; use the company Suby scope instead"
+          ],
+          "marketRule": "Non-Norway target market -> use Suby, not Stripe"
         }
       }
     },
@@ -830,6 +880,156 @@
             "No cross-company use of connected accounts or session files",
             "No destructive deletes without an approved Paperclip issue",
             "No broad admin/proxy workflow unless explicitly scoped in this policy"
+          ]
+        }
+      }
+    },
+    "suby": {
+      "runtime": {
+        "apiBase": "https://api.suby.fi",
+        "docs": "https://documentation.suby.fi/llms-full.txt",
+        "authHeader": "X-Suby-Api-Key",
+        "configMode": "company-scoped-api-key-env",
+        "policy": "Non-Norway-target-market companies use Suby for payments",
+        "notes": [
+          "Create product via /api/product/create",
+          "Create payment via /api/payment/create",
+          "Create subscription via /api/subscription/create",
+          "Verify webhooks with HMAC before trusting payment state"
+        ]
+      },
+      "companies": {
+        "PER": {
+          "mode": "deny-market-rule-use-stripe",
+          "marketRule": "Norway target market -> Stripe payments",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog"
+          ],
+          "forbiddenUsecases": [
+            "No Suby payments for PER by default; use the company Stripe scope instead"
+          ]
+        },
+        "KUR": {
+          "mode": "deny-market-rule-use-stripe",
+          "marketRule": "Norway target market -> Stripe payments",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog"
+          ],
+          "forbiddenUsecases": [
+            "No Suby payments for KUR by default; use the company Stripe scope instead"
+          ]
+        },
+        "GAT": {
+          "mode": "scoped",
+          "marketRule": "Non-Norway target market -> Suby payments",
+          "apiBase": "https://api.suby.fi",
+          "apiKeyEnv": "PAPERCLIP_GAT_SUBY_API_KEY",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "read",
+            "write",
+            "webhook"
+          ],
+          "allowedUsecases": [
+            "Create and manage company-owned products, payments, subscriptions, and verified payment webhooks for this company"
+          ],
+          "forbiddenUsecases": [
+            "No refunds, destructive subscription changes, or key rotation without a dedicated approval issue",
+            "No cross-company Suby account or API-key reuse"
+          ]
+        },
+        "LOV": {
+          "mode": "deny-market-rule-use-stripe",
+          "marketRule": "Norway target market -> Stripe payments",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog"
+          ],
+          "forbiddenUsecases": [
+            "No Suby payments for LOV by default; use the company Stripe scope instead"
+          ]
+        },
+        "PAR": {
+          "mode": "scoped",
+          "marketRule": "Non-Norway target market -> Suby payments",
+          "apiBase": "https://api.suby.fi",
+          "apiKeyEnv": "PAPERCLIP_PAR_SUBY_API_KEY",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "read",
+            "write",
+            "webhook"
+          ],
+          "allowedUsecases": [
+            "Create and manage company-owned products, payments, subscriptions, and verified payment webhooks for this company"
+          ],
+          "forbiddenUsecases": [
+            "No refunds, destructive subscription changes, or key rotation without a dedicated approval issue",
+            "No cross-company Suby account or API-key reuse"
+          ]
+        },
+        "EMD": {
+          "mode": "scoped",
+          "marketRule": "Non-Norway target market -> Suby payments",
+          "apiBase": "https://api.suby.fi",
+          "apiKeyEnv": "PAPERCLIP_EMD_SUBY_API_KEY",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "read",
+            "write",
+            "webhook"
+          ],
+          "allowedUsecases": [
+            "Create and manage company-owned products, payments, subscriptions, and verified payment webhooks for this company"
+          ],
+          "forbiddenUsecases": [
+            "No refunds, destructive subscription changes, or key rotation without a dedicated approval issue",
+            "No cross-company Suby account or API-key reuse"
+          ]
+        },
+        "TRT": {
+          "mode": "scoped",
+          "marketRule": "Non-Norway target market -> Suby payments",
+          "apiBase": "https://api.suby.fi",
+          "apiKeyEnv": "PAPERCLIP_TRT_SUBY_API_KEY",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "read",
+            "write",
+            "webhook"
+          ],
+          "allowedUsecases": [
+            "Create and manage company-owned products, payments, subscriptions, and verified payment webhooks for this company"
+          ],
+          "forbiddenUsecases": [
+            "No refunds, destructive subscription changes, or key rotation without a dedicated approval issue",
+            "No cross-company Suby account or API-key reuse"
+          ]
+        },
+        "AII": {
+          "mode": "scoped",
+          "marketRule": "Non-Norway target market -> Suby payments",
+          "apiBase": "https://api.suby.fi",
+          "apiKeyEnv": "PAPERCLIP_AII_SUBY_API_KEY",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "read",
+            "write",
+            "webhook"
+          ],
+          "allowedUsecases": [
+            "Create and manage company-owned products, payments, subscriptions, and verified payment webhooks for this company"
+          ],
+          "forbiddenUsecases": [
+            "No refunds, destructive subscription changes, or key rotation without a dedicated approval issue",
+            "No cross-company Suby account or API-key reuse"
           ]
         }
       }
