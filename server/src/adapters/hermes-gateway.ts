@@ -69,30 +69,41 @@ Address the comment, POST a reply if needed, then continue working.
 {{#noTask}}
 ## Autonomous Company Operating Cycle
 
-This wake is not a queue poll. Run one useful operating cycle for this company.
+This wake is not a queue poll. Run one value-generation cycle for this company.
 Paperclip is the control plane; use normal tools and available plugins for the real work.
+
+Primary objective: make the company more valuable. Useful work means generating revenue, serving a customer, shipping or improving a product, creating/promoting an asset, learning something that changes a decision, or improving automation that unblocks those outcomes. Internal activity is not value unless it produces one of those outputs.
+
+Value loop priority, in order:
+1. Make money or unlock a sale.
+2. Serve or retain a customer/user.
+3. Build, code, ship, test, or document a product improvement.
+4. Promote, publish, distribute, or create an audience/customer acquisition asset.
+5. Research, learn, or generate ideas only when it produces a concrete decision, prospect list, content brief, product spec, experiment, or implementation task.
+6. Improve operations/reliability only when it removes a blocker to the above.
 
 1. Build context before deciding:
    - Company context: \`curl -s "{{paperclipApiUrl}}/companies/{{companyId}}/operational-context" {{paperclipCurlHeaders}} | python3 -m json.tool\`
    - Assigned work: \`curl -s "{{paperclipApiUrl}}/companies/{{companyId}}/issues?assigneeAgentId={{agentId}}" {{paperclipCurlHeaders}} | python3 -m json.tool\`
 
-2. Pick exactly one high-leverage lane for this run:
-   - Customer or revenue: reply, follow up, create an offer, unblock a lead, or prepare a deliverable.
-   - Product or deployment: ship, test, document, fix, or create a concrete implementation issue.
-   - Operations or reliability: fix a broken integration, reduce noisy work, improve routing, or create a precise incident/remediation issue.
-   - Company coordination: convert a vague blocker into specific owned work with acceptance criteria.
+2. Pick exactly one high-leverage value lane for this run:
+   - Revenue/sales/customer: reply, follow up, create an offer, unblock a lead, prepare a deliverable, or reduce churn risk.
+   - Product/build/code: ship, test, document, fix, deploy, or create a concrete implementation issue.
+   - Promotion/distribution/content: create or improve a page, post, outreach list, campaign, demo, case study, or SEO/GEO asset.
+   - Research/learning/ideas: produce a decision-ready insight, validated idea, prospect list, competitor note, product spec, or experiment tied to a company goal.
+   - Operations/reliability: fix a broken integration, reduce noisy work, improve routing, or create a precise remediation issue only when it unlocks revenue, product, customer, or promotion work.
 
-3. If assigned actionable work exists, execute it first. Read the issue, do the work, then comment with proof before closing it:
+3. If assigned actionable work exists, execute the highest-value item first. Read the issue, do the work, then comment with proof before closing it:
    - Read: \`curl -s "{{paperclipApiUrl}}/issues/ISSUE_ID" {{paperclipCurlHeaders}} | python3 -m json.tool\`
-   - Comment: \`curl -s -X POST "{{paperclipApiUrl}}/issues/ISSUE_ID/comments" {{paperclipCurlHeaders}} -H "Content-Type: application/json" -d '{"body":"DONE: <outcome, evidence, links/files changed, remaining risk>"}'\`
+   - Comment: \`curl -s -X POST "{{paperclipApiUrl}}/issues/ISSUE_ID/comments" {{paperclipCurlHeaders}} -H "Content-Type: application/json" -d '{"body":"DONE: <value created, outcome, evidence, links/files changed, remaining risk>"}'\`
    - Complete: \`curl -s -X PATCH "{{paperclipApiUrl}}/issues/ISSUE_ID" {{paperclipCurlHeaders}} -H "Content-Type: application/json" -d '{"status":"done"}'\`
 
-4. If no assigned work is actionable, create or assign at most one concrete next issue only when it is tied to a goal, customer, revenue, product delivery, or operational risk. Replace SPECIALIST_AGENT_ID with a real agent UUID from the company context:
-   \`curl -s -X POST "{{paperclipApiUrl}}/companies/{{companyId}}/issues" {{paperclipCurlHeaders}} -H "Content-Type: application/json" -d '{"title":"<specific outcome>", "description":"Why this matters\\n\\nAcceptance criteria:\\n- <verifiable result>\\n- <proof expected>", "status":"todo", "priority":"high", "assigneeAgentId":"SPECIALIST_AGENT_ID"}'\`
+4. If no assigned work is actionable, create or assign at most one concrete next issue only when it advances the value loop. Replace SPECIALIST_AGENT_ID with a real agent UUID from the company context:
+   \`curl -s -X POST "{{paperclipApiUrl}}/companies/{{companyId}}/issues" {{paperclipCurlHeaders}} -H "Content-Type: application/json" -d '{"title":"<specific value outcome>", "description":"Value hypothesis: <money/customer/product/promotion impact>\\n\\nRequired output: <asset/code/research/decision/outreach/deliverable>\\n\\nAcceptance criteria:\\n- <verifiable result>\\n- <proof expected>", "status":"todo", "priority":"high", "assigneeAgentId":"SPECIALIST_AGENT_ID"}'\`
 
-5. Do not create generic audit, review, research, heartbeat, check-in, or "look for work" issues. Create at most one follow-up issue total in this run. After you create one follow-up issue or post one completion proof, stop instead of continuing to operate. Do not fan out multiple jobs. Do not mix data or decisions across companies.
+5. Do not create generic audit, review, research, heartbeat, check-in, strategy, or "look for work" issues. Research is valid only when the deliverable is a decision, prospect list, content brief, product spec, experiment, or implementation task. Create at most one follow-up issue total in this run. After you create one follow-up issue or post one completion proof, stop instead of continuing to operate. Do not fan out multiple jobs. Do not mix data or decisions across companies.
 
-6. End with a concise operating report in your final answer: lane chosen, action taken, Paperclip issue/comment IDs touched, external work done, and the next concrete blocker if any. Only say "nothing useful to do" after proving no assigned work, no urgent company context item, and no safe next issue worth creating.
+6. End with a concise operating report in your final answer: value lane chosen, value created or unlocked, Paperclip issue/comment IDs touched, external work done, learning captured, and the next concrete blocker if any. Only say "nothing useful to do" after proving no assigned work, no urgent customer/revenue/product/promotion item, and no safe next value issue worth creating.
 {{/noTask}}`;
 
 function cfgString(value: unknown): string | undefined {
