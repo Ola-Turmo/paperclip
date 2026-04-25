@@ -31,6 +31,9 @@ Use the API Base printed below exactly. In production compose this is the Docker
 Do not use, request, reveal, write, diff, or paste Paperclip bearer tokens.
 Use only the provided run auth header in direct API commands.
 
+Run-scoped API access rule:
+Use company-scoped routes first. Your normal discovery path is \`/api/companies/{{companyId}}/operational-context\`, \`/api/companies/{{companyId}}/issues\`, \`/api/companies/{{companyId}}/agents\`, and specific \`/api/issues/{id}\` routes. If a global board-only route returns \`Board access required\`, do not stop the value loop; switch to the company-scoped route and continue. Never report \`No value loop possible\` solely because a board/admin route is unavailable.
+
 Your Paperclip identity:
   Agent ID: {{agentId}}
   Company ID: {{companyId}}
@@ -45,9 +48,21 @@ Title: {{taskTitle}}
 
 {{taskBody}}
 
+## Strategic Start Gate
+
+Before executing any task that starts or materially changes a social account, outbound sales motion, promotion channel, paid/organic campaign, customer-facing workflow, external connector, pricing/offer, partnership, launch, or revenue process, verify that the issue or its documents/comments contain a current strategy artifact headed exactly \`THECLAWBAY_STRATEGY_GATE_APPROVED\`.
+
+If that approval artifact is missing:
+1. Do not perform daily execution, posting, outreach, or connector changes yet.
+2. Create exactly one high-priority prerequisite issue titled \`Strategy gate: {{taskTitle}}\` assigned to the company CEO or strategy lead if one is visible in operational context. The required model for that issue is GPT-5.5 via TheClawBay at medium reasoning; the deliverable is rules, standards, risk limits, target audience, research basis, operating cadence, success metric, and an optimal execution plan.
+3. Comment on this issue that execution is blocked pending TheClawBay strategy approval, include the prerequisite issue ID if created, then set this issue to \`blocked\`.
+4. Stop after that. Do not create any other issues.
+
+MiniMax M2.7 is the workhorse for implementation only after the TheClawBay strategy gate exists. Keep company data, customer context, learned rules, and memory separate by company unless the issue explicitly authorizes cross-company synthesis.
+
 ## Workflow
 
-1. Work on the task using your tools.
+1. Work on the task using your tools, subject to the Strategic Start Gate above.
 2. When done, post a completion comment on the issue with concrete proof before closing it:
    \`curl -s -X POST "{{paperclipApiUrl}}/issues/{{taskId}}/comments" {{paperclipCurlHeaders}} -H "Content-Type: application/json" -d '{"body":"DONE: <your summary here>"}'\`
 3. Then mark the issue as completed:
@@ -85,6 +100,7 @@ Value loop priority, in order:
 1. Build context before deciding:
    - Company context: \`curl -s "{{paperclipApiUrl}}/companies/{{companyId}}/operational-context" {{paperclipCurlHeaders}} | python3 -m json.tool\`
    - Assigned work: \`curl -s "{{paperclipApiUrl}}/companies/{{companyId}}/issues?assigneeAgentId={{agentId}}" {{paperclipCurlHeaders}} | python3 -m json.tool\`
+   - Finance/revenue state: check finance dashboard, budget policies, open revenue issues, recent customer/sales signals, and whether accounting has a current ledger. If finance/accounting is empty, create one concrete finance or revenue issue instead of a generic health review.
 
 2. Pick exactly one high-leverage value lane for this run:
    - Revenue/sales/customer: reply, follow up, create an offer, unblock a lead, prepare a deliverable, or reduce churn risk.
@@ -357,6 +373,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     resolvedEnv.T3_RUNTIME_GATEWAY_OMX_MODEL ||
     process.env.T3_RUNTIME_GATEWAY_OMX_MODEL ||
     DEFAULT_OMX_MODEL;
+  const reasoningEffort = cfgString(config.modelReasoningEffort) || cfgString(config.reasoningEffort);
   const prompt = buildPrompt(ctx, config);
   const taskId = cfgString(ctx.config?.taskId);
   const taskTitle = cfgString(ctx.config?.taskTitle);
@@ -402,6 +419,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     modelSelection: {
       provider: "ohMyCodex",
       model,
+      ...(reasoningEffort ? { reasoningEffort } : {}),
     },
     runtimeMode: "full-access",
     interactionMode: "default",
