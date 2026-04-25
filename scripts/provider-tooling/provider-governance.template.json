@@ -1,0 +1,838 @@
+{
+  "providers": {
+    "cloudflare": {
+      "runtime": {
+        "tool": "wrangler",
+        "version": "4.83.0",
+        "configMode": "copied-local-auth",
+        "detectedAccountId": "SET_IN_LIVE_RUNTIME",
+        "detectedScopes": "SET_IN_LIVE_RUNTIME",
+        "missingScopes": "SET_IN_LIVE_RUNTIME"
+      },
+      "companies": {
+        "PER": {
+          "mode": "deny",
+          "allowedCommandClasses": [],
+          "allowedUsecases": [],
+          "forbiddenUsecases": [
+            "No direct Cloudflare use from Personal. Keep it out of private-life workflows."
+          ]
+        },
+        "KUR": {
+          "mode": "scoped",
+          "allowedCommandClasses": [
+            "identity",
+            "read",
+            "write"
+          ],
+          "allowedUsecases": [
+            "Deploy or inspect kurs.ing Workers, Pages, D1, Queues, and Secrets",
+            "Check deploy health, logs, and migration state for Kurs.ing surfaces"
+          ],
+          "forbiddenUsecases": [
+            "No account-wide cleanup or cross-company deploys",
+            "No DNS or zone mutation without an approval issue",
+            "No destructive deletes of D1, queues, or worker assets"
+          ]
+        },
+        "GAT": {
+          "mode": "scoped",
+          "allowedCommandClasses": [
+            "identity",
+            "read",
+            "write"
+          ],
+          "allowedUsecases": [
+            "Deploy or inspect Gatareba Cloudflare workers and D1 resources only",
+            "Set up and inspect Cloudflare Email Routing or Email Sending for Gatareba-owned domains and addresses"
+          ],
+          "forbiddenUsecases": [
+            "No cross-company changes",
+            "No DNS or zone mutation without approval"
+          ]
+        },
+        "LOV": {
+          "mode": "scoped",
+          "allowedCommandClasses": [
+            "identity",
+            "read",
+            "write"
+          ],
+          "allowedUsecases": [
+            "Deploy or inspect Lovkode app and worker infrastructure only",
+            "Set up and inspect Cloudflare Email Routing or Email Sending for Lovkode-owned domains and addresses"
+          ],
+          "forbiddenUsecases": [
+            "No DNS, certificates, or zone changes without approval",
+            "No account-wide mutations"
+          ]
+        },
+        "PAR": {
+          "mode": "admin-scoped",
+          "allowedCommandClasses": [
+            "identity",
+            "read",
+            "write"
+          ],
+          "allowedUsecases": [
+            "Operate shared deployment infrastructure, templates, Workers, Pages, D1, Queues, AI, and secrets for portfolio companies",
+            "Inspect Cloudflare account state for platform planning",
+            "Set up and inspect company-scoped Cloudflare Email Routing or Email Sending for portfolio domains when an operator issue exists"
+          ],
+          "forbiddenUsecases": [
+            "No account-wide email-routing or browser-automation experimentation without a dedicated approval issue",
+            "No destructive account-wide cleanup without a dedicated approval issue",
+            "No direct use of connectivity admin unless explicitly approved for a platform incident"
+          ]
+        },
+        "EMD": {
+          "mode": "scoped",
+          "allowedCommandClasses": [
+            "identity",
+            "read",
+            "write"
+          ],
+          "allowedUsecases": [
+            "Operate EmDash sidecar Workers, Pages, D1, Queues, and secrets",
+            "Set up and inspect Cloudflare Email Routing or Email Sending for EmDash-owned domains and addresses"
+          ],
+          "forbiddenUsecases": [
+            "No cross-company deploys",
+            "No DNS or zone mutation without approval"
+          ]
+        },
+        "TRT": {
+          "mode": "scoped",
+          "allowedCommandClasses": [
+            "identity",
+            "read",
+            "write"
+          ],
+          "allowedUsecases": [
+            "Operate TRT.ge Workers, Pages, D1, and secrets",
+            "Set up and inspect Cloudflare Email Routing or Email Sending for TRT-owned domains and addresses"
+          ],
+          "forbiddenUsecases": [
+            "No zone mutation without approval",
+            "No cross-company deploys"
+          ]
+        },
+        "AII": {
+          "mode": "scoped",
+          "allowedCommandClasses": [
+            "identity",
+            "read",
+            "write"
+          ],
+          "allowedUsecases": [
+            "Operate the AI Influencer & Spokesperson Company media edge and delivery surfaces",
+            "Set up and inspect Cloudflare Email Routing or Email Sending for agency-owned domains and addresses"
+          ],
+          "forbiddenUsecases": [
+            "No DNS or zone mutation without approval",
+            "No cross-company deploys"
+          ]
+        }
+      }
+    },
+    "zapier": {
+      "runtime": {
+        "tool": "zapier-sdk-cli",
+        "version": "0.38.2",
+        "configMode": "copied-local-sdk-oauth",
+        "availableCommandClasses": [
+          "identity",
+          "catalog",
+          "connection-read",
+          "build",
+          "table-mutate",
+          "action-run",
+          "credentials-mutate"
+        ]
+      },
+      "recommendedApps": [
+        {
+          "app": "Gmail",
+          "url": "https://zapier.com/apps/gmail/integrations",
+          "why": "Inbox routing, follow-ups, support escalations, and outbound notifications"
+        },
+        {
+          "app": "Google Sheets",
+          "url": "https://zapier.com/apps/google-sheets/integrations",
+          "why": "Operational ledgers, lightweight tracking, and handoff tables"
+        },
+        {
+          "app": "Stripe",
+          "url": "https://zapier.com/apps/stripe/integrations",
+          "why": "Payment triggers into CRM/support/reporting systems"
+        },
+        {
+          "app": "PostHog",
+          "url": "https://zapier.com/apps/posthog/integrations",
+          "why": "Capture behavioral events into operational or growth workflows"
+        },
+        {
+          "app": "Slack",
+          "url": "https://zapier.com/apps/slack/integrations",
+          "why": "Operator alerts, triage routing, and internal delivery workflows"
+        },
+        {
+          "app": "Notion",
+          "url": "https://zapier.com/apps/notion/integrations",
+          "why": "Docs, CRM-lite, handoff notes, and structured content workflows"
+        },
+        {
+          "app": "HubSpot",
+          "url": "https://zapier.com/apps/hubspot/integrations",
+          "why": "Lead routing, lifecycle, and client success orchestration"
+        },
+        {
+          "app": "Discord",
+          "url": "https://zapier.com/apps/discord/integrations",
+          "why": "Community and operator routing where Discord is a real company surface"
+        }
+      ],
+      "companies": {
+        "PER": {
+          "mode": "scoped",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "connection-read",
+            "action-run"
+          ],
+          "allowedUsecases": [
+            "Review available apps and existing Zapier connections for Personal",
+            "Run Gmail and Google Calendar actions for the connected Personal Google account",
+            "Design Gmail, Google Calendar, Sheets, and Notion automations before implementation"
+          ],
+          "forbiddenUsecases": [
+            "No non-Google live mutations from Personal",
+            "No payments or publishing workflows",
+            "No shared Zapier tables as a source of truth"
+          ]
+        },
+        "KUR": {
+          "mode": "scoped",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "connection-read",
+            "action-run"
+          ],
+          "allowedUsecases": [
+            "Run Gmail actions for the connected operational Google account handling Kurs mail",
+            "Design support, lead-capture, Sheets, Gmail, and Stripe-triggered automations"
+          ],
+          "forbiddenUsecases": [
+            "No non-Gmail live mutations against student/customer systems from Kurs.ing",
+            "No refunds, entitlements, or pricing changes via Zapier"
+          ]
+        },
+        "GAT": {
+          "mode": "scoped",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "connection-read"
+          ],
+          "allowedUsecases": [
+            "Design intake, reminders, document routing, and operator notification workflows"
+          ],
+          "forbiddenUsecases": [
+            "No filing submission or tax-state mutation through Zapier",
+            "No run-action on compliance-critical systems without approval"
+          ]
+        },
+        "LOV": {
+          "mode": "scoped",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "connection-read"
+          ],
+          "allowedUsecases": [
+            "Design CRM, calendar, intake, and client communication automations"
+          ],
+          "forbiddenUsecases": [
+            "No legal filing, legal-source mutation, or client-matter state changes through Zapier"
+          ]
+        },
+        "PAR": {
+          "mode": "admin-scoped",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "connection-read",
+            "build"
+          ],
+          "allowedUsecases": [
+            "Inspect the Zapier app catalog and connection surface",
+            "Generate manifests/types and SDK scaffolding",
+            "Design integration blueprints for portfolio companies"
+          ],
+          "forbiddenUsecases": [
+            "No destructive client-credential changes without a dedicated issue",
+            "No live run-action on customer systems from the platform company by default"
+          ]
+        },
+        "EMD": {
+          "mode": "scoped",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "connection-read"
+          ],
+          "allowedUsecases": [
+            "Design onboarding, CRM, notification, and analytics handoff workflows"
+          ],
+          "forbiddenUsecases": [
+            "No live customer mutations via Zapier until company-specific auth is complete"
+          ]
+        },
+        "TRT": {
+          "mode": "scoped",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "connection-read"
+          ],
+          "allowedUsecases": [
+            "Design clinic lead routing, education notifications, and support handoffs"
+          ],
+          "forbiddenUsecases": [
+            "No medical guidance, treatment, or clinic-state mutation through Zapier"
+          ]
+        },
+        "AII": {
+          "mode": "scoped",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "connection-read"
+          ],
+          "allowedUsecases": [
+            "Design lead intake, client ops, campaign approvals, and delivery notifications"
+          ],
+          "forbiddenUsecases": [
+            "No autonomous social publishing or client-billing mutations through Zapier by default"
+          ]
+        }
+      }
+    },
+    "stripe": {
+      "runtime": {
+        "sdk": "stripe",
+        "sdkVersion": "16.0.0",
+        "cliVersion": "1.37.4",
+        "configMode": "copied-local-config",
+        "detectedProjectName": "default",
+        "detectedDisplayName": "kurs.ing"
+      },
+      "companies": {
+        "PER": {
+          "mode": "deny",
+          "allowedOperations": [],
+          "forbiddenUsecases": [
+            "Do not use the Kurs.ing Stripe account from Personal"
+          ]
+        },
+        "KUR": {
+          "mode": "owner",
+          "allowedOperations": [
+            "whoami",
+            "list-products",
+            "list-prices",
+            "list-customers",
+            "list-payment-links",
+            "list-subscriptions",
+            "list-invoices"
+          ],
+          "futureOperations": [
+            "create-payment-link",
+            "create-checkout-session",
+            "create-customer-portal-session"
+          ],
+          "forbiddenUsecases": [
+            "No refunds, disputes, payout, transfer, or key-rotation actions without a dedicated approval issue",
+            "No use of live mode for experiments without operator approval"
+          ]
+        },
+        "GAT": {
+          "mode": "deny-until-own-account",
+          "allowedOperations": [],
+          "forbiddenUsecases": [
+            "No use of the Kurs.ing Stripe account for Gatareba.ge"
+          ]
+        },
+        "LOV": {
+          "mode": "deny-until-own-account",
+          "allowedOperations": [],
+          "forbiddenUsecases": [
+            "No use of the Kurs.ing Stripe account for Lovkode.no"
+          ]
+        },
+        "PAR": {
+          "mode": "deny-until-own-account",
+          "allowedOperations": [],
+          "forbiddenUsecases": [
+            "No use of the Kurs.ing Stripe account for Parallel Company AI"
+          ]
+        },
+        "EMD": {
+          "mode": "deny-until-own-account",
+          "allowedOperations": [],
+          "forbiddenUsecases": [
+            "No use of the Kurs.ing Stripe account for EmDash Sidecar SaaS"
+          ]
+        },
+        "TRT": {
+          "mode": "deny-until-own-account",
+          "allowedOperations": [],
+          "forbiddenUsecases": [
+            "No use of the Kurs.ing Stripe account for TRT.ge"
+          ]
+        },
+        "AII": {
+          "mode": "deny-until-own-account",
+          "allowedOperations": [],
+          "forbiddenUsecases": [
+            "No use of the Kurs.ing Stripe account for AI Influencer & Spokesperson Company"
+          ]
+        }
+      }
+    },
+    "composio": {
+      "runtime": {
+        "tool": "composio",
+        "version": "0.2.25",
+        "configMode": "company-scoped-cli-home-cache-session",
+        "isolation": "one CLI home/cache/session directory per Paperclip company",
+        "notes": [
+          "CLI installed in /home/.paperclip/provider-tooling/composio/composio",
+          "Login/API-key state must be added per company; no global account is shared by default"
+        ]
+      },
+      "companies": {
+        "PER": {
+          "mode": "scoped",
+          "projectSlug": "paperclip-personal-prod",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "connection-read",
+            "credentials-mutate",
+            "action-run",
+            "workflow-run"
+          ],
+          "allowedToolkits": [
+            "gmail",
+            "googlecalendar",
+            "google_calendar",
+            "googledrive",
+            "google_drive",
+            "googledocs",
+            "google_docs",
+            "googlesheets",
+            "google_sheets",
+            "github",
+            "slack",
+            "notion",
+            "linear",
+            "jira",
+            "hubspot",
+            "salesforce",
+            "stripe",
+            "quickbooks",
+            "zendesk",
+            "intercom",
+            "posthog",
+            "sentry",
+            "cloudflare",
+            "vercel",
+            "webhook",
+            "http",
+            "agentmail"
+          ],
+          "allowedUsecases": [
+            "Connect and operate personal admin, Gmail, calendar, files, private knowledge workflows for the Personal Paperclip company",
+            "Run dry-run/schema checks before enabling new writes",
+            "Use webhook-first or event-driven workflows where supported",
+            "Keep credentials and connection artifacts inside the company-scoped Composio home/cache/session directories"
+          ],
+          "forbiddenUsecases": [
+            "No cross-company use of connected accounts or session files",
+            "No destructive deletes without an approved Paperclip issue",
+            "No broad admin/proxy workflow unless explicitly scoped in this policy"
+          ]
+        },
+        "KUR": {
+          "mode": "scoped",
+          "projectSlug": "paperclip-kurs.ing-prod",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "connection-read",
+            "credentials-mutate",
+            "action-run",
+            "workflow-run"
+          ],
+          "allowedToolkits": [
+            "gmail",
+            "googlecalendar",
+            "google_calendar",
+            "googledrive",
+            "google_drive",
+            "googledocs",
+            "google_docs",
+            "googlesheets",
+            "google_sheets",
+            "github",
+            "slack",
+            "notion",
+            "linear",
+            "jira",
+            "hubspot",
+            "salesforce",
+            "stripe",
+            "quickbooks",
+            "zendesk",
+            "intercom",
+            "posthog",
+            "sentry",
+            "cloudflare",
+            "vercel",
+            "webhook",
+            "http",
+            "agentmail"
+          ],
+          "allowedUsecases": [
+            "Connect and operate product, support, Supabase, GitHub, Gmail, calendar, docs workflows for the Kurs.ing Paperclip company",
+            "Run dry-run/schema checks before enabling new writes",
+            "Use webhook-first or event-driven workflows where supported",
+            "Keep credentials and connection artifacts inside the company-scoped Composio home/cache/session directories"
+          ],
+          "forbiddenUsecases": [
+            "No cross-company use of connected accounts or session files",
+            "No destructive deletes without an approved Paperclip issue",
+            "No broad admin/proxy workflow unless explicitly scoped in this policy"
+          ]
+        },
+        "GAT": {
+          "mode": "scoped",
+          "projectSlug": "paperclip-gatareba-prod",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "connection-read",
+            "credentials-mutate",
+            "action-run",
+            "workflow-run"
+          ],
+          "allowedToolkits": [
+            "gmail",
+            "googlecalendar",
+            "google_calendar",
+            "googledrive",
+            "google_drive",
+            "googledocs",
+            "google_docs",
+            "googlesheets",
+            "google_sheets",
+            "github",
+            "slack",
+            "notion",
+            "linear",
+            "jira",
+            "hubspot",
+            "salesforce",
+            "stripe",
+            "quickbooks",
+            "zendesk",
+            "intercom",
+            "posthog",
+            "sentry",
+            "cloudflare",
+            "vercel",
+            "webhook",
+            "http",
+            "agentmail"
+          ],
+          "allowedUsecases": [
+            "Connect and operate domain/email, local content, analytics, GitHub workflows for the Gatareba Paperclip company",
+            "Run dry-run/schema checks before enabling new writes",
+            "Use webhook-first or event-driven workflows where supported",
+            "Keep credentials and connection artifacts inside the company-scoped Composio home/cache/session directories"
+          ],
+          "forbiddenUsecases": [
+            "No cross-company use of connected accounts or session files",
+            "No destructive deletes without an approved Paperclip issue",
+            "No broad admin/proxy workflow unless explicitly scoped in this policy"
+          ]
+        },
+        "LOV": {
+          "mode": "scoped",
+          "projectSlug": "paperclip-lovkode-prod",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "connection-read",
+            "credentials-mutate",
+            "action-run",
+            "workflow-run"
+          ],
+          "allowedToolkits": [
+            "gmail",
+            "googlecalendar",
+            "google_calendar",
+            "googledrive",
+            "google_drive",
+            "googledocs",
+            "google_docs",
+            "googlesheets",
+            "google_sheets",
+            "github",
+            "slack",
+            "notion",
+            "linear",
+            "jira",
+            "hubspot",
+            "salesforce",
+            "stripe",
+            "quickbooks",
+            "zendesk",
+            "intercom",
+            "posthog",
+            "sentry",
+            "cloudflare",
+            "vercel",
+            "webhook",
+            "http",
+            "agentmail"
+          ],
+          "allowedUsecases": [
+            "Connect and operate engineering, Cloudflare, GitHub, Gmail, docs workflows for the Lovkode Paperclip company",
+            "Run dry-run/schema checks before enabling new writes",
+            "Use webhook-first or event-driven workflows where supported",
+            "Keep credentials and connection artifacts inside the company-scoped Composio home/cache/session directories"
+          ],
+          "forbiddenUsecases": [
+            "No cross-company use of connected accounts or session files",
+            "No destructive deletes without an approved Paperclip issue",
+            "No broad admin/proxy workflow unless explicitly scoped in this policy"
+          ]
+        },
+        "PAR": {
+          "mode": "scoped",
+          "projectSlug": "paperclip-parallel company ai-prod",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "connection-read",
+            "credentials-mutate",
+            "action-run",
+            "workflow-run",
+            "proxy",
+            "admin"
+          ],
+          "allowedToolkits": [
+            "gmail",
+            "googlecalendar",
+            "google_calendar",
+            "googledrive",
+            "google_drive",
+            "googledocs",
+            "google_docs",
+            "googlesheets",
+            "google_sheets",
+            "github",
+            "slack",
+            "notion",
+            "linear",
+            "jira",
+            "hubspot",
+            "salesforce",
+            "stripe",
+            "quickbooks",
+            "zendesk",
+            "intercom",
+            "posthog",
+            "sentry",
+            "cloudflare",
+            "vercel",
+            "webhook",
+            "http",
+            "agentmail"
+          ],
+          "allowedUsecases": [
+            "Connect and operate platform operations, broad connector testing workflows for the Parallel Company AI Paperclip company",
+            "Run dry-run/schema checks before enabling new writes",
+            "Use webhook-first or event-driven workflows where supported",
+            "Keep credentials and connection artifacts inside the company-scoped Composio home/cache/session directories"
+          ],
+          "forbiddenUsecases": [
+            "No cross-company use of connected accounts or session files",
+            "No destructive deletes without an approved Paperclip issue",
+            "No broad admin/proxy workflow unless explicitly scoped in this policy"
+          ]
+        },
+        "EMD": {
+          "mode": "scoped",
+          "projectSlug": "paperclip-emdash-prod",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "connection-read",
+            "credentials-mutate",
+            "action-run",
+            "workflow-run"
+          ],
+          "allowedToolkits": [
+            "gmail",
+            "googlecalendar",
+            "google_calendar",
+            "googledrive",
+            "google_drive",
+            "googledocs",
+            "google_docs",
+            "googlesheets",
+            "google_sheets",
+            "github",
+            "slack",
+            "notion",
+            "linear",
+            "jira",
+            "hubspot",
+            "salesforce",
+            "stripe",
+            "quickbooks",
+            "zendesk",
+            "intercom",
+            "posthog",
+            "sentry",
+            "cloudflare",
+            "vercel",
+            "webhook",
+            "http",
+            "agentmail"
+          ],
+          "allowedUsecases": [
+            "Connect and operate domain/email, media, analytics, CRM workflows for the EmDash Paperclip company",
+            "Run dry-run/schema checks before enabling new writes",
+            "Use webhook-first or event-driven workflows where supported",
+            "Keep credentials and connection artifacts inside the company-scoped Composio home/cache/session directories"
+          ],
+          "forbiddenUsecases": [
+            "No cross-company use of connected accounts or session files",
+            "No destructive deletes without an approved Paperclip issue",
+            "No broad admin/proxy workflow unless explicitly scoped in this policy"
+          ]
+        },
+        "TRT": {
+          "mode": "scoped",
+          "projectSlug": "paperclip-trt.ge-prod",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "connection-read",
+            "credentials-mutate",
+            "action-run",
+            "workflow-run"
+          ],
+          "allowedToolkits": [
+            "gmail",
+            "googlecalendar",
+            "google_calendar",
+            "googledrive",
+            "google_drive",
+            "googledocs",
+            "google_docs",
+            "googlesheets",
+            "google_sheets",
+            "github",
+            "slack",
+            "notion",
+            "linear",
+            "jira",
+            "hubspot",
+            "salesforce",
+            "stripe",
+            "quickbooks",
+            "zendesk",
+            "intercom",
+            "posthog",
+            "sentry",
+            "cloudflare",
+            "vercel",
+            "webhook",
+            "http",
+            "agentmail"
+          ],
+          "allowedUsecases": [
+            "Connect and operate domain/email, content, analytics, CRM workflows for the TRT.ge Paperclip company",
+            "Run dry-run/schema checks before enabling new writes",
+            "Use webhook-first or event-driven workflows where supported",
+            "Keep credentials and connection artifacts inside the company-scoped Composio home/cache/session directories"
+          ],
+          "forbiddenUsecases": [
+            "No cross-company use of connected accounts or session files",
+            "No destructive deletes without an approved Paperclip issue",
+            "No broad admin/proxy workflow unless explicitly scoped in this policy"
+          ]
+        },
+        "AII": {
+          "mode": "scoped",
+          "projectSlug": "paperclip-ai invest-prod",
+          "allowedCommandClasses": [
+            "identity",
+            "catalog",
+            "connection-read",
+            "credentials-mutate",
+            "action-run",
+            "workflow-run"
+          ],
+          "allowedToolkits": [
+            "gmail",
+            "googlecalendar",
+            "google_calendar",
+            "googledrive",
+            "google_drive",
+            "googledocs",
+            "google_docs",
+            "googlesheets",
+            "google_sheets",
+            "github",
+            "slack",
+            "notion",
+            "linear",
+            "jira",
+            "hubspot",
+            "salesforce",
+            "stripe",
+            "quickbooks",
+            "zendesk",
+            "intercom",
+            "posthog",
+            "sentry",
+            "cloudflare",
+            "vercel",
+            "webhook",
+            "http",
+            "agentmail"
+          ],
+          "allowedUsecases": [
+            "Connect and operate research, finance, analytics, docs workflows for the AI Invest Paperclip company",
+            "Run dry-run/schema checks before enabling new writes",
+            "Use webhook-first or event-driven workflows where supported",
+            "Keep credentials and connection artifacts inside the company-scoped Composio home/cache/session directories"
+          ],
+          "forbiddenUsecases": [
+            "No cross-company use of connected accounts or session files",
+            "No destructive deletes without an approved Paperclip issue",
+            "No broad admin/proxy workflow unless explicitly scoped in this policy"
+          ]
+        }
+      }
+    }
+  }
+}
