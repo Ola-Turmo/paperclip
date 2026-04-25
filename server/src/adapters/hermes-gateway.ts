@@ -23,6 +23,7 @@ const DEFAULT_TIMEOUT_SEC = 900;
 const DEFAULT_HERMES_MODEL = "minimax-m2.7";
 const DEFAULT_GATEWAY_URL = "http://t3code-vps:3773";
 const DEFAULT_PAPERCLIP_API_URL = "http://paperclip:3100/api";
+const DEFAULT_T3_PROVIDER = "hermesAgent";
 const DEFAULT_PROMPT_TEMPLATE = `You are "{{agentName}}", an AI agent employee in a Paperclip-managed company.
 
 IMPORTANT: Use the terminal tool with curl for Paperclip control-plane API calls.
@@ -171,6 +172,16 @@ function resolveGatewayUrl(config: Record<string, unknown>, env: Record<string, 
       env.T3_RUNTIME_GATEWAY_URL ||
       process.env.T3_RUNTIME_GATEWAY_URL ||
       DEFAULT_GATEWAY_URL,
+  );
+}
+
+function resolveT3Provider(config: Record<string, unknown>, env: Record<string, string>): string {
+  return (
+    cfgString(config.t3RuntimeProvider) ||
+    cfgString(config.modelProvider) ||
+    env.T3_RUNTIME_GATEWAY_PROVIDER ||
+    process.env.T3_RUNTIME_GATEWAY_PROVIDER ||
+    DEFAULT_T3_PROVIDER
   );
 }
 
@@ -381,6 +392,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     resolvedEnv.T3_RUNTIME_GATEWAY_HERMES_MODEL ||
     process.env.T3_RUNTIME_GATEWAY_HERMES_MODEL ||
     DEFAULT_HERMES_MODEL;
+  const t3Provider = resolveT3Provider(config, resolvedEnv);
+  const reasoningEffort = cfgString(config.modelReasoningEffort) || cfgString(config.reasoningEffort);
   const prompt = buildPrompt(ctx, config);
   const taskId = cfgString(ctx.config?.taskId);
   const taskTitle = cfgString(ctx.config?.taskTitle);
@@ -410,11 +423,11 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const ownerId = taskId || `${companyId}:${agentId}`;
   await ctx.onLog(
     "stdout",
-    `[hermes-gateway] Executing via T3 runtime gateway (${gatewayUrl}) with model=${model}\n`,
+    `[hermes-gateway] Executing via T3 runtime gateway (${gatewayUrl}) with provider=${t3Provider} model=${model}\n`,
   );
 
   const payload = {
-    provider: "hermesAgent",
+    provider: t3Provider,
     owner: {
       ownerKind,
       ownerId,
@@ -424,8 +437,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     title: taskOrAgentTitle,
     prompt,
     modelSelection: {
-      provider: "hermesAgent",
+      provider: t3Provider,
       model,
+      ...(reasoningEffort ? { reasoningEffort } : {}),
     },
     runtimeMode: "full-access",
     interactionMode: "default",
@@ -492,6 +506,7 @@ export async function testEnvironment(ctx: {
     resolvedEnv.T3_RUNTIME_GATEWAY_HERMES_MODEL ||
     process.env.T3_RUNTIME_GATEWAY_HERMES_MODEL ||
     DEFAULT_HERMES_MODEL;
+  const t3Provider = resolveT3Provider(config, resolvedEnv);
   const checks: AdapterEnvironmentCheck[] = [
     {
       level: "info",
@@ -500,7 +515,7 @@ export async function testEnvironment(ctx: {
     },
     {
       level: "info",
-      message: `Hermes model via T3 gateway: ${model}`,
+      message: `Hermes T3 provider/model: ${t3Provider}/${model}`,
       code: "t3_runtime_gateway_hermes_model",
     },
   ];
@@ -524,7 +539,7 @@ export async function testEnvironment(ctx: {
     const response = await fetchJson<{ sessions?: unknown; error?: string }>({
       url: `${gatewayUrl}/api/provider-runtime/sessions/list`,
       headers,
-      body: { provider: "hermesAgent" },
+      body: { provider: t3Provider },
       timeoutMs: 15000,
     });
     if (response.status >= 200 && response.status < 300) {
