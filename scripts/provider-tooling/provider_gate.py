@@ -2,6 +2,9 @@ import argparse
 import json
 import os
 import subprocess
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,6 +79,66 @@ def classify_zapier(args: list[str]) -> str:
     return "catalog"
 
 
+def classify_suby(args: list[str]) -> str:
+    if not args:
+        return "catalog"
+    command = args[0]
+    if command in {"docs", "status"}:
+        return "catalog"
+    if command in {"env", "whoami"}:
+        return "identity"
+    if command in {"list-products", "list-payments", "list-subscriptions"}:
+        return "read"
+    if command in {"create-product", "create-payment", "create-subscription"}:
+        return "write"
+    if command in {"verify-webhook"}:
+        return "webhook"
+    if command in {"refund", "cancel-subscription", "delete-product"}:
+        return "destructive"
+    return "catalog"
+
+
+def run_suby(command: list[str], cp: dict, company: str) -> int:
+    api_base = cp.get("apiBase") or "https://api.suby.fi"
+    api_key_env = cp.get("apiKeyEnv") or f"PAPERCLIP_{company}_SUBY_API_KEY"
+    api_key = os.environ.get(api_key_env, "").strip()
+    if command[0] == "docs":
+        print("https://documentation.suby.fi/llms-full.txt")
+        return 0
+    if command[0] == "env":
+        print(json.dumps({"apiBase": api_base, "apiKeyEnv": api_key_env, "configured": bool(api_key)}, indent=2))
+        return 0
+    if not api_key:
+        raise SystemExit(f"Suby API key missing. Set {api_key_env} in the Paperclip runtime secret store before live Suby actions.")
+
+    def request(method: str, path: str, payload: dict | None = None) -> int:
+        url = api_base.rstrip("/") + path
+        data = None if payload is None else json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=data, method=method)
+        req.add_header("X-Suby-Api-Key", api_key)
+        req.add_header("Content-Type", "application/json")
+        req.add_header("Accept", "application/json")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as res:
+                print(res.read().decode("utf-8"))
+            return 0
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            print(body, file=os.sys.stderr)
+            return 1
+
+    if command[0] == "create-product":
+        payload = json.loads(command[1]) if len(command) > 1 else {}
+        return request("POST", "/api/product/create", payload)
+    if command[0] == "create-payment":
+        payload = json.loads(command[1]) if len(command) > 1 else {}
+        return request("POST", "/api/payment/create", payload)
+    if command[0] == "create-subscription":
+        payload = json.loads(command[1]) if len(command) > 1 else {}
+        return request("POST", "/api/subscription/create", payload)
+    raise SystemExit(f"Unsupported Suby command: {' '.join(command)}")
+
+
 def classify_composio(args: list[str]) -> str:
     if not args:
         return "catalog"
@@ -100,6 +163,21 @@ def classify_composio(args: list[str]) -> str:
     if command in {"dev", "upgrade"}:
         return "admin"
     return "catalog"
+
+
+def classify_stripe(args: list[str]) -> str:
+    if not args:
+        return "catalog"
+    command = args[0]
+    if command in {"env", "whoami"}:
+        return "identity"
+    if command.startswith("list-"):
+        return command
+    if command in {"create-payment-link", "create-checkout-session", "create-customer-portal-session"}:
+        return command
+    if command in {"refund", "create-refund", "cancel-subscription", "delete-product", "payout", "transfer"}:
+        return "destructive"
+    return command
 
 
 def extract_composio_toolkits(args: list[str]) -> set[str]:
@@ -137,7 +215,7 @@ def extract_composio_toolkits(args: list[str]) -> set[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--provider", required=True, choices=["cloudflare", "zapier", "composio"])
+    parser.add_argument("--provider", required=True, choices=["cloudflare", "zapier", "composio", "stripe", "suby"])
     parser.add_argument("--company", required=True)
     parser.add_argument("--policy-path", default=str(DEFAULT_POLICY_PATH))
     parser.add_argument("command", nargs=argparse.REMAINDER)
@@ -157,11 +235,25 @@ def main() -> int:
         cmd_class = classify_cloudflare(command)
     elif args.provider == "zapier":
         cmd_class = classify_zapier(command)
-    else:
+    elif args.provider == "composio":
         cmd_class = classify_composio(command)
-    allowed = set(cp.get("allowedCommandClasses", []))
-    if cmd_class not in allowed:
+    elif args.provider == "suby":
+        cmd_class = classify_suby(command)
+    else:
+        cmd_class = classify_stripe(command)
+    allowed = set(cp.get("allowedCommandClasses", cp.get("allowedOperations", [])))
+    future_allowed = set(cp.get("futureOperations", []))
+    if cmd_class not in allowed and cmd_class not in future_allowed:
         raise SystemExit(f"{args.provider} command class '{cmd_class}' is not allowed for {args.company}")
+
+    if args.provider == "suby":
+        return run_suby(command, cp, args.company)
+
+    if args.provider == "stripe":
+        if command[:1] in [["env"], ["whoami"]]:
+            print(json.dumps({"provider": "stripe", "company": args.company, "mode": cp.get("mode"), "configured": bool(os.environ.get(cp.get("apiKeyEnv", "STRIPE_API_KEY"), "").strip())}, indent=2))
+            return 0
+        raise SystemExit("Stripe CLI/API wrapper is policy-only here; use company-scoped Stripe secret/tooling for live actions.")
 
     if args.provider == "composio":
         requested_toolkits = extract_composio_toolkits(command)

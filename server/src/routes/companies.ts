@@ -229,6 +229,14 @@ export function companyRoutes(db: Db, storage?: StorageService) {
           purpose: "AgentMail mailbox discovery shim; use company secrets/runtime bridge for live mailbox access.",
         },
         {
+          key: "payments",
+          status: "policy_configured",
+          endpoint: `/api/companies/${companyId}/integrations`,
+          purpose: "Payment provider routing: Norway-market companies use Stripe; non-Norway companies use Suby.",
+          providerPolicy: "/home/.paperclip/provider-tooling/provider-governance.json",
+          operator: "paperclip-connections <stripe|suby> --company <PREFIX> -- env",
+        },
+        {
           key: "webhook_intake",
           status: "configured",
           purpose: "Event-driven Paperclip wakeups for customer/email, operations/domain incidents, and product/GitHub/deployment events.",
@@ -269,6 +277,18 @@ export function companyRoutes(db: Db, storage?: StorageService) {
           status: "requires_company_runtime_mapping",
           endpoint: `/api/companies/${companyId}/zapier`,
           recommendedEvents: ["new Gmail message", "new Calendar event", "updated Calendar event"],
+        },
+        {
+          key: "payments",
+          status: "policy_configured",
+          providerRule: "KUR, LOV, and PER use Stripe for Norway-market payments; AII, EMD, GAT, PAR, and TRT use Suby.",
+          subyDocs: "https://documentation.suby.fi/llms-full.txt",
+          operatorCommands: [
+            "paperclip-connections stripe --company KUR -- env",
+            "paperclip-connections suby --company GAT -- env",
+          ],
+          recommendedEvents: ["checkout success", "payment success", "subscription expired", "payment refunded"],
+          webhookRule: "Verify Suby X-Webhook-Signature and Stripe signatures before changing customer access or revenue state.",
         },
       ],
     });
