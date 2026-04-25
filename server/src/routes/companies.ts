@@ -90,6 +90,15 @@ export function companyRoutes(db: Db, storage?: StorageService) {
   }
 
   router.get("/", async (req, res) => {
+    if (req.actor.type === "agent") {
+      const companyId = req.actor.companyId;
+      if (!companyId) throw forbidden("Agent company context required");
+      assertCompanyAccess(req, companyId);
+      const company = await svc.getById(companyId);
+      res.json(company ? [company] : []);
+      return;
+    }
+
     assertBoard(req);
     const result = await svc.list();
     if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) {
@@ -101,6 +110,15 @@ export function companyRoutes(db: Db, storage?: StorageService) {
   });
 
   router.get("/stats", async (req, res) => {
+    if (req.actor.type === "agent") {
+      const companyId = req.actor.companyId;
+      if (!companyId) throw forbidden("Agent company context required");
+      assertCompanyAccess(req, companyId);
+      const stats = await svc.stats();
+      res.json(Object.fromEntries(Object.entries(stats).filter(([id]) => id === companyId)));
+      return;
+    }
+
     assertBoard(req);
     const allowed = req.actor.source === "local_implicit" || req.actor.isInstanceAdmin
       ? null

@@ -3,6 +3,10 @@ import { logger } from "../middleware/logger.js";
 type WakeupTriggerDetail = "manual" | "ping" | "callback" | "system";
 type WakeupSource = "timer" | "assignment" | "on_demand" | "automation";
 
+function isManualSequentialStrategyGateIssue(issue: { title?: string | null }) {
+  return typeof issue.title === "string" && issue.title.trim().startsWith("Strategy gate:");
+}
+
 export interface IssueAssignmentWakeupDeps {
   wakeup: (
     agentId: string,
@@ -20,7 +24,7 @@ export interface IssueAssignmentWakeupDeps {
 
 export function queueIssueAssignmentWakeup(input: {
   heartbeat: IssueAssignmentWakeupDeps;
-  issue: { id: string; assigneeAgentId: string | null; status: string };
+  issue: { id: string; assigneeAgentId: string | null; status: string; title?: string | null };
   reason: string;
   mutation: string;
   contextSource: string;
@@ -29,6 +33,10 @@ export function queueIssueAssignmentWakeup(input: {
   rethrowOnError?: boolean;
 }) {
   if (!input.issue.assigneeAgentId || input.issue.status === "backlog") return;
+  // Strategy gates use GPT-5.5/TheClawBay and must be run sequentially.
+  // Assignment wakeups can fan out many issues at once, which overloads the
+  // shared T3 checkpoint path and creates low-value failed work.
+  if (isManualSequentialStrategyGateIssue(input.issue)) return;
 
   return input.heartbeat
     .wakeup(input.issue.assigneeAgentId, {
