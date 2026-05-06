@@ -111,6 +111,7 @@ import {
   execute as hermesGatewayExecute,
   testEnvironment as hermesGatewayTestEnvironment,
 } from "./hermes-gateway.js";
+import { executeHermesDirectTracked } from "./hermes-direct.js";
 import {
   execute as omxGatewayExecute,
   testEnvironment as omxGatewayTestEnvironment,
@@ -496,6 +497,56 @@ const hermesLocalAdapter: ServerAdapterModule = {
   detectModel: () => detectModelFromHermes(),
 };
 
+const hermesDirectAdapter: ServerAdapterModule = {
+  type: "hermes_direct",
+  execute: async (ctx) => {
+    const normalizedCtx = normalizeHermesConfig(ctx);
+    return executeHermesDirectTracked(normalizedCtx);
+  },
+  testEnvironment: async (ctx) => {
+    try {
+      const { runChildProcess } = await import("./utils.js");
+      const result = await runChildProcess("test-hermes-direct", "hermes", ["--version"], {
+        cwd: "/tmp",
+        env: {},
+        timeoutSec: 10,
+        graceSec: 2,
+        onLog: async () => {},
+      });
+      if (result.exitCode === 0) {
+        return {
+          adapterType: "hermes_direct",
+          status: "ok",
+          checks: [{ level: "info", message: `Hermes CLI available: ${(result.stdout || "").trim()}`, code: "hermes_cli_ok" }],
+          testedAt: new Date().toISOString(),
+        };
+      }
+      return {
+        adapterType: "hermes_direct",
+        status: "fail",
+        checks: [{ level: "error", message: "Hermes CLI returned non-zero exit code", code: "hermes_cli_fail" }],
+        testedAt: new Date().toISOString(),
+      };
+    } catch (e) {
+      return {
+        adapterType: "hermes_direct",
+        status: "fail",
+        checks: [{ level: "error", message: `Hermes CLI not found: ${e instanceof Error ? e.message : String(e)}`, hint: "Ensure hermes is installed and in PATH.", code: "hermes_cli_missing" }],
+        testedAt: new Date().toISOString(),
+      };
+    }
+  },
+  sessionCodec: hermesSessionCodec,
+  listSkills: hermesListSkills,
+  syncSkills: hermesSyncSkills,
+  models: hermesModels,
+  supportsLocalAgentJwt: true,
+  supportsInstructionsBundle: false,
+  requiresMaterializedRuntimeSkills: false,
+  agentConfigurationDoc: hermesAgentConfigurationDoc,
+  detectModel: () => detectModelFromHermes(),
+};
+
 const adaptersByType = new Map<string, ServerAdapterModule>();
 
 // For builtin types that are overridden by an external adapter, we keep the
@@ -519,6 +570,7 @@ function registerBuiltInAdapters() {
     geminiLocalAdapter,
     openclawGatewayAdapter,
     hermesLocalAdapter,
+    hermesDirectAdapter,
     processAdapter,
     httpAdapter,
   ]) {
