@@ -753,7 +753,7 @@ export async function startServer(): Promise<StartedServer> {
       // threshold, while remote Hermes/T3 gateway turns get a longer window to
       // avoid cancelling legitimate long-running agent work.
       void heartbeat
-        .reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000, remoteGatewayStaleThresholdMs: 45 * 60 * 1000 })
+        .reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000 })
         .then(() => heartbeat.promoteDueScheduledRetries())
         .then(async (promotion) => {
           await heartbeat.resumeQueuedRuns();

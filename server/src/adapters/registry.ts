@@ -9,18 +9,6 @@ import {
   getAdapterSessionManagement,
 } from "@paperclipai/adapter-utils";
 import {
-  execute as acpxExecute,
-  testEnvironment as acpxTestEnvironment,
-  sessionCodec as acpxSessionCodec,
-  getConfigSchema as getAcpxConfigSchema,
-  listAcpxSkills,
-  syncAcpxSkills,
-} from "@paperclipai/adapter-acpx-local/server";
-import {
-  agentConfigurationDoc as acpxAgentConfigurationDoc,
-  models as acpxModels,
-} from "@paperclipai/adapter-acpx-local";
-import {
   execute as claudeExecute,
   listClaudeSkills,
   syncClaudeSkills,
@@ -233,7 +221,6 @@ async function listAcpxModels(): Promise<AdapterModel[]> {
     listCodexModels().catch(() => codexModels),
   ]);
   return dedupeAdapterModels([
-    ...acpxModels,
     ...prefixAdapterModelLabels(claude, "Claude"),
     ...prefixAdapterModelLabels(codex, "Codex"),
   ]);
@@ -258,27 +245,6 @@ const claudeLocalAdapter: ServerAdapterModule = {
     buildNpmRuntimeCommandSpec(config, "claude", "@anthropic-ai/claude-code"),
   agentConfigurationDoc: claudeAgentConfigurationDoc,
   getQuotaWindows: claudeGetQuotaWindows,
-};
-
-const acpxLocalAdapter: ServerAdapterModule = {
-  type: "acpx_local",
-  execute: acpxExecute,
-  testEnvironment: acpxTestEnvironment,
-  listSkills: listAcpxSkills,
-  syncSkills: syncAcpxSkills,
-  sessionCodec: acpxSessionCodec,
-  sessionManagement: getAdapterSessionManagement("acpx_local") ?? undefined,
-  models: dedupeAdapterModels([
-    ...prefixAdapterModelLabels(claudeModels, "Claude"),
-    ...prefixAdapterModelLabels(codexModels, "Codex"),
-  ]),
-  listModels: listAcpxModels,
-  supportsLocalAgentJwt: true,
-  supportsInstructionsBundle: true,
-  instructionsPathKey: "instructionsFilePath",
-  requiresMaterializedRuntimeSkills: false,
-  agentConfigurationDoc: acpxAgentConfigurationDoc,
-  getConfigSchema: getAcpxConfigSchema,
 };
 
 const codexLocalAdapter: ServerAdapterModule = {
@@ -543,7 +509,6 @@ const pausedOverrides = new Set<string>();
 
 function registerBuiltInAdapters() {
   for (const adapter of [
-    acpxLocalAdapter,
     claudeLocalAdapter,
     codexLocalAdapter,
     omxLocalAdapter,

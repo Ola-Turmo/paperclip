@@ -19,7 +19,8 @@ type SharedRuntimeExecuteTurnResult = {
   session: SharedRuntimeSessionRecord | null;
 };
 
-const DEFAULT_TIMEOUT_SEC = 900;
+const DEFAULT_TIMEOUT_SEC = 600;
+const MAX_TIMEOUT_SEC = 900;
 const DEFAULT_HERMES_MODEL = "minimax-m2.7";
 const DEFAULT_GATEWAY_URL = "http://t3code-vps:3773";
 const DEFAULT_PAPERCLIP_API_URL = "http://paperclip:3100/api";
@@ -136,7 +137,12 @@ function cfgString(value: unknown): string | undefined {
 }
 
 function cfgNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
 }
 
 function cfgRecord(value: unknown): Record<string, unknown> | undefined {
@@ -368,14 +374,16 @@ async function fetchJsonWithRetry<T>(
   throw lastError instanceof Error ? lastError : new Error(String(lastError ?? "fetch failed"));
 }
 
-function buildExecutionError(message: string): AdapterExecutionResult {
+function buildExecutionError(message: string, options?: { timedOut?: boolean; errorCode?: string }): AdapterExecutionResult {
   return {
     exitCode: 1,
     signal: null,
-    timedOut: false,
+    timedOut: options?.timedOut ?? false,
+    errorCode: options?.errorCode,
     errorMessage: message,
     resultJson: {
       error: message,
+      ...(options?.errorCode ? { errorCode: options.errorCode } : {}),
     },
   };
 }
@@ -385,7 +393,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const resolvedEnv = getResolvedEnv(config);
   const gatewayUrl = resolveGatewayUrl(config, resolvedEnv);
   const { headers, hasAuth } = resolveGatewayTokenHeaders(config, resolvedEnv);
-  const timeoutSec = cfgNumber(config.timeoutSec) || DEFAULT_TIMEOUT_SEC;
+  const configuredTimeoutSec = cfgNumber(config.timeoutSec) || DEFAULT_TIMEOUT_SEC;
+  const timeoutSec = Math.max(60, Math.min(configuredTimeoutSec, MAX_TIMEOUT_SEC));
   const timeoutMs = timeoutSec * 1000;
   const model =
     cfgString(config.model) ||
@@ -489,6 +498,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     return executionResult;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
+    if (isAbortError(error)) {
+      await ctx.onLog("stderr", `[hermes-gateway] Runtime gateway timed out after ${timeoutSec}s.\n`);
+      return buildExecutionError(
+        `T3 runtime gateway request timed out after ${timeoutSec}s`,
+        { timedOut: true, errorCode: "runtime_gateway_timeout" },
+      );
+    }
     await ctx.onLog("stderr", `[hermes-gateway] Runtime gateway request failed: ${detail}\n`);
     return buildExecutionError(`T3 runtime gateway request failed: ${detail}`);
   }
