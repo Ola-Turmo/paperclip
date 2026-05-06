@@ -68,11 +68,12 @@ ARG USER_UID=1000
 ARG USER_GID=1000
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
-RUN npm install --global --omit=dev @google/gemini-cli@latest @mariozechner/pi-coding-agent@latest @openai/codex@latest opencode-ai @zapier/zapier-sdk-cli@latest \
-  && node -e "const { execSync } = require('node:child_process'); const globalRoot = execSync('npm root -g', { encoding: 'utf8' }).trim(); const codexVersion = require(globalRoot + '/@openai/codex/package.json').version; const platformByArch = { x64: 'linux-x64', arm64: 'linux-arm64' }; const codexPlatform = platformByArch[process.arch]; if (!codexPlatform) { console.error('Unsupported Codex platform arch:', process.arch); process.exit(1); } const packageSpec = '@openai/codex-' + codexPlatform + '@npm:@openai/codex@' + codexVersion + '-' + codexPlatform; execSync('npm install -g --omit=dev ' + packageSpec, { stdio: 'inherit' });" \
-  && apt-get update \
+RUN apt-get update \
   && apt-get install -y --no-install-recommends openssh-client jq \
   && rm -rf /var/lib/apt/lists/* \
+  && npm install --global --omit=dev @google/gemini-cli@latest @mariozechner/pi-coding-agent@latest @openai/codex@latest opencode-ai @zapier/zapier-sdk-cli@latest \
+  && node -e "const { execSync } = require('node:child_process'); const globalRoot = execSync('npm root -g', { encoding: 'utf8' }).trim(); const codexVersion = require(globalRoot + '/@openai/codex/package.json').version; const platformByArch = { x64: 'linux-x64', arm64: 'linux-arm64' }; const codexPlatform = platformByArch[process.arch]; if (!codexPlatform) { console.error('Unsupported Codex platform arch:', process.arch); process.exit(1); } const packageSpec = '@openai/codex-' + codexPlatform + '@npm:@openai/codex@' + codexVersion + '-' + codexPlatform; execSync('npm install -g --omit=dev ' + packageSpec, { stdio: 'inherit' });" \
+  && npm cache clean --force \
   && mkdir -p /paperclip /home/.paperclip /opt/hermes-agent /opt/uv-python \
   && chown node:node /paperclip /home/.paperclip \
   && printf '%s\n' '#!/bin/sh' 'set -e' 'PYTHON_BIN=/usr/bin/python3' '[ -x "$PYTHON_BIN" ] || { echo "Hermes runtime Python not found at $PYTHON_BIN" >&2; exit 127; }' 'PYVER=$("$PYTHON_BIN" -c '\''import sys; print("%d.%d" % sys.version_info[:2])'\'')' 'export VIRTUAL_ENV=/opt/hermes-agent/venv' 'export PYTHONPATH=/opt/hermes-agent/src:/opt/hermes-agent/venv/lib/python${PYVER}/site-packages${PYTHONPATH:+:$PYTHONPATH}' 'exec "$PYTHON_BIN" -m hermes_cli.main "$@"' > /usr/local/bin/hermes \
