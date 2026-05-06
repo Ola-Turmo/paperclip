@@ -516,7 +516,7 @@ const hermesDirectAdapter: ServerAdapterModule = {
       if (result.exitCode === 0) {
         return {
           adapterType: "hermes_direct",
-          status: "ok",
+          status: "pass",
           checks: [{ level: "info", message: `Hermes CLI available: ${(result.stdout || "").trim()}`, code: "hermes_cli_ok" }],
           testedAt: new Date().toISOString(),
         };

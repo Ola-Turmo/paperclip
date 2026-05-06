@@ -352,28 +352,37 @@ async function fetchJsonWithRetry<T>(
   input: Parameters<typeof fetchJson<T>>[0],
   options: { attempts?: number; onRetry?: (attempt: number, detail: string) => Promise<void> } = {},
 ): Promise<{ status: number; data: T | null; text: string }> {
-  const attempts = Math.max(1, options.attempts ?? 5);
+  const attempts = Math.max(1, options.attempts ?? 7);
   let lastError: unknown;
+  let abortRetryUsed = false;
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       const response = await fetchJson<T>(input);
-      if (![502, 503, 504].includes(response.status) || attempt === attempts) {
+      const isRetryableHttp = [502, 503, 504].includes(response.status) ||
+        (response.status === 400 && (response.text ?? "").toLowerCase().includes("not found"));
+      if (!isRetryableHttp || attempt === attempts) {
         return response;
       }
       const detail = response.text || `HTTP ${response.status}`;
       await options.onRetry?.(attempt, detail);
     } catch (error) {
       lastError = error;
-      // A client-side abort may leave the remote T3 turn running. Retrying here
-      // creates duplicate Hermes workers for the same Paperclip issue.
-      if (isAbortError(error)) break;
+      if (isAbortError(error)) {
+        if (!abortRetryUsed) {
+          abortRetryUsed = true;
+          const detail = error instanceof Error ? error.message : String(error);
+          await options.onRetry?.(attempt, `abort (one retry granted): ${detail}`);
+        } else {
+          break;
+        }
+      }
       if (attempt === attempts) break;
       const detail = error instanceof Error ? error.message : String(error);
       await options.onRetry?.(attempt, detail);
     }
 
-    await sleep(Math.min(2000 * attempt, 10000));
+    await sleep(Math.min(2000 * attempt, 10000) + Math.floor(Math.random() * 1000));
   }
 
   throw lastError instanceof Error ? lastError : new Error(String(lastError ?? "fetch failed"));
@@ -439,6 +448,30 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     "stdout",
     `[hermes-gateway] Executing via T3 runtime gateway (${gatewayUrl}) with provider=${t3Provider} model=${model}\n`,
   );
+
+  try {
+    const health = await fetchJson({ url: `${gatewayUrl}/health`, method: "GET", headers, timeoutMs: 5000 });
+    if (health.status < 200 || health.status >= 300) {
+      await ctx.onLog(
+        "stderr",
+        `[hermes-gateway] T3 runtime gateway health check failed (HTTP ${health.status}). Gateway may be restarting.\n`,
+      );
+      return buildExecutionError(
+        `T3 runtime gateway health check failed (HTTP ${health.status}). Gateway may be restarting.`,
+        { errorCode: "runtime_gateway_unhealthy" },
+      );
+    }
+  } catch (healthErr) {
+    const healthDetail = healthErr instanceof Error ? healthErr.message : String(healthErr);
+    await ctx.onLog(
+      "stderr",
+      `[hermes-gateway] T3 runtime gateway health check unreachable: ${healthDetail}. Gateway may be restarting.\n`,
+    );
+    return buildExecutionError(
+      `T3 runtime gateway unreachable: ${healthDetail}. Gateway may be restarting.`,
+      { errorCode: "runtime_gateway_unreachable" },
+    );
+  }
 
   const payload = {
     provider: t3Provider,
