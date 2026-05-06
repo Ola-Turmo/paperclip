@@ -158,6 +158,11 @@ function getResolvedEnv(config: Record<string, unknown>): Record<string, string>
   for (const [key, value] of Object.entries(rawEnv)) {
     if (typeof value === "string" && value.length > 0) {
       resolved[key] = value;
+    } else if (value && typeof value === "object" && !Array.isArray(value)) {
+      const obj = value as Record<string, unknown>;
+      if (obj.type === "plain" && typeof obj.value === "string") {
+        resolved[key] = obj.value;
+      }
     }
   }
   return resolved;

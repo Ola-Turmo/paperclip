@@ -46,9 +46,17 @@ FROM base AS build
 WORKDIR /app
 COPY --from=deps /app /app
 COPY . .
-RUN pnpm --filter @paperclipai/ui build
-RUN pnpm --filter @paperclipai/plugin-sdk build
-RUN pnpm --filter @paperclipai/server build
+# Build only the packages required for the server and UI.
+# Exclude plugin templates/examples that have missing devDependencies.
+RUN pnpm run preflight:workspace-links && \
+    pnpm --filter @paperclipai/adapter-utils build && \
+    pnpm --filter @paperclipai/shared build && \
+    pnpm --filter "./packages/adapters/*" build && \
+    pnpm --filter @paperclipai/db build && \
+    pnpm --filter @paperclipai/mcp-server build && \
+    pnpm --filter @paperclipai/plugin-sdk build && \
+    pnpm --filter @paperclipai/ui build && \
+    pnpm --filter @paperclipai/server build
 RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" && exit 1)
 
 FROM base AS production
