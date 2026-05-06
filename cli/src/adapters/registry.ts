@@ -1,5 +1,4 @@
 import type { CLIAdapterModule } from "@paperclipai/adapter-utils";
-import { printAcpxStreamEvent } from "@paperclipai/adapter-acpx-local/cli";
 import { printClaudeStreamEvent } from "@paperclipai/adapter-claude-local/cli";
 import { printCodexStreamEvent } from "@paperclipai/adapter-codex-local/cli";
 import { printCursorStreamEvent } from "@paperclipai/adapter-cursor-local/cli";
@@ -14,11 +13,6 @@ import { httpCLIAdapter } from "./http/index.js";
 const claudeLocalCLIAdapter: CLIAdapterModule = {
   type: "claude_local",
   formatStdoutEvent: printClaudeStreamEvent,
-};
-
-const acpxLocalCLIAdapter: CLIAdapterModule = {
-  type: "acpx_local",
-  formatStdoutEvent: printAcpxStreamEvent,
 };
 
 const codexLocalCLIAdapter: CLIAdapterModule = {
