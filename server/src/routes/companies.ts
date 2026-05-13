@@ -374,10 +374,10 @@ export function companyRoutes(db: Db, storage?: StorageService) {
     res.json([
       {
         type: "hermes_local",
-        provider: "custom:minimax-token-plan",
-        model: "MiniMax-M2.7",
+        provider: "custom:theclawbay",
+        model: "gpt-5.5",
         status: "preferred",
-        note: "Paperclip production agents should use Hermes via the local T3 runtime gateway.",
+        note: "Paperclip production agents should use Hermes via the local Hermes Agent connector.",
       },
     ]);
   });

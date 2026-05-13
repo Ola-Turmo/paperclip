@@ -7,20 +7,25 @@ import {
 } from "../services/heartbeat.js";
 
 describe("buildPaperclipTaskMarkdown", () => {
-  it("adds planning directives for assignment and comment task context", () => {
+  it("includes issue info and description", () => {
     const assignment = buildPaperclipTaskMarkdown({
       issue: {
         id: "issue-1",
         identifier: "PAP-3404",
         title: "Plan first",
         workMode: "planning",
-        description: null,
+        description: "Draft a plan for the new feature.",
       },
     });
 
-    expect(assignment).toContain("- Work mode: \"planning\"");
-    expect(assignment).toContain("Make the plan only. Do not write code or perform implementation work.");
+    expect(assignment).toContain("- Issue: \"PAP-3404\"");
+    expect(assignment).toContain("- Title: \"Plan first\"");
+    expect(assignment).toContain("Draft a plan for the new feature.");
+    expect(assignment).not.toContain("Planning mode directive:");
+    expect(assignment).not.toContain("Make the plan only.");
+  });
 
+  it("includes wake comment when present", () => {
     const commentWake = buildPaperclipTaskMarkdown({
       issue: {
         id: "issue-1",
@@ -35,8 +40,12 @@ describe("buildPaperclipTaskMarkdown", () => {
       },
     });
 
-    expect(commentWake).toContain("Update the plan only. Do not write code or perform implementation work.");
+    expect(commentWake).toContain("Latest wake comment:");
+    expect(commentWake).toContain("Please revise the plan.");
+    expect(commentWake).not.toContain("Planning mode directive:");
+  });
 
+  it("ignores accepted confirmation state since planning directives live in wake prompt", () => {
     const acceptedConfirmation = buildPaperclipTaskMarkdown({
       issue: {
         id: "issue-1",
@@ -51,31 +60,9 @@ describe("buildPaperclipTaskMarkdown", () => {
       },
     });
 
-    expect(acceptedConfirmation).toContain("Create child issues from the approved plan only");
-    expect(acceptedConfirmation).not.toContain("Make the plan only.");
-  });
-
-  it("prefers ordinary comment planning guidance over stale accepted confirmation state", () => {
-    const commentWake = buildPaperclipTaskMarkdown({
-      issue: {
-        id: "issue-1",
-        identifier: "PAP-3404",
-        title: "Plan first",
-        workMode: "planning",
-        description: null,
-      },
-      wakeComment: {
-        id: "comment-1",
-        body: "Please revise the plan.",
-      },
-      interaction: {
-        kind: "request_confirmation",
-        status: "accepted",
-      },
-    });
-
-    expect(commentWake).toContain("Update the plan only. Do not write code or perform implementation work.");
-    expect(commentWake).not.toContain("Create child issues from the approved plan only");
+    expect(acceptedConfirmation).toContain("- Issue: \"PAP-3404\"");
+    expect(acceptedConfirmation).not.toContain("Planning mode directive:");
+    expect(acceptedConfirmation).not.toContain("Create child issues from the approved plan only");
   });
 });
 

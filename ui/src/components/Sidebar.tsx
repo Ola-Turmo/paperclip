@@ -12,6 +12,7 @@ import {
   Repeat,
   GitBranch,
   Settings,
+  Puzzle,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { NavLink } from "@/lib/router";
@@ -26,8 +27,8 @@ import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
 import { useInboxBadge } from "../hooks/useInboxBadge";
 import { Button } from "@/components/ui/button";
-import { PluginSlotOutlet } from "@/plugins/slots";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
+import { usePluginSlots, PluginSlotOutlet } from "../plugins/slots";
 
 export function Sidebar() {
   const { openNewIssue } = useDialogActions();
@@ -46,10 +47,19 @@ export function Sidebar() {
   const liveRunCount = liveRuns?.length ?? 0;
   const showWorkspacesLink = experimentalSettings?.enableIsolatedWorkspaces === true;
 
+  const { slots: pluginPageSlots } = usePluginSlots({
+    slotTypes: ["page"],
+    companyId: selectedCompanyId ?? null,
+  });
+  const pluginPages = pluginPageSlots.filter((s) => s.routePath);
   const pluginContext = {
     companyId: selectedCompanyId,
     companyPrefix: selectedCompany?.issuePrefix ?? null,
   };
+
+  function openSearch() {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }));
+  }
 
   return (
     <aside className="w-full h-full min-h-0 border-r border-border bg-background flex flex-col">
@@ -110,6 +120,19 @@ export function Sidebar() {
         <SidebarProjects />
 
         <SidebarAgents />
+
+        {pluginPages.length > 0 && (
+          <SidebarSection label="Plugins">
+            {pluginPages.map((slot) => (
+              <SidebarNavItem
+                key={slot.id}
+                to={`/${selectedCompany?.issuePrefix}/${slot.routePath}`}
+                label={slot.displayName}
+                icon={Puzzle}
+              />
+            ))}
+          </SidebarSection>
+        )}
 
         <SidebarSection label="Company">
           <SidebarNavItem to="/org" label="Org" icon={Network} />

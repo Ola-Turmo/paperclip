@@ -107,10 +107,6 @@ import {
   syncSkills as hermesSyncSkills,
   detectModel as detectModelFromHermes,
 } from "hermes-paperclip-adapter/server";
-import {
-  execute as hermesGatewayExecute,
-  testEnvironment as hermesGatewayTestEnvironment,
-} from "./hermes-gateway.js";
 import { executeHermesDirectTracked } from "./hermes-direct.js";
 import {
   execute as omxGatewayExecute,
@@ -386,16 +382,6 @@ const omxLocalAdapter: ServerAdapterModule = {
         : {};
     const explicitApiKey =
       typeof existingEnv.PAPERCLIP_API_KEY === "string" && existingEnv.PAPERCLIP_API_KEY.trim().length > 0;
-    const promptTemplate =
-      typeof existingConfig.promptTemplate === "string" && existingConfig.promptTemplate.trim().length > 0
-        ? existingConfig.promptTemplate
-        : "";
-    const authGuardPrompt = [
-      "Paperclip API safety rule:",
-      "Use Authorization: Bearer $PAPERCLIP_API_KEY on every Paperclip API request.",
-      "Use X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID on every Paperclip API request that writes or mutates data, including comments and issue updates.",
-      "Never use a board, browser, or local-board session for Paperclip API writes.",
-    ].join("\n");
 
     const patchedConfig: Record<string, unknown> = {
       ...existingConfig,
@@ -405,10 +391,6 @@ const omxLocalAdapter: ServerAdapterModule = {
         PAPERCLIP_RUN_ID: ctx.runId,
       },
     };
-
-    if (promptTemplate) {
-      patchedConfig.promptTemplate = `${authGuardPrompt}\n\n${promptTemplate}`;
-    }
 
     const patchedCtx = {
       ...ctx,
@@ -431,9 +413,9 @@ const omxLocalAdapter: ServerAdapterModule = {
   getQuotaWindows: codexGetQuotaWindows,
 };
 
-// Hermes runs through the T3 gateway, but we keep the existing authToken
-// patching wrapper so Paperclip run credentials still flow into adapter config.
-const executeHermesLocal = hermesGatewayExecute as unknown as ServerAdapterModule["execute"];
+// Hermes local runs Hermes Agent directly inside the Paperclip container. Do not route
+// hermes_local through any external runtime gateway.
+const executeHermesLocal = executeHermesDirectTracked as unknown as ServerAdapterModule["execute"];
 
 const hermesLocalAdapter: ServerAdapterModule = {
   type: "hermes_local",
@@ -448,16 +430,6 @@ const hermesLocalAdapter: ServerAdapterModule = {
         : {};
     const explicitApiKey =
       typeof existingEnv.PAPERCLIP_API_KEY === "string" && existingEnv.PAPERCLIP_API_KEY.trim().length > 0;
-    const promptTemplate =
-      typeof existingConfig.promptTemplate === "string" && existingConfig.promptTemplate.trim().length > 0
-        ? existingConfig.promptTemplate
-        : "";
-    const authGuardPrompt = [
-      "Paperclip API safety rule:",
-      "Use Authorization: Bearer $PAPERCLIP_API_KEY on every Paperclip API request.",
-      "Use X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID on every Paperclip API request that writes or mutates data, including comments and issue updates.",
-      "Never use a board, browser, or local-board session for Paperclip API writes.",
-    ].join("\n");
 
     const patchedConfig: Record<string, unknown> = {
       ...existingConfig,
@@ -467,13 +439,6 @@ const hermesLocalAdapter: ServerAdapterModule = {
         PAPERCLIP_RUN_ID: normalizedCtx.runId,
       },
     };
-
-    // Only inject the auth guard into promptTemplate when a custom template already exists.
-    // When no custom template is set, Hermes uses its built-in default heartbeat/task prompt;
-    // overwriting it with only the auth guard text would strip the assigned issue/workflow instructions.
-    if (promptTemplate) {
-      patchedConfig.promptTemplate = `${authGuardPrompt}\n\n${promptTemplate}`;
-    }
 
     const patchedCtx = {
       ...normalizedCtx,
@@ -485,7 +450,7 @@ const hermesLocalAdapter: ServerAdapterModule = {
 
     return executeHermesLocal(patchedCtx);
   },
-  testEnvironment: (ctx) => hermesGatewayTestEnvironment(normalizeHermesConfig(ctx) as never),
+  testEnvironment: (ctx) => hermesDirectAdapter.testEnvironment(ctx),
   sessionCodec: hermesSessionCodec,
   listSkills: hermesListSkills,
   syncSkills: hermesSyncSkills,

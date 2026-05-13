@@ -2112,10 +2112,6 @@ export function buildPaperclipTaskMarkdown(input: {
   };
   const issue = input.issue;
   const wakeComment = input.wakeComment ?? null;
-  const acceptedPlanContinuation =
-    !wakeComment &&
-    input.interaction?.kind === "request_confirmation" &&
-    input.interaction.status === "accepted";
   if (!issue && !wakeComment) return null;
 
   const lines = [
@@ -2127,21 +2123,6 @@ export function buildPaperclipTaskMarkdown(input: {
       `- Issue: ${quoteTaskScalar(issue.identifier || issue.id)}`,
       `- Title: ${quoteTaskScalar(issue.title)}`,
     );
-    if (issue.workMode === "planning") {
-      let directive = "Make the plan only. Do not write code or perform implementation work.";
-      if (wakeComment) {
-        directive = "Update the plan only. Do not write code or perform implementation work.";
-      }
-      if (acceptedPlanContinuation) {
-        directive = "Create child issues from the approved plan only. Do not write code or perform implementation work on the planning issue.";
-      }
-      lines.push(
-        `- Work mode: ${quoteTaskScalar("planning")}`,
-        "",
-        "Planning mode directive:",
-        directive,
-      );
-    }
     const description = issue.description?.trim();
     if (description) {
       lines.push("", "Issue description:", fenceTaskText(description));
@@ -2152,6 +2133,31 @@ export function buildPaperclipTaskMarkdown(input: {
   }
   lines.push("", "Use this task context as the current assignment.");
   return lines.join("\n");
+}
+
+function estimateContextTokens(context: Record<string, unknown>): number {
+  try {
+    return Math.ceil(JSON.stringify(context).length / 4);
+  } catch {
+    return 0;
+  }
+}
+
+function deepFreeze<T extends Record<string, unknown>>(obj: T): T {
+  const propNames = Object.getOwnPropertyNames(obj);
+  for (const name of propNames) {
+    const value = obj[name];
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      deepFreeze(value as Record<string, unknown>);
+    } else if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item && typeof item === "object") {
+          deepFreeze(item as Record<string, unknown>);
+        }
+      }
+    }
+  }
+  return Object.freeze(obj);
 }
 
 // A positive liveness check means some process currently owns the PID.
@@ -7052,7 +7058,6 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     );
     const previousSessionParams =
       explicitResumeSessionParams ??
-      (explicitResumeSessionDisplayId ? { sessionId: explicitResumeSessionDisplayId } : null) ??
       normalizeSessionParams(sessionCodec.deserialize(taskSessionForRun?.sessionParamsJson ?? null));
     const config = parseObject(agent.adapterConfig);
     const requestedExecutionWorkspaceMode = resolveExecutionWorkspaceMode({
@@ -7827,12 +7832,15 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           "local agent jwt secret missing or invalid; running without injected PAPERCLIP_API_KEY",
         );
       }
+      const estimatedTokens = estimateContextTokens(context);
+      await onLog("stdout", `[paperclip] Estimated context tokens: ~${estimatedTokens}\n`);
+      const adapterContext = deepFreeze(structuredClone(context) as Record<string, unknown>);
       const adapterResult = await adapter.execute({
         runId: run.id,
         agent,
         runtime: runtimeForAdapter,
         config: runtimeConfig,
-        context,
+        context: adapterContext,
         runtimeCommandSpec: adapter.getRuntimeCommandSpec?.(runtimeConfig) ?? null,
         executionTarget,
         executionTransport: remoteExecution
@@ -7911,7 +7919,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       const sessionUsageResolution = await resolveNormalizedUsageForSession({
         agentId: agent.id,
         runId: run.id,
-        sessionId: nextSessionState.displayId ?? nextSessionState.legacySessionId,
+        sessionId: nextSessionState.legacySessionId ?? nextSessionState.displayId,
         rawUsage,
       });
       const normalizedUsage = sessionUsageResolution.normalizedUsage;
@@ -7974,8 +7982,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                 rawOutputTokens: rawUsage.outputTokens,
               } : {}),
               ...(sessionUsageResolution.derivedFromSessionTotals ? { usageSource: "session_delta" } : {}),
-              ...((nextSessionState.displayId ?? nextSessionState.legacySessionId)
-                ? { persistedSessionId: nextSessionState.displayId ?? nextSessionState.legacySessionId }
+              ...((nextSessionState.legacySessionId ?? nextSessionState.displayId)
+                ? { persistedSessionId: nextSessionState.legacySessionId ?? nextSessionState.displayId }
                 : {}),
               sessionReused: runtimeForAdapter.sessionId != null || runtimeForAdapter.sessionDisplayId != null,
               taskSessionReused: taskSessionForRun != null,
@@ -8014,7 +8022,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         signal: adapterResult.signal,
         usageJson,
         resultJson: persistedResultJson,
-        sessionIdAfter: nextSessionState.displayId ?? nextSessionState.legacySessionId,
+        sessionIdAfter: nextSessionState.legacySessionId ?? nextSessionState.displayId,
         stdoutExcerpt,
         stderrExcerpt,
         logBytes: logSummary?.bytes,
@@ -8743,7 +8751,47 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
 
     const agent = await getAgent(agentId);
     if (!agent) throw notFound("Agent not found");
-    const explicitResumeSession = await resolveExplicitResumeSessionOverride(agent, payload, taskKey);
+    if (!issueId) {
+      const nextAssignedIssue = await db
+        .select({
+          id: issues.id,
+          identifier: issues.identifier,
+          title: issues.title,
+          status: issues.status,
+          priority: issues.priority,
+          updatedAt: issues.updatedAt,
+        })
+        .from(issues)
+        .where(
+          and(
+            eq(issues.companyId, agent.companyId),
+            eq(issues.assigneeAgentId, agent.id),
+            isNull(issues.hiddenAt),
+            inArray(issues.status, ["in_progress", "todo", "backlog"]),
+          ),
+        )
+        .orderBy(
+          sql`case ${issues.status} when 'in_progress' then 0 when 'todo' then 1 when 'backlog' then 2 else 3 end`,
+          sql`case ${issues.priority} when 'urgent' then 0 when 'high' then 1 when 'medium' then 2 when 'low' then 3 else 4 end`,
+          desc(issues.updatedAt),
+        )
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+      if (nextAssignedIssue) {
+        issueId = nextAssignedIssue.id;
+        enrichedContextSnapshot.issueId = nextAssignedIssue.id;
+        enrichedContextSnapshot.taskId = nextAssignedIssue.id;
+        enrichedContextSnapshot.taskKey = nextAssignedIssue.identifier ?? nextAssignedIssue.id;
+        enrichedContextSnapshot.assignmentSource = "auto_selected_assigned_issue";
+        enrichedContextSnapshot.assignmentStatus = nextAssignedIssue.status;
+        enrichedContextSnapshot.assignmentTitle = nextAssignedIssue.title;
+        if (!readNonEmptyString(enrichedContextSnapshot.wakeReason)) {
+          enrichedContextSnapshot.wakeReason = "assigned_issue_available";
+        }
+      }
+    }
+    const explicitResumeTaskKey = readNonEmptyString(enrichedContextSnapshot.taskKey) ?? taskKey;
+    const explicitResumeSession = await resolveExplicitResumeSessionOverride(agent, payload, explicitResumeTaskKey);
     if (explicitResumeSession) {
       enrichedContextSnapshot.resumeFromRunId = explicitResumeSession.resumeFromRunId;
       enrichedContextSnapshot.resumeSessionDisplayId = explicitResumeSession.sessionDisplayId;

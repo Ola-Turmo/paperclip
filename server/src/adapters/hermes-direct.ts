@@ -3,12 +3,12 @@ import {
   buildPaperclipEnv,
   ensureAbsoluteDirectory,
   renderTemplate,
-  runChildProcess,
 } from "./utils.js";
+import { renderPaperclipWakePrompt } from "@paperclipai/adapter-utils/server-utils";
 
 const HERMES_CLI = "hermes";
-const DEFAULT_MODEL = "gpt-5.5";
-const DEFAULT_PROVIDER = "paperclip-router";
+const DEFAULT_MODEL = "custom-theclawbay/gpt-5.5";
+const DEFAULT_PROVIDER = "cloudflare-native";
 const DEFAULT_TIMEOUT_SEC = 420;
 const DEFAULT_GRACE_SEC = 10;
 const DEFAULT_MAX_TURNS = 14;
@@ -29,6 +29,11 @@ Hard stop rules:
 - If the task needs public social/email/legal/payment/credential approval, draft the gated item and return the exact review decision needed.
 - Finish with: summary, files/artifacts changed, verification, business value, blockers, next action.
 
+{{#wakePrompt}}
+## Wake Context
+{{wakePrompt}}
+{{/wakePrompt}}
+
 {{taskBody}}
 `.trim();
 
@@ -36,6 +41,21 @@ const SESSION_ID_REGEX = /^session_id:\s*(\S+)/m;
 const SESSION_ID_REGEX_LEGACY = /session[_ ](?:id|saved)[:\s]+([a-zA-Z0-9_-]+)/i;
 const TOKEN_USAGE_REGEX = /tokens?[:\s]+(\d+)\s*(?:input|in)\b.*?(\d+)\s*(?:output|out)\b/i;
 const COST_REGEX = /(?:cost|spent)[:\s]*\$?([\d.]+)/i;
+
+export function normalizeHermesSessionId(value: string | null | undefined): string | null {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed) return null;
+  // Hermes CLI session IDs are structured tokens such as 20260513_081219_fd3d2f,
+  // desktop-thread-..., run_..., or cron_.... Do not persist incidental words
+  // captured from help/error prose like "Use a session ID from a previous CLI run".
+  if (!/[A-Z0-9]/i.test(trimmed) || !/[_-]/.test(trimmed)) return null;
+  if (trimmed.length < 12) return null;
+  if (/^(from|previous|cli|run|session|id|use)$/i.test(trimmed)) return null;
+  if (/^\d{8}_\d{6}_[a-zA-Z0-9]+$/.test(trimmed)) return trimmed;
+  if (/^(desktop-thread-|run_|cron_)[a-zA-Z0-9_-]+$/.test(trimmed)) return trimmed;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) return trimmed;
+  return null;
+}
 
 function cfgString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
@@ -146,13 +166,19 @@ function parseHermesOutput(stdout: string, stderr: string) {
 
   const sessionMatch = stdout.match(SESSION_ID_REGEX) ?? stderr.match(SESSION_ID_REGEX);
   if (sessionMatch?.[1]) {
-    parsed.sessionId = sessionMatch[1];
+    parsed.sessionId = normalizeHermesSessionId(sessionMatch[1]);
     const sessionLineIdx = stdout.lastIndexOf("\nsession_id:");
     parsed.response = cleanResponse(sessionLineIdx > 0 ? stdout.slice(0, sessionLineIdx) : stdout);
   } else {
     const legacyMatch = combined.match(SESSION_ID_REGEX_LEGACY);
-    if (legacyMatch?.[1]) parsed.sessionId = legacyMatch[1];
+    parsed.sessionId = normalizeHermesSessionId(legacyMatch?.[1]);
     parsed.response = cleanResponse(stdout);
+  }
+
+  const sessionNotFound = /^Session not found:\s*\S+/mi.test(combined);
+  if (sessionNotFound) {
+    parsed.errorMessage = combined.match(/^Session not found:\s*\S+.*$/mi)?.[0] ?? "Session not found";
+    parsed.sessionId = null;
   }
 
   const usageMatch = combined.match(TOKEN_USAGE_REGEX);
@@ -179,18 +205,25 @@ function reachedHermesIterationCap(response: string | undefined): boolean {
 
 function buildPrompt(ctx: AdapterExecutionContext, config: Record<string, unknown>) {
   const template = cfgString(config.promptTemplate) || DEFAULT_PROMPT_TEMPLATE;
-  const taskId = cfgString(ctx.config?.taskId) || "";
-  const commentId = cfgString(ctx.config?.commentId) || "";
+  const taskId = cfgString(ctx.config?.taskId) || cfgString(ctx.config?.issueId) || cfgString(ctx.context?.taskId) || cfgString(ctx.context?.issueId) || "";
+  const commentId = cfgString(ctx.config?.commentId) || cfgString(ctx.context?.commentId) || "";
   let paperclipApiUrl =
     cfgString(config.paperclipApiUrl) || process.env.PAPERCLIP_API_URL || "http://127.0.0.1:3100/api";
   if (!paperclipApiUrl.endsWith("/api")) {
     paperclipApiUrl = `${paperclipApiUrl.replace(/\/+$/, "")}/api`;
   }
 
+  const wakePrompt = ctx.context?.paperclipWake
+    ? renderPaperclipWakePrompt(ctx.context.paperclipWake as Record<string, unknown>, { resumedSession: false })
+    : "";
+  const sessionHandoff = cfgString(ctx.context?.paperclipSessionHandoffMarkdown) || "";
+  const wakeSection = [wakePrompt, sessionHandoff].filter(Boolean).join("\n\n");
+
   let rendered = template;
   rendered = rendered.replace(/\{\{#taskId\}\}([\s\S]*?)\{\{\/taskId\}\}/g, taskId ? "$1" : "");
   rendered = rendered.replace(/\{\{#noTask\}\}([\s\S]*?)\{\{\/noTask\}\}/g, taskId ? "" : "$1");
   rendered = rendered.replace(/\{\{#commentId\}\}([\s\S]*?)\{\{\/commentId\}\}/g, commentId ? "$1" : "");
+  rendered = rendered.replace(/\{\{#wakePrompt\}\}([\s\S]*?)\{\{\/wakePrompt\}\}/g, wakeSection ? "$1" : "");
 
   return renderTemplate(rendered, {
     agentId: ctx.agent?.id || "",
@@ -199,8 +232,12 @@ function buildPrompt(ctx: AdapterExecutionContext, config: Record<string, unknow
     companyName: cfgString(ctx.config?.companyName) || "",
     runId: ctx.runId || "",
     taskId,
-    taskTitle: cfgString(ctx.config?.taskTitle) || "",
-    taskBody: cfgString(ctx.config?.taskBody) || "",
+    taskTitle: cfgString(ctx.config?.taskTitle) || cfgString((ctx.context?.paperclipIssue as Record<string, unknown> | undefined)?.title) || "",
+    taskBody:
+      cfgString(ctx.config?.taskBody) ||
+      cfgString(ctx.context?.paperclipTaskMarkdown) ||
+      cfgString((ctx.context?.paperclipIssue as Record<string, unknown> | undefined)?.description) ||
+      "",
     commentId,
     wakeReason: cfgString(ctx.config?.wakeReason) || "",
     projectName: cfgString(ctx.config?.projectName) || "",
@@ -212,8 +249,9 @@ export async function executeHermesDirectTracked(
   ctx: AdapterExecutionContext,
 ): Promise<AdapterExecutionResult> {
   const config = (ctx.agent?.adapterConfig ?? {}) as Record<string, unknown>;
-  const taskId = cfgString(ctx.config?.taskId);
-  const allowNoTaskRun = cfgBoolean(config.allowNoTaskRun) === true;
+  const taskId = cfgString(ctx.config?.taskId) || cfgString(ctx.config?.issueId) || cfgString(ctx.context?.taskId) || cfgString(ctx.context?.issueId);
+  const allowNoTaskRun = cfgBoolean(config.allowNoTaskRun) === true && cfgString(config.promptTemplate) !== undefined;
+
   if (!taskId && !allowNoTaskRun) {
     const summary = [
       "No assigned issue was available for this heartbeat.",
@@ -240,7 +278,6 @@ export async function executeHermesDirectTracked(
     cfgString(config.model),
     cfgString(llmRouterConfig?.model),
     process.env.PAPERCLIP_HERMES_DIRECT_MODEL,
-    process.env.T3_RUNTIME_GATEWAY_HERMES_MODEL,
   ) || DEFAULT_MODEL;
   const provider = firstNonAuto(
     cfgString(config.provider),
@@ -271,16 +308,16 @@ export async function executeHermesDirectTracked(
   if (maxTurns > 0 && !hasArg(extraArgs, "--max-turns")) args.push("--max-turns", String(maxTurns));
   if (useYolo && !hasArg(extraArgs, "--yolo")) args.push("--yolo");
   args.push("--source", "tool");
-  args.push("--profile", "paperclip");
 
   const previousSessionId = cfgString(ctx.runtime?.sessionParams?.sessionId);
-  if (persistSession && previousSessionId) args.push("--resume", previousSessionId);
-  if (extraArgs?.length) args.push(...extraArgs);
+  let resumeSessionId = persistSession ? previousSessionId : undefined;
 
   const env: Record<string, string> = {
     ...process.env,
+    HOME: process.env.HOME || "/home/.paperclip",
     ...buildPaperclipEnv(ctx.agent),
   } as Record<string, string>;
+  if (!env.HOME || env.HOME === "/root") env.HOME = "/home/.paperclip";
   if (ctx.runId) env.PAPERCLIP_RUN_ID = ctx.runId;
   if (taskId) env.PAPERCLIP_TASK_ID = taskId;
   Object.assign(env, cfgEnvObject(config.env));
@@ -292,11 +329,30 @@ export async function executeHermesDirectTracked(
     // Match upstream adapter behavior: the child process will report a clear cwd failure if needed.
   }
 
+  const { runChildProcess } = await import("./utils.js");
+  if (resumeSessionId) {
+    const listResult = await runChildProcess(ctx.runId, hermesCommand, ["sessions", "list", "--limit", "200"], {
+      cwd,
+      env,
+      timeoutSec: Math.min(15, timeoutSec),
+      graceSec: 2,
+      onLog: async () => {},
+      onSpawn: undefined,
+    });
+    const listedSessions = `${listResult.stdout || ""}\n${listResult.stderr || ""}`;
+    if (listResult.exitCode === 0 && !new RegExp(`(^|\\s)${resumeSessionId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`).test(listedSessions)) {
+      await ctx.onLog("stdout", `[hermes] Previous session ${resumeSessionId} is not present in hermes sessions list; starting fresh.\n`);
+      resumeSessionId = undefined;
+    }
+  }
+  if (resumeSessionId) args.push("--resume", resumeSessionId);
+  if (extraArgs?.length) args.push(...extraArgs);
+
   await ctx.onLog(
     "stdout",
     `[hermes] Starting Hermes Agent (provider=${provider}, model=${model}, maxTurns=${maxTurns}, timeout=${timeoutSec}s, yolo=${useYolo})\n`,
   );
-  if (previousSessionId) await ctx.onLog("stdout", `[hermes] Resuming session: ${previousSessionId}\n`);
+  if (resumeSessionId) await ctx.onLog("stdout", `[hermes] Resuming session: ${resumeSessionId}\n`);
 
   const wrappedOnLog = async (stream: "stdout" | "stderr", chunk: string) => {
     if (stream === "stderr") {
@@ -314,7 +370,7 @@ export async function executeHermesDirectTracked(
     return ctx.onLog(stream, chunk);
   };
 
-  const result = await runChildProcess(ctx.runId, hermesCommand, args, {
+  const runHermes = (runArgs: string[]) => runChildProcess(ctx.runId, hermesCommand, runArgs, {
     cwd,
     env,
     timeoutSec,
@@ -326,8 +382,35 @@ export async function executeHermesDirectTracked(
         }
       : undefined,
   });
-
-  const parsed = parseHermesOutput(result.stdout || "", result.stderr || "");
+  const withoutResumeArgs = (runArgs: string[]) => runArgs.filter((arg, index) => arg !== "--resume" && runArgs[index - 1] !== "--resume");
+  let launchArgs = args;
+  if (previousSessionId) {
+    const listResult = await runChildProcess(ctx.runId, hermesCommand, ["sessions", "list"], {
+      cwd,
+      env,
+      timeoutSec: 15,
+      graceSec: 2,
+      onLog: async () => {},
+    });
+    const sessionListOutput = `${listResult.stdout || ""}\n${listResult.stderr || ""}`;
+    if (listResult.exitCode === 0 && !sessionListOutput.includes(previousSessionId)) {
+      await ctx.onLog(
+        "stdout",
+        `[hermes] Previous session ${previousSessionId} is not present in hermes sessions list; starting fresh instead of resuming stale state.\n`,
+      );
+      launchArgs = withoutResumeArgs(args);
+    }
+  }
+  let result = await runHermes(launchArgs);
+  let parsed = parseHermesOutput(result.stdout || "", result.stderr || "");
+  if (previousSessionId && /^Session not found:/i.test(parsed.errorMessage ?? "")) {
+    await ctx.onLog(
+      "stdout",
+      `[hermes] Previous session ${previousSessionId} was not found; clearing it and retrying once with a fresh session.\n`,
+    );
+    result = await runHermes(withoutResumeArgs(launchArgs));
+    parsed = parseHermesOutput(result.stdout || "", result.stderr || "");
+  }
   const iterationCapped = reachedHermesIterationCap(parsed.response);
   await ctx.onLog("stdout", `[hermes] Exit code: ${result.exitCode ?? "null"}, timed out: ${result.timedOut}\n`);
   if (parsed.sessionId) await ctx.onLog("stdout", `[hermes] Session: ${parsed.sessionId}\n`);
@@ -362,6 +445,10 @@ export async function executeHermesDirectTracked(
     executionResult.clearSession = true;
   } else if (parsed.errorMessage) {
     executionResult.errorMessage = parsed.errorMessage;
+    if (/^Session not found:/i.test(parsed.errorMessage)) {
+      executionResult.clearSession = true;
+      executionResult.errorCode = "stale_session";
+    }
   }
   if (parsed.usage) executionResult.usage = parsed.usage;
   if (parsed.costUsd !== undefined) executionResult.costUsd = parsed.costUsd;

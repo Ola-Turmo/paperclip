@@ -750,7 +750,7 @@ export async function startServer(): Promise<StartedServer> {
   
       // Periodically reap orphaned runs and make sure persisted queued work is
       // still being driven forward. Local child processes use a short orphan
-      // threshold, while remote Hermes/T3 gateway turns get a longer window to
+      // threshold, while external runtime turns get a longer window to
       // avoid cancelling legitimate long-running agent work.
       void heartbeat
         .reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000 })

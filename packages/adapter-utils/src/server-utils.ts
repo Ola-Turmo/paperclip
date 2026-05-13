@@ -300,6 +300,10 @@ export function joinPromptSections(
     .join(separator);
 }
 
+export function estimateTokensFromChars(chars: number): number {
+  return Math.ceil(chars / 4);
+}
+
 type PaperclipWakeIssue = {
   id: string | null;
   identifier: string | null;

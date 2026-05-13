@@ -35,7 +35,7 @@ export function queueIssueAssignmentWakeup(input: {
   if (!input.issue.assigneeAgentId || input.issue.status === "backlog") return;
   // Strategy gates use GPT-5.5/TheClawBay and must be run sequentially.
   // Assignment wakeups can fan out many issues at once, which overloads the
-  // shared T3 checkpoint path and creates low-value failed work.
+  // shared Hermes checkpoint path and creates low-value failed work.
   if (isManualSequentialStrategyGateIssue(input.issue)) return;
 
   return input.heartbeat

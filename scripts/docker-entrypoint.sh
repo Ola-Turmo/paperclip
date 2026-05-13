@@ -45,7 +45,6 @@ mkdir -p "$RUNTIME_HOME" "$RUNTIME_HOME/.config"
 # This keeps Paperclip's agent runtime self-contained while reusing the
 # operator's existing authenticated tool sessions.
 sync_seed_dir "$SEED_ROOT/.codex" "$RUNTIME_HOME/.codex" \
-    --delete \
     --exclude=config.toml \
     --exclude=config.toml3 \
     --exclude=AGENTS.md \
@@ -58,31 +57,37 @@ sync_seed_dir "$SEED_ROOT/.codex" "$RUNTIME_HOME/.codex" \
     --exclude=shell_snapshots \
     --exclude=statsig
 sync_seed_dir "$SEED_ROOT/.gemini" "$RUNTIME_HOME/.gemini" \
-    --delete \
     --exclude=gemini-credentials.json \
     --exclude=tmp \
     --exclude=logs
 sync_seed_dir "$SEED_ROOT/.pi" "$RUNTIME_HOME/.pi" \
-    --delete \
     --exclude=sessions \
     --exclude=tmp
-sync_seed_dir "$SEED_ROOT/opencode" "$RUNTIME_HOME/.config/opencode" --delete
+sync_seed_dir "$SEED_ROOT/opencode" "$RUNTIME_HOME/.config/opencode"
 sync_seed_dir "$SEED_ROOT/opencode-share" "$RUNTIME_HOME/.local/share/opencode" \
-    --delete \
     --exclude=log \
     --exclude=opencode.db \
     --exclude=opencode.db-shm \
     --exclude=opencode.db-wal \
     --exclude=snapshot \
     --exclude=storage
-sync_seed_dir "$SEED_ROOT/gh" "$RUNTIME_HOME/.config/gh" --delete
-sync_seed_dir "$SEED_ROOT/ssh" "$RUNTIME_HOME/.ssh" --delete
+sync_seed_dir "$SEED_ROOT/gh" "$RUNTIME_HOME/.config/gh"
+sync_seed_dir "$SEED_ROOT/ssh" "$RUNTIME_HOME/.ssh"
 sync_seed_dir "$SEED_ROOT/.hermes" "$RUNTIME_HOME/.hermes" \
-    --delete \
     --exclude=hermes-agent \
     --exclude=logs \
     --exclude=cache \
-    --exclude=runtime
+    --exclude=runtime \
+    --exclude=checkpoints \
+    --exclude=sessions \
+    --exclude=prd \
+    --exclude=node_modules \
+    --exclude=.git \
+    --exclude=__pycache__ \
+    --exclude=.venv \
+    --exclude=venv \
+    --exclude=*.sqlite \
+    --exclude=*.log
 if [ -f "$SEED_ROOT/.gitconfig" ]; then
     cp "$SEED_ROOT/.gitconfig" "$RUNTIME_HOME/.gitconfig"
 fi
