@@ -142,7 +142,24 @@ multi_agent = true
 EOF
 fi
 
-chown -R node:node "$RUNTIME_HOME"
+# Avoid recursively chowning the whole persistent Paperclip home on every start;
+# the volume contains long-lived runtime/session data and can make deploys look hung.
+chown node:node "$RUNTIME_HOME" "$RUNTIME_HOME/.config" "$RUNTIME_HOME/.local" "$RUNTIME_HOME/.local/share" 2>/dev/null || true
+for seeded_path in \
+    "$RUNTIME_HOME/.codex" \
+    "$RUNTIME_HOME/.gemini" \
+    "$RUNTIME_HOME/.pi" \
+    "$RUNTIME_HOME/.config/opencode" \
+    "$RUNTIME_HOME/.local/share/opencode" \
+    "$RUNTIME_HOME/.config/gh" \
+    "$RUNTIME_HOME/.ssh" \
+    "$RUNTIME_HOME/.gitconfig" \
+    "$RUNTIME_HOME/.hermes"
+do
+    if [ -e "$seeded_path" ]; then
+        chown -R node:node "$seeded_path"
+    fi
+done
 if [ -d "$RUNTIME_HOME/.ssh" ]; then
     chmod 700 "$RUNTIME_HOME/.ssh"
     find "$RUNTIME_HOME/.ssh" -type f -exec chmod 600 {} \;
