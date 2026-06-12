@@ -912,7 +912,13 @@ export function routineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeup
       const [triggersByRoutine, latestRunByRoutine, activeIssueByRoutine] = await Promise.all([
         listTriggersForRoutineIds(companyId, routineIds),
         listLatestRunByRoutineIds(companyId, routineIds),
-        listLiveIssueByRoutineIds(companyId, routineIds),
+        listLiveIssueByRoutineIds(companyId, routineIds).catch((err) => {
+          console.warn(
+            `Routine active-issue lookup failed for company ${companyId}; returning routines without activeIssue`,
+            err,
+          );
+          return new Map<string, RoutineListItem["activeIssue"]>();
+        }),
       ]);
       return rows.map((row) => ({
         ...row,
