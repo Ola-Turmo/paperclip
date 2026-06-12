@@ -43,6 +43,19 @@ import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
 import { initTelemetry, getTelemetryClient } from "./telemetry.js";
 
+
+function resolveHostVersion(): string {
+  const releaseTag = process.env.PAPERCLIP_RELEASE_TAG ?? process.env.PAPERCLIP_RELEASE_COMMIT;
+  const releaseVersion = releaseTag?.match(/v?(\d{4}\.\d+\.\d+)/)?.[1];
+  return releaseVersion ?? serverVersion;
+}
+
+function permitsLocalTrustedHostBinding(host: string, deploymentExposure: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  if (normalized === "127.0.0.1" || normalized === "localhost" || normalized === "::1") return true;
+  return deploymentExposure === "private" && (normalized === "0.0.0.0" || normalized === "::");
+}
+
 type BetterAuthSessionUser = {
   id: string;
   email?: string | null;
@@ -433,10 +446,10 @@ export async function startServer(): Promise<StartedServer> {
     startupDbInfo = { mode: "embedded-postgres", dataDir, port };
   }
   
-  if (config.deploymentMode === "local_trusted" && !isLoopbackHost(config.host)) {
+  if (config.deploymentMode === "local_trusted" && !permitsLocalTrustedHostBinding(config.host, config.deploymentExposure)) {
     throw new Error(
-      `local_trusted mode requires loopback host binding (received: ${config.host}). ` +
-        "Use authenticated mode for non-loopback deployments.",
+      `local_trusted mode requires loopback/private host binding (received: ${config.host}). ` +
+        "Use authenticated mode for public non-loopback deployments.",
     );
   }
   
@@ -535,7 +548,7 @@ export async function startServer(): Promise<StartedServer> {
     companyDeletionEnabled: config.companyDeletionEnabled,
     betterAuthHandler,
     resolveSession,
-    hostVersion: serverVersion,
+    hostVersion: resolveHostVersion(),
   });
   const server = createServer(app as unknown as Parameters<typeof createServer>[0]);
 
